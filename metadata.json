@@ -1,0 +1,7 @@
+{
+  "name": "LexSim: AI Trial Prep",
+  "description": "A next-generation legal trial preparation platform featuring AI-powered witness simulation, predictive case analytics, and immersive strategy visualization.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
