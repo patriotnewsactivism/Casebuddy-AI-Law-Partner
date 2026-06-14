@@ -36,7 +36,7 @@ import IntakePage from './components/IntakePage';
 import WarRoom from './components/WarRoom';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
-import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId } from './utils/storage';
+import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
 
 const NAV_GROUPS = [
   {
@@ -212,11 +212,15 @@ export const AppContext = React.createContext<{
   activeCase: Case | null;
   setActiveCase: (c: Case) => void;
   addCase: (c: Case) => void;
+  theme: 'dark' | 'light';
+  setTheme: (t: 'dark' | 'light') => void;
 }>({
   cases: [],
   activeCase: null,
   setActiveCase: () => {},
   addCase: () => {},
+  theme: 'dark',
+  setTheme: () => {},
 });
 
 const ONBOARDING_KEY = 'casebuddy_onboarding_done';
@@ -233,6 +237,12 @@ const App = () => {
     return saved.find(c => c.id === savedId) ?? null;
   });
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
+  const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
+
+  const setTheme = (t: 'dark' | 'light') => {
+    setThemeState(t);
+    savePreferences({ theme: t });
+  };
 
   const setActiveCase = (c: Case) => {
     setActiveCaseState(c);
@@ -258,7 +268,7 @@ const App = () => {
   };
 
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme }}>
       <HashRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
