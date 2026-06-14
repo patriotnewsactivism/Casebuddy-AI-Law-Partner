@@ -29,7 +29,7 @@
 | **Lex** | Legal Research Hub | `StrategyRoom.tsx` | ⬜ Header to add |
 | **Doc** | Document Lab + Discovery | `DraftingAssistant.tsx` | ⬜ Header to add |
 | **Rex** | Trial Coach + Witness Prep | `WitnessPrep.tsx` | ✅ |
-| **Sol** | Deadlines & SOL Tracker | (module pending) | ⬜ |
+| **Sol** | Deadlines & SOL Tracker | `DeadlineTracker.tsx` | ✅ |
 | **Sierra** | Legal Secretary | `ClientUpdate.tsx` | ⬜ Header to add |
 | **Jules** | Jury Simulator | `JurySimulator.tsx` | ✅ |
 | **Max** | E-Filing & Records | `Integrations.tsx` | ⬜ Header to add |
@@ -77,7 +77,7 @@
 - ✅ Quick-start topic buttons per specialist
 - ✅ Consultation history persisted per specialist (session)
 - ✅ Disclaimer on all legal advice responses
-- ⬜ Persist consultation history to localStorage across sessions
+- ✅ Persist consultation history to localStorage across sessions (key: `casebuddy_legal_sessions`)
 - ⬜ Export consultation transcript as PDF
 
 ---
@@ -169,8 +169,11 @@ View status at `/app/integrations` (the Integrations page shows configured vs. n
 
 ### 4.1 Voice Input Everywhere
 - ✅ Voice input on LegalTeam chat (Web Speech API, no external dep)
-- ⬜ Add Web Speech API mic button to WitnessLab chat input
-- ⬜ Add mic button to DraftingAssistant, StatementBuilder, DepositionPrep
+- ✅ Shared `VoiceMicButton` component extracted to `components/VoiceMicButton.tsx`
+- ✅ Add Web Speech API mic button to WitnessLab chat input
+- ✅ Add mic button to DraftingAssistant (instructions field)
+- ✅ Add mic button to StatementBuilder (theory of case field)
+- ✅ Add mic button to DepositionPrep (strategy field)
 
 ### 4.2 PDF Export
 - ✅ WitnessPrep packages export via browser print dialog (print-to-PDF)
@@ -197,7 +200,9 @@ View status at `/app/integrations` (the Integrations page shows configured vs. n
 - ⬜ Hide CaseBuddy branding in white-label mode
 
 ### 4.5 Mobile PWA Polish
-- ⬜ `manifest.json` + service worker for offline capability
+- ✅ `manifest.json` created with theme color, icons, app name
+- ✅ `manifest.json` linked in `index.html` with theme-color meta tag
+- ⬜ Service worker for offline capability
 - ⬜ Push notifications for deadlines (requires backend + VAPID keys)
 - ⬜ Mobile-optimized touch targets for all pages
 
@@ -246,8 +251,8 @@ These are the additional features suggested to make CaseBuddy truly agentic:
 
 ### Multi-Agent Workflows
 - ⬜ Maya intake → auto-creates case → briefs Lex (research), Doc (draft retainer), Sol (SOL deadline), Max (file watch)
-- ⬜ "Send to Rex" button: push any case from CaseManager directly into Trial Simulator with case context pre-loaded
-- ⬜ Verdict Predictor → "Consult a specialist" button (routes to best-matched lawyer in LegalTeam)
+- ✅ "Send to Agent" panel: CaseManager shows quick links to Trial Simulator (Rex), Witness Prep (Rex), Jury Sim (Jules), Strategy Room (Lex), Deadline Tracker (Sol)
+- ✅ Verdict Predictor → "Consult Jules" + "Run Jury Simulation" cross-links
 
 ### Voice & Real-Time
 - ⬜ Firm-wide floating voice assistant (push-to-talk, any page) — calls the most relevant agent

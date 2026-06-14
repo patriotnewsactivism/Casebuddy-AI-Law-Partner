@@ -5,6 +5,7 @@ import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
@@ -174,7 +175,10 @@ const StatementBuilder = () => {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Theory of the Case *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm text-slate-400">Theory of the Case *</label>
+                <VoiceMicButton size={15} onTranscript={t => setTheory(prev => prev + (prev ? ' ' : '') + t)} />
+              </div>
               <textarea value={theory} onChange={e => setTheory(e.target.value)}
                 placeholder="e.g. My client acted in self-defense after being threatened. The prosecution's case relies entirely on a single unreliable witness with motive to lie."
                 rows={4}

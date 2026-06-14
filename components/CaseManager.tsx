@@ -1,8 +1,9 @@
 
 import React, { useContext, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { Case, CaseStatus } from '../types';
-import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library } from 'lucide-react';
+import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock } from 'lucide-react';
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
@@ -195,6 +196,27 @@ const CaseManager = () => {
               <div>
                 <span className="text-slate-400 block">Summary</span>
                 <span className="text-slate-300 leading-relaxed">{activeCase.summary}</span>
+              </div>
+            </div>
+            {/* Cross-agent quick actions */}
+            <div className="mt-5 pt-4 border-t border-slate-700 space-y-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Send to Agent</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Link to="/app/practice" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/25 text-yellow-400 hover:bg-yellow-500/20 transition-colors text-sm font-medium">
+                  <Gavel size={15} /> 🎯 Trial Simulator with Rex
+                </Link>
+                <Link to="/app/witnesses" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/25 text-yellow-400 hover:bg-yellow-500/20 transition-colors text-sm font-medium">
+                  <Scale size={15} /> 🎯 Witness Prep with Rex
+                </Link>
+                <Link to="/app/jury-sim" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm font-medium">
+                  <Scale size={15} /> 🧠 Jury Simulator with Jules
+                </Link>
+                <Link to="/app/strategy" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-400 hover:bg-blue-500/20 transition-colors text-sm font-medium">
+                  <BrainCircuit size={15} /> 📚 Strategy Room with Lex
+                </Link>
+                <Link to="/app/deadlines" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-400 hover:bg-orange-500/20 transition-colors text-sm font-medium">
+                  <Clock size={15} /> ⏰ Track Deadlines with Sol
+                </Link>
               </div>
             </div>
           </div>

@@ -230,13 +230,24 @@ const SpecialistCard = ({ specialist, isActive, onClick, hasHistory }: {
   </button>
 );
 
+const SESSIONS_KEY = 'casebuddy_legal_sessions';
+
 const LegalTeam: React.FC = () => {
   const { activeCase } = useContext(AppContext);
   const [activeId, setActiveId] = useState<string>(LEGAL_SPECIALISTS[0].id);
-  const [sessions, setSessions] = useState<Record<string, ConsultationSession>>({});
+  const [sessions, setSessions] = useState<Record<string, ConsultationSession>>(() => {
+    try {
+      const saved = localStorage.getItem(SESSIONS_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [loading, setLoading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)); } catch {}
+  }, [sessions]);
 
   const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId)!
 

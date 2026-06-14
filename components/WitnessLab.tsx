@@ -3,9 +3,10 @@ import { MOCK_WITNESSES } from '../constants';
 import { AppContext } from '../App';
 import { generateWitnessResponse, generateWitnessCoaching } from '../services/geminiService';
 import { Message, Witness } from '../types';
-import { Send, Mic, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
+import { Send, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
 
 const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
@@ -209,9 +210,7 @@ const WitnessLab = () => {
               className="flex-1 bg-transparent border-none focus:ring-0 text-white px-4 py-3 placeholder-slate-500"
               disabled={isTyping}
             />
-            <button type="button" className="p-2 text-slate-400 hover:text-white transition-colors">
-              <Mic size={20} />
-            </button>
+            <VoiceMicButton size={20} onTranscript={t => setInput(prev => prev + (prev ? ' ' : '') + t)} />
             <button 
               type="submit" 
               disabled={!input.trim() || isTyping}

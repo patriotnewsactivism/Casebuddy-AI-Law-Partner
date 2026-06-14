@@ -5,6 +5,7 @@ import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2 } from 
 import { GoogleGenAI, Type } from "@google/genai";
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
@@ -255,9 +256,12 @@ Generate the complete document ready for attorney review.`;
 
           {/* Custom Instructions */}
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Additional Instructions (Optional)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-slate-300">
+                Additional Instructions (Optional)
+              </label>
+              <VoiceMicButton size={16} onTranscript={t => setCustomPrompt(prev => prev + (prev ? ' ' : '') + t)} />
+            </div>
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}

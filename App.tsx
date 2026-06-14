@@ -30,6 +30,7 @@ import JurySimulator from './components/JurySimulator';
 import Pricing from './components/Pricing';
 import OnboardingModal from './components/OnboardingModal';
 import Integrations from './components/Integrations';
+import DeadlineTracker from './components/DeadlineTracker';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId } from './utils/storage';
@@ -74,6 +75,7 @@ const NAV_GROUPS = [
     items: [
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
+      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
     ]
   },
@@ -277,6 +279,7 @@ const App = () => {
           <Route path="/app/client-update" element={<Layout><ClientUpdate /></Layout>} />
           <Route path="/app/legal-team" element={<Layout><LegalTeam /></Layout>} />
           <Route path="/app/integrations" element={<Layout><Integrations /></Layout>} />
+          <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
