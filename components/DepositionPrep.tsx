@@ -3,6 +3,10 @@ import { AppContext } from '../App';
 import { generateDepositionQuestions } from '../services/geminiService';
 import { ClipboardList, Loader, ChevronDown, ChevronUp, Copy, Download, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
 interface DepoSession {
   id: string;
@@ -171,6 +175,7 @@ const DepositionPrep = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <AgentHeader agent={REX} compact />
       <div className="flex items-center gap-3">
         <ClipboardList className="text-gold-500" size={32} />
         <div>

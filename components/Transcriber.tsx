@@ -8,6 +8,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { transcribeAudio, performOCR, analyzeTranscription } from '../services/geminiService';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
 
 type FileMode = 'audio' | 'ocr';
 
@@ -245,7 +249,7 @@ const Transcriber = () => {
   return (
     <div className="min-h-screen bg-slate-900 p-4 sm:p-6 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
-
+        <AgentHeader agent={MAX} compact />
         {/* Header */}
         <div>
           <div className="flex items-center gap-3 mb-1">

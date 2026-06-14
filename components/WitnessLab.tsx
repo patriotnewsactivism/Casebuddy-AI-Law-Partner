@@ -4,6 +4,10 @@ import { AppContext } from '../App';
 import { generateWitnessResponse, generateWitnessCoaching } from '../services/geminiService';
 import { Message, Witness } from '../types';
 import { Send, Mic, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
 interface CoachingTip {
   suggestion: string;
@@ -101,7 +105,9 @@ const WitnessLab = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex gap-4">
+    <div className="space-y-4">
+      <AgentHeader agent={REX} compact />
+      <div className="h-[calc(100vh-10rem)] flex gap-4">
       {/* Left Sidebar: Witness Selection */}
       <div className="w-64 flex flex-col gap-4 bg-slate-800 border border-slate-700 rounded-xl p-4 overflow-y-auto hidden lg:flex">
         <h3 className="text-white font-serif font-bold px-2">Witness List</h3>
@@ -264,6 +270,7 @@ const WitnessLab = () => {
             {isTyping ? 'Generating coaching...' : 'Ask a question to get coaching tips'}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

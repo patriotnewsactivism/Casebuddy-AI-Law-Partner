@@ -6,6 +6,10 @@ import { CoachingAnalysis, Message, TrialPhase, SimulationMode } from '../types'
 import { Mic, MicOff, Activity, Volume2, AlertTriangle, BarChart2, Lightbulb, AlertCircle, PlayCircle, MessageSquare, BookOpen, Sword, GraduationCap, User, Gavel, ArrowLeft, FileText, XCircle, Users, Scale } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration, Blob } from "@google/genai";
 import { getTrialSimSystemInstruction } from '../services/geminiService';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 import { Link } from 'react-router-dom';
 
 // --- Audio Utils for Live API ---
@@ -351,6 +355,7 @@ const TrialSim = () => {
 
   const renderSetup = () => (
     <div className="max-w-5xl mx-auto space-y-8 p-4">
+       <AgentHeader agent={REX} compact />
        <div className="text-center mb-12">
           <h1 className="text-4xl font-serif font-bold text-white mb-4">Trial Simulator</h1>
           <p className="text-slate-400 max-w-2xl mx-auto">
