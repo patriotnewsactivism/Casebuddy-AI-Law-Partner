@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Send, MessageSquare, ChevronRight, RotateCcw, Scale, Mic, MicOff, Info, Briefcase } from 'lucide-react';
+import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
 import { consultSpecialist } from '../services/geminiService';
@@ -67,12 +67,13 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
   );
 };
 
-const ChatPanel = ({ specialist, session, onSend, onReset, loading }: {
+const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack }: {
   specialist: LegalSpecialist;
   session: ConsultationSession;
   onSend: (text: string) => void;
   onReset: () => void;
   loading: boolean;
+  onBack?: () => void;
 }) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -94,8 +95,15 @@ const ChatPanel = ({ specialist, session, onSend, onReset, loading }: {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-        <AgentHeader agent={specialist} compact />
+      <div className="p-3 sm:p-4 border-b border-slate-800 flex items-center justify-between gap-2 sm:gap-3 shrink-0">
+        {onBack && (
+          <button onClick={onBack} className="md:hidden p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors shrink-0">
+            <ChevronLeft size={20} />
+          </button>
+        )}
+        <div className="flex-1 min-w-0">
+          <AgentHeader agent={specialist} compact />
+        </div>
         <button onClick={onReset} title="New consultation"
           className="p-2 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors shrink-0">
           <RotateCcw size={16} />
@@ -228,8 +236,9 @@ const LegalTeam: React.FC = () => {
   const [sessions, setSessions] = useState<Record<string, ConsultationSession>>({});
   const [loading, setLoading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [mobileShowChat, setMobileShowChat] = useState(false);
 
-  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId)!;
+  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId)!
 
   const getSession = (id: string): ConsultationSession =>
     sessions[id] || { specialistId: id, messages: [] };
@@ -283,21 +292,21 @@ const LegalTeam: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <div className="mb-6 shrink-0">
-        <div className="flex items-start justify-between gap-4">
+      <div className="mb-4 sm:mb-6 shrink-0">
+        <div className="flex items-start justify-between gap-2 sm:gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white font-serif flex items-center gap-3">
-              <Scale className="text-gold-500" size={28} />
+            <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif flex items-center gap-2 sm:gap-3">
+              <Scale className="text-gold-500" size={24} />
               Legal Team
             </h1>
-            <p className="text-slate-400 mt-1">Consult with AI lawyers specialized in 12 areas of law.</p>
+            <p className="text-slate-400 mt-1 text-sm">Consult with AI lawyers in 12 practice areas.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {activeCase && (
-              <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs">
+              <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs">
                 <Briefcase size={12} className="text-gold-400" />
-                <span className="text-slate-300 font-medium">{activeCase.title}</span>
-                <span className="text-slate-500">· Context active</span>
+                <span className="text-slate-300 font-medium max-w-[120px] truncate">{activeCase.title}</span>
+                <span className="text-slate-500">· active</span>
               </div>
             )}
             <button onClick={() => setShowInfo(!showInfo)}
@@ -308,16 +317,16 @@ const LegalTeam: React.FC = () => {
         </div>
 
         {showInfo && (
-          <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-200">
-            <strong>Disclaimer:</strong> {DISCLAIMER} These AI lawyers provide educational guidance to help attorneys prepare, research, and think through legal issues — not to replace licensed counsel.
-            {activeCase && <span className="block mt-1 text-amber-300">Your active case "{activeCase.title}" is being used as context for all consultations.</span>}
+          <div className="mt-3 p-3 sm:p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs sm:text-sm text-amber-200">
+            <strong>Disclaimer:</strong> {DISCLAIMER} These AI lawyers provide educational guidance — not to replace licensed counsel.
+            {activeCase && <span className="block mt-1 text-amber-300">Active case "{activeCase.title}" is being used as context.</span>}
           </div>
         )}
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
-        {/* Specialist list */}
-        <div className="w-72 shrink-0 overflow-y-auto space-y-2 pr-1">
+        {/* Specialist list — full-width on mobile when chat is hidden */}
+        <div className={`${mobileShowChat ? 'hidden md:block' : 'block'} w-full md:w-72 shrink-0 overflow-y-auto space-y-2 pr-1`}>
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <MessageSquare size={12} />
             Select a Specialist
@@ -327,14 +336,14 @@ const LegalTeam: React.FC = () => {
               key={s.id}
               specialist={s}
               isActive={s.id === activeId}
-              onClick={() => setActiveId(s.id)}
+              onClick={() => { setActiveId(s.id); setMobileShowChat(true); }}
               hasHistory={(sessions[s.id]?.messages.length ?? 0) > 0}
             />
           ))}
         </div>
 
-        {/* Chat panel */}
-        <div className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        {/* Chat panel — full-width on mobile when shown */}
+        <div className={`${mobileShowChat ? 'flex flex-col' : 'hidden md:flex md:flex-col'} flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden`}>
           <ChatPanel
             key={activeId}
             specialist={specialist}
@@ -342,6 +351,7 @@ const LegalTeam: React.FC = () => {
             onSend={handleSend}
             onReset={handleReset}
             loading={loading}
+            onBack={() => setMobileShowChat(false)}
           />
         </div>
       </div>

@@ -207,13 +207,13 @@ const LandingPage = () => {
             The AI Law Firm for Winning Attorneys
           </div>
 
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold font-serif leading-[1.1] mb-6 animate-slide-up">
+          <h1 className="text-3xl sm:text-5xl lg:text-7xl font-bold font-serif leading-[1.1] mb-6 animate-slide-up">
             Your Complete{' '}
             <span className="text-gradient-gold">AI Legal Team</span>
             {' '}Is Ready
           </h1>
 
-          <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <p className="text-base sm:text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
             8 specialized AI agents + 12 practice-area lawyers. Trial simulation, witness prep, jury analysis, strategy, drafting — all in one platform. Built for attorneys who win.
           </p>
 
@@ -226,7 +226,7 @@ const LandingPage = () => {
             </a>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-500 animate-fade-in" style={{ animationDelay: '0.3s' }}>
+          <div className="flex flex-wrap justify-center gap-3 sm:gap-6 text-xs sm:text-sm text-slate-500 animate-fade-in" style={{ animationDelay: '0.3s' }}>
             {['No credit card required', '14-day free trial', 'Cancel anytime', 'No API costs included'].map(t => (
               <span key={t} className="flex items-center gap-1.5">
                 <CheckCircle size={14} className="text-green-500" />
@@ -241,11 +241,11 @@ const LandingPage = () => {
       <div className="section-divider" />
       <section className="py-12 glass">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
             {STATS.map(s => (
               <div key={s.label} className="text-center">
-                <p className="text-4xl font-bold text-gradient-gold font-serif mb-1">{s.value}{s.suffix}</p>
-                <p className="text-sm text-slate-500">{s.label}</p>
+                <p className="text-3xl sm:text-4xl font-bold text-gradient-gold font-serif mb-1">{s.value}{s.suffix}</p>
+                <p className="text-xs sm:text-sm text-slate-500">{s.label}</p>
               </div>
             ))}
           </div>
@@ -254,13 +254,13 @@ const LandingPage = () => {
       <div className="section-divider" />
 
       {/* ── Meet the AI Team ─────────────────────────────────────────────── */}
-      <section id="agents" className="py-24 relative overflow-hidden">
+      <section id="agents" className="py-12 sm:py-24 relative overflow-hidden">
         <div className="orb orb-violet w-80 h-80 right-0 top-10 opacity-10 pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
+          <div className="text-center mb-8 sm:mb-14">
             <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Your AI Firm</p>
-            <h2 className="text-4xl sm:text-5xl font-bold font-serif mb-4">Meet the Team</h2>
-            <p className="text-slate-400 max-w-xl mx-auto">8 specialized AI agents that handle your case from intake to verdict.</p>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">Meet the Team</h2>
+            <p className="text-slate-400 max-w-xl mx-auto text-sm sm:text-base">8 specialized AI agents that handle your case from intake to verdict.</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -290,15 +290,15 @@ const LandingPage = () => {
       </section>
 
       {/* ── Specialist Lawyers ────────────────────────────────────────────── */}
-      <section id="lawyers" className="py-24 bg-gradient-to-b from-transparent via-slate-900/30 to-transparent">
+      <section id="lawyers" className="py-12 sm:py-24 bg-gradient-to-b from-transparent via-slate-900/30 to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
+          <div className="text-center mb-8 sm:mb-14">
             <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Legal Consultation</p>
-            <h2 className="text-4xl sm:text-5xl font-bold font-serif mb-4">12 AI Lawyers On Call</h2>
-            <p className="text-slate-400 max-w-xl mx-auto">Multi-turn consultations with AI specialists who know their practice area cold. Available 24/7. No billing clock.</p>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">12 AI Lawyers On Call</h2>
+            <p className="text-slate-400 max-w-xl mx-auto text-sm sm:text-base">Multi-turn consultations with AI specialists who know their practice area cold. Available 24/7. No billing clock.</p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-10">
             {LEGAL_SPECIALISTS.map(s => (
               <Link key={s.id} to="/app/legal-team"
                 className={`group flex items-center gap-3 p-4 rounded-xl border transition-all hover:scale-[1.02] ${s.bgClass} ${s.borderClass}`}>
@@ -311,7 +311,7 @@ const LandingPage = () => {
             ))}
           </div>
 
-          <div className="glass-gold rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="glass-gold rounded-2xl p-4 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
             <div>
               <p className="font-bold text-lg text-white mb-1">Consult any specialist now</p>
               <p className="text-slate-400 text-sm">Full multi-turn chat. Active case context injected automatically. Voice input supported.</p>
@@ -333,12 +333,12 @@ const LandingPage = () => {
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
-      <section id="features" className="py-24">
+      <section id="features" className="py-12 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
+          <div className="text-center mb-8 sm:mb-14">
             <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Platform</p>
-            <h2 className="text-4xl sm:text-5xl font-bold font-serif mb-4">Every Tool You Need to Win</h2>
-            <p className="text-slate-400 max-w-xl mx-auto">CaseBuddy covers the full litigation lifecycle — from intake through verdict.</p>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">Every Tool You Need to Win</h2>
+            <p className="text-slate-400 max-w-xl mx-auto text-sm sm:text-base">CaseBuddy covers the full litigation lifecycle — from intake through verdict.</p>
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -356,16 +356,16 @@ const LandingPage = () => {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────────────────────── */}
-      <section id="testimonials" className="py-24 bg-gradient-to-b from-transparent via-slate-900/20 to-transparent">
+      <section id="testimonials" className="py-12 sm:py-24 bg-gradient-to-b from-transparent via-slate-900/20 to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
+          <div className="text-center mb-8 sm:mb-14">
             <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Social Proof</p>
-            <h2 className="text-4xl sm:text-5xl font-bold font-serif mb-4">Trusted by Winning Attorneys</h2>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">Trusted by Winning Attorneys</h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
             {TESTIMONIALS.map((t, i) => (
-              <div key={i} className="card-premium p-7 flex flex-col">
+              <div key={i} className="card-premium p-5 sm:p-7 flex flex-col">
                 <StarRating rating={t.rating} />
                 <p className="text-slate-300 my-5 leading-relaxed flex-1 italic text-sm">"{t.quote}"</p>
                 <div className="border-t border-white/5 pt-4">
@@ -380,15 +380,15 @@ const LandingPage = () => {
       </section>
 
       {/* ── CTA ──────────────────────────────────────────────────────────── */}
-      <section className="py-24 relative overflow-hidden">
+      <section className="py-12 sm:py-24 relative overflow-hidden">
         <div className="orb orb-gold w-[500px] h-[500px] -top-20 left-1/2 -translate-x-1/2 opacity-20" />
         <div className="max-w-3xl mx-auto px-4 text-center relative z-10">
-          <div className="card-premium p-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gold-500/10 border border-gold-500/20 mb-6 glow-gold-sm">
-              <Scale size={28} className="text-gold-400" />
+          <div className="card-premium p-6 sm:p-10 md:p-12">
+            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gold-500/10 border border-gold-500/20 mb-5 sm:mb-6 glow-gold-sm">
+              <Scale size={26} className="text-gold-400" />
             </div>
-            <h2 className="text-4xl font-bold font-serif mb-4">Ready to Win More Cases?</h2>
-            <p className="text-slate-400 mb-8 text-lg">Join attorneys already using AI to prepare smarter, argue better, and win more.</p>
+            <h2 className="text-2xl sm:text-4xl font-bold font-serif mb-3 sm:mb-4">Ready to Win More Cases?</h2>
+            <p className="text-slate-400 mb-6 sm:mb-8 text-base sm:text-lg">Join attorneys already using AI to prepare smarter, argue better, and win more.</p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/app" className="btn-gold text-base px-8 py-3.5 glow-gold">
                 Start Free Trial <ArrowRight size={18} />
