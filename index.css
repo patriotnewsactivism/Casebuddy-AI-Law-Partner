@@ -239,5 +239,7 @@ input:focus, textarea:focus, select:focus {
 
 /* ─── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .card:hover { transform: none; }
+  .card:hover   { transform: none; }
+  .card-premium { border-radius: 1rem; }
+  #root         { overflow-x: hidden; }
 }

@@ -7,7 +7,7 @@ import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const StatCard = ({ icon: Icon, title, value, subtext, color }: any) => (
-  <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+  <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-shadow">
     <div className="flex items-start justify-between">
       <div>
         <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
@@ -23,10 +23,10 @@ const StatCard = ({ icon: Icon, title, value, subtext, color }: any) => (
 
 const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
   <Link to={agent.route}
-    className={`group flex flex-col items-center gap-2 p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
-    <div className="text-3xl">{agent.emoji}</div>
-    <p className={`text-sm font-bold ${agent.colorClass}`}>{agent.name}</p>
-    <p className="text-xs text-slate-500 text-center leading-tight">{agent.role}</p>
+    className={`group flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
+    <div className="text-2xl sm:text-3xl">{agent.emoji}</div>
+    <p className={`text-xs sm:text-sm font-bold text-center ${agent.colorClass}`}>{agent.name}</p>
+    <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
   </Link>
 );
 
@@ -44,14 +44,14 @@ const Dashboard = () => {
   }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white font-serif">Welcome back, Counselor</h1>
-        <p className="text-slate-400 mt-2">Here is the status of your active litigation.</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif">Welcome back, Counselor</h1>
+        <p className="text-slate-400 mt-1 sm:mt-2 text-sm sm:text-base">Here is the status of your active litigation.</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         <StatCard
           icon={Briefcase}
           title="Active Cases"
@@ -83,7 +83,7 @@ const Dashboard = () => {
       </div>
 
       {/* Meet the Team */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
+      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-4 sm:p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -100,7 +100,7 @@ const Dashboard = () => {
           </Link>
         </div>
 
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2 sm:gap-3">
           {OPERATIONAL_AGENTS.map(agent => (
             <AgentTeamCard key={agent.id} agent={agent} />
           ))}
@@ -108,7 +108,7 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
 
         {/* Left: Activity Chart / Empty State */}
         <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col">
