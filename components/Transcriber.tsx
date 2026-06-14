@@ -1,19 +1,23 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useContext, useEffect, useRef, useCallback } from 'react';
 import { AppContext } from '../App';
 import { Transcription } from '../types';
 import {
   Mic, Upload, Trash2, Download, Tag, FileAudio, Clock, Users, Save,
   Edit2, X, FileImage, FileText, Brain, ChevronDown, ChevronUp, AlertCircle,
-  CheckCircle, Loader, Zap, Eye
+  CheckCircle, Loader, Zap, Eye, Radio, Square
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { transcribeAudio, performOCR, analyzeTranscription } from '../services/geminiService';
+import { transcribeWithDeeepgram, startDeepgramLiveSession } from '../services/integrationService';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
 
+const DEEPGRAM_KEY_PRESENT = !!(import.meta as any).env?.VITE_DEEPGRAM_API_KEY;
+
 type FileMode = 'audio' | 'ocr';
+type TranscriptionEngine = 'gemini' | 'deepgram';
 
 interface TranscriptionWithAnalysis extends Transcription {
   analysis?: {
@@ -40,6 +44,14 @@ const Transcriber = () => {
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [progress, setProgress] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Deepgram engine toggle
+  const [engine, setEngine] = useState<TranscriptionEngine>('gemini');
+
+  // Live transcription state
+  const [isLive, setIsLive] = useState(false);
+  const [liveText, setLiveText] = useState('');
+  const liveStopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (activeCase) {
@@ -89,14 +101,26 @@ const Transcriber = () => {
     }
 
     setIsProcessing(true);
-    setProgress(fileMode === 'audio' ? 'Sending audio to Gemini AI...' : 'Extracting text via OCR...');
+    const engineLabel = fileMode === 'audio' && engine === 'deepgram' ? 'Deepgram' : 'Gemini AI';
+    setProgress(fileMode === 'audio' ? `Sending audio to ${engineLabel}...` : 'Extracting text via OCR...');
 
     try {
       let extractedText = '';
 
       if (fileMode === 'audio') {
-        setProgress('Transcribing audio — this may take a moment...');
-        extractedText = await transcribeAudio(selectedFile);
+        if (engine === 'deepgram') {
+          setProgress('Transcribing audio via Deepgram — this may take a moment...');
+          try {
+            extractedText = await transcribeWithDeeepgram(selectedFile);
+          } catch (deepgramErr) {
+            toast.error('Deepgram failed — falling back to Gemini AI.');
+            setProgress('Falling back to Gemini AI transcription...');
+            extractedText = await transcribeAudio(selectedFile);
+          }
+        } else {
+          setProgress('Transcribing audio — this may take a moment...');
+          extractedText = await transcribeAudio(selectedFile);
+        }
       } else {
         setProgress('Running OCR on document/image...');
         extractedText = await performOCR(selectedFile);
@@ -163,6 +187,50 @@ const Transcriber = () => {
       setIsAnalyzing(false);
     }
   };
+
+  const startLiveTranscription = useCallback(() => {
+    setLiveText('');
+    try {
+      const session = startDeepgramLiveSession((chunk: string) => {
+        setLiveText(prev => prev ? `${prev} ${chunk}` : chunk);
+      });
+      liveStopRef.current = session.stop;
+      setIsLive(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start live transcription.');
+    }
+  }, []);
+
+  const stopLiveTranscription = useCallback(() => {
+    if (liveStopRef.current) {
+      liveStopRef.current();
+      liveStopRef.current = null;
+    }
+    setIsLive(false);
+
+    if (!activeCase || !liveText.trim()) {
+      if (!liveText.trim()) toast.info('No live transcript captured.');
+      return;
+    }
+
+    const newRecord: TranscriptionWithAnalysis = {
+      id: Date.now().toString(),
+      caseId: activeCase.id,
+      fileName: `Live Recording ${new Date().toLocaleString()}`,
+      text: liveText.trim(),
+      timestamp: Date.now(),
+      tags: ['live', 'deepgram'],
+      notes: '',
+      speakers: [],
+    };
+
+    const updated = [newRecord, ...transcriptions];
+    saveTranscriptions(updated);
+    setSelectedTranscription(newRecord);
+    setShowAnalysis(true);
+    setLiveText('');
+    toast.success('Live transcript saved!');
+  }, [activeCase, liveText, transcriptions]);
 
   const deleteTranscription = (id: string) => {
     if (!window.confirm('Delete this transcription?')) return;
@@ -288,6 +356,49 @@ const Transcriber = () => {
             </button>
           </div>
 
+          {/* Transcription Engine Toggle — audio mode only */}
+          {fileMode === 'audio' && (
+            <div className="mb-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm text-slate-400 font-medium">Transcription Engine:</span>
+                <div className="flex gap-1 bg-slate-900/60 border border-slate-700 rounded-lg p-1">
+                  <button
+                    onClick={() => setEngine('gemini')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      engine === 'gemini'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Gemini AI
+                  </button>
+                  {DEEPGRAM_KEY_PRESENT ? (
+                    <button
+                      onClick={() => setEngine('deepgram')}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                        engine === 'deepgram'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Deepgram {engine === 'deepgram' && <CheckCircle size={11} />}
+                    </button>
+                  ) : (
+                    <span className="px-3 py-1.5 text-xs text-slate-600 cursor-not-allowed select-none">
+                      Deepgram (locked)
+                    </span>
+                  )}
+                </div>
+              </div>
+              {!DEEPGRAM_KEY_PRESENT && (
+                <p className="mt-1.5 text-xs text-slate-500 flex items-center gap-1">
+                  <AlertCircle size={11} className="text-amber-500 shrink-0" />
+                  Add <code className="text-amber-400 font-mono">VITE_DEEPGRAM_API_KEY</code> to unlock Deepgram (better accuracy for depositions)
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-3">
             <label className="block">
               <span className="text-sm text-slate-400 mb-1 block">
@@ -341,8 +452,59 @@ const Transcriber = () => {
             </button>
           </div>
 
+          {/* Live Transcription — Deepgram only */}
+          {fileMode === 'audio' && engine === 'deepgram' && DEEPGRAM_KEY_PRESENT && (
+            <div className="mt-4 border-t border-slate-700 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {isLive && (
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-white">
+                    {isLive ? 'Live Recording...' : 'Live Transcription'}
+                  </span>
+                </div>
+                <button
+                  onClick={isLive ? stopLiveTranscription : startLiveTranscription}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                    isLive
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
+                >
+                  {isLive ? (
+                    <><Square size={14} /> Stop Recording</>
+                  ) : (
+                    <><Radio size={14} /> Start Live</>
+                  )}
+                </button>
+              </div>
+
+              {(isLive || liveText) && (
+                <div className="bg-slate-900/70 border border-slate-600 rounded-lg p-3 min-h-[80px] max-h-48 overflow-y-auto">
+                  {liveText ? (
+                    <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed">{liveText}</p>
+                  ) : (
+                    <p className="text-slate-500 text-sm italic animate-pulse">Listening... speak now</p>
+                  )}
+                </div>
+              )}
+
+              {isLive && liveText && (
+                <p className="text-xs text-slate-500">
+                  Click "Stop Recording" to save the transcript to this case.
+                </p>
+              )}
+            </div>
+          )}
+
           <p className="mt-3 text-xs text-slate-500">
-            Powered by Gemini AI · All processing is direct — no data leaves the Gemini API
+            {engine === 'deepgram' && fileMode === 'audio'
+              ? 'Powered by Deepgram nova-2 · Audio sent directly to Deepgram API'
+              : 'Powered by Gemini AI · All processing is direct — no data leaves the Gemini API'}
           </p>
         </div>
 

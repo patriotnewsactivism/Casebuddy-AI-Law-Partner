@@ -2,6 +2,10 @@
 import React, { useState } from 'react';
 import { Zap, CheckCircle2, AlertCircle, ExternalLink, Search, Filter } from 'lucide-react';
 import { getIntegrationStatuses, IntegrationStatus } from '../services/integrationService';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
 
 const CATEGORY_LABELS: Record<string, string> = {
   all: 'All',
@@ -80,6 +84,7 @@ const Integrations: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <AgentHeader agent={MAX} compact />
       <div>
         <h1 className="text-3xl font-bold text-white font-serif flex items-center gap-3">
           <Zap className="text-gold-500" size={28} />

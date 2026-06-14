@@ -1,10 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Search,
-  UserPlus, Clock, BarChart2, Sparkles
+  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -31,14 +31,8 @@ import Pricing from './components/Pricing';
 import OnboardingModal from './components/OnboardingModal';
 import Integrations from './components/Integrations';
 import DeadlineTracker from './components/DeadlineTracker';
-// ── New AI Law Firm Upgrades ──────────────────────────────────────────────────
-import AICopilot from './components/AICopilot';
-import DocumentCenter from './components/DocumentCenter';
-import ClientIntake from './components/ClientIntake';
-import DeadlineEngine from './components/DeadlineEngine';
-import CaseStrengthAnalyzer from './components/CaseStrengthAnalyzer';
-import FOIATracker from './components/FOIATracker';
-// ─────────────────────────────────────────────────────────────────────────────
+import ActiveCaseBar from './components/ActiveCaseBar';
+import IntakePage from './components/IntakePage';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId } from './utils/storage';
@@ -50,7 +44,6 @@ const NAV_GROUPS = [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/intake', icon: UserPlus, label: 'Client Intake', badge: 'NEW' },
     ]
   },
   {
@@ -73,11 +66,9 @@ const NAV_GROUPS = [
   {
     label: 'Drafting & Strategy',
     items: [
-      { path: '/app/document-center', icon: FileText, label: 'Document Center', badge: 'NEW' },
       { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
       { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
       { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
-      { path: '/app/case-strength', icon: BarChart2, label: 'Case Strength AI', badge: 'NEW' },
       { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
     ]
   },
@@ -86,9 +77,7 @@ const NAV_GROUPS = [
     items: [
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
-      { path: '/app/deadline-engine', icon: Clock, label: 'Deadline & SOL Engine', badge: 'NEW' },
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
-      { path: '/app/foia', icon: Search, label: 'FOIA Tracker', badge: 'NEW' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
     ]
   },
@@ -150,7 +139,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
                     <Icon size={17} />
                     <span className="flex-1">{item.label}</span>
                     {item.badge && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${item.badge === 'NEW' ? 'bg-gold-500/30 border border-gold-500/50 text-gold-300' : 'bg-gold-500/20 border border-gold-500/40 text-gold-400'}`}>
+                      <span className="text-xs bg-gold-500/20 border border-gold-500/40 text-gold-400 px-1.5 py-0.5 rounded-full font-bold">
                         {item.badge}
                       </span>
                     )}
@@ -205,26 +194,24 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-x-hidden">
-          {children}
+        <main className="flex-1 flex flex-col overflow-x-hidden">
+          <ActiveCaseBar />
+          <div className="flex-1 p-4 sm:p-6 md:p-8">
+            {children}
+          </div>
         </main>
       </div>
-
-      {/* Global AI Copilot — accessible from every page */}
-      <AICopilot />
     </div>
   );
 };
 
 export const AppContext = React.createContext<{
   cases: Case[];
-  activeCaseId: string | null;
   activeCase: Case | null;
   setActiveCase: (c: Case) => void;
   addCase: (c: Case) => void;
 }>({
   cases: [],
-  activeCaseId: null,
   activeCase: null,
   setActiveCase: () => {},
   addCase: () => {},
@@ -237,7 +224,6 @@ const App = () => {
     const saved = loadCases();
     return saved.length > 0 ? saved : MOCK_CASES;
   });
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(() => loadActiveCaseId());
   const [activeCase, setActiveCaseState] = useState<Case | null>(() => {
     const savedId = loadActiveCaseId();
     if (!savedId) return null;
@@ -248,7 +234,6 @@ const App = () => {
 
   const setActiveCase = (c: Case) => {
     setActiveCaseState(c);
-    setActiveCaseId(c.id);
     saveActiveCaseId(c.id);
   };
 
@@ -271,7 +256,7 @@ const App = () => {
   };
 
   return (
-    <AppContext.Provider value={{ cases, activeCaseId, activeCase, setActiveCase, addCase }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase }}>
       <HashRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
@@ -280,8 +265,8 @@ const App = () => {
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/tos" element={<TermsOfService />} />
           <Route path="/pricing" element={<Pricing />} />
+          <Route path="/start" element={<IntakePage />} />
 
-          {/* ── Core ── */}
           <Route path="/app" element={<Layout><Dashboard /></Layout>} />
           <Route path="/app/cases" element={<Layout><CaseManager /></Layout>} />
           <Route path="/app/practice" element={<Layout><ArgumentPractice /></Layout>} />
@@ -301,13 +286,6 @@ const App = () => {
           <Route path="/app/legal-team" element={<Layout><LegalTeam /></Layout>} />
           <Route path="/app/integrations" element={<Layout><Integrations /></Layout>} />
           <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
-
-          {/* ── NEW: AI Law Firm Upgrades ── */}
-          <Route path="/app/document-center" element={<Layout><DocumentCenter /></Layout>} />
-          <Route path="/app/intake" element={<Layout><ClientIntake /></Layout>} />
-          <Route path="/app/deadline-engine" element={<Layout><DeadlineEngine /></Layout>} />
-          <Route path="/app/case-strength" element={<Layout><CaseStrengthAnalyzer /></Layout>} />
-          <Route path="/app/foia" element={<Layout><FOIATracker /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
