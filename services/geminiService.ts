@@ -617,6 +617,239 @@ Extract key facts, assess its relevance (0-100), identify any concerns or weakne
   return JSON.parse(response.text || '{}');
 };
 
+export const consultSpecialist = async (
+  specialistSystemInstruction: string,
+  history: { role: 'user' | 'model'; parts: { text: string }[] }[],
+  newMessage: string,
+  caseContext?: string
+): Promise<string> => {
+  const contextPrefix = caseContext
+    ? `\n\nACTIVE CASE CONTEXT (use this to inform your advice):\n${caseContext}\n\n`
+    : '';
+
+  const fullInstruction = specialistSystemInstruction + contextPrefix;
+
+  const chat = ai.chats.create({
+    model: 'gemini-2.5-flash',
+    config: {
+      systemInstruction: fullInstruction,
+      temperature: 0.85,
+    },
+    history: history.map(h => ({
+      role: h.role,
+      parts: h.parts,
+    })),
+  });
+
+  const response = await withTimeout(
+    chat.sendMessage({ message: newMessage }),
+    30000
+  );
+
+  if (!response.text) throw new Error('No response from specialist');
+  return response.text;
+};
+
+export const generateWitnessPrepPackage = async (
+  witnessName: string,
+  witnessRole: string,
+  witnessRelationship: string,
+  caseContext: string,
+  strategy: string
+): Promise<{
+  directExam: { topic: string; questions: string[] }[];
+  crossExam: { topic: string; questions: string[] }[];
+  impeachmentStrategy: string;
+  credibilityAssessment: {
+    strengths: string[];
+    vulnerabilities: string[];
+    dangerZones: string[];
+    openingGambit: string;
+    closingQuestion: string;
+  };
+  overallAssessment: string;
+}> => {
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `You are a senior trial attorney preparing a complete witness prep package.
+
+Witness: ${witnessName}
+Role: ${witnessRole}
+Relationship to Case: ${witnessRelationship}
+Case Context: ${caseContext}
+Strategy: ${strategy}
+
+Generate a comprehensive witness preparation package including direct examination questions (organized by topic), cross-examination questions (organized by topic), impeachment strategy, and a credibility assessment.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            directExam: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  topic: { type: Type.STRING },
+                  questions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ['topic', 'questions']
+              }
+            },
+            crossExam: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  topic: { type: Type.STRING },
+                  questions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ['topic', 'questions']
+              }
+            },
+            impeachmentStrategy: { type: Type.STRING },
+            credibilityAssessment: {
+              type: Type.OBJECT,
+              properties: {
+                strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+                vulnerabilities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                dangerZones: { type: Type.ARRAY, items: { type: Type.STRING } },
+                openingGambit: { type: Type.STRING },
+                closingQuestion: { type: Type.STRING }
+              },
+              required: ['strengths', 'vulnerabilities', 'dangerZones', 'openingGambit', 'closingQuestion']
+            },
+            overallAssessment: { type: Type.STRING }
+          },
+          required: ['directExam', 'crossExam', 'impeachmentStrategy', 'credibilityAssessment', 'overallAssessment']
+        }
+      }
+    }),
+    45000
+  );
+  return JSON.parse(response.text || '{}');
+};
+
+export const simulateJurorReaction = async (
+  jurors: { id: number; name: string; background: string; personality: string }[],
+  argumentText: string,
+  argumentType: 'opening' | 'evidence' | 'closing' | 'rebuttal',
+  caseContext: string
+): Promise<{
+  jurorReactions: { id: number; reaction: string; persuasionDelta: number; internalThought: string }[];
+  overallImpact: string;
+}> => {
+  const jurorsDesc = jurors.map(j => `Juror ${j.id} (${j.name}): ${j.background}. Personality: ${j.personality}`).join('\n');
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `You are simulating a jury's reaction to a legal argument.
+
+Case: ${caseContext}
+Argument Type: ${argumentType}
+Argument: "${argumentText}"
+
+Jury panel:
+${jurorsDesc}
+
+For each juror, provide their reaction, how much their persuasion level changed (-20 to +20), and their internal thought. Also give an overall impact assessment.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            jurorReactions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.NUMBER },
+                  reaction: { type: Type.STRING },
+                  persuasionDelta: { type: Type.NUMBER },
+                  internalThought: { type: Type.STRING }
+                },
+                required: ['id', 'reaction', 'persuasionDelta', 'internalThought']
+              }
+            },
+            overallImpact: { type: Type.STRING }
+          },
+          required: ['jurorReactions', 'overallImpact']
+        }
+      }
+    }),
+    30000
+  );
+  return JSON.parse(response.text || '{}');
+};
+
+export const runJuryDeliberation = async (
+  jurors: { id: number; name: string; background: string; personality: string; persuasionLevel: number }[],
+  caseContext: string,
+  evidenceSummary: string
+): Promise<{
+  deliberationExchanges: { jurorId: number; jurorName: string; statement: string }[];
+  finalVote: { guilty: number; notGuilty: number; undecided: number };
+  verdict: string;
+  verdictConfidence: number;
+  keyFactors: string[];
+}> => {
+  const jurorsDesc = jurors.map(j =>
+    `Juror ${j.id} (${j.name}): ${j.background}. Personality: ${j.personality}. Current persuasion level: ${j.persuasionLevel}/100`
+  ).join('\n');
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `You are simulating a realistic jury deliberation.
+
+Case: ${caseContext}
+Evidence Summary: ${evidenceSummary}
+
+Jury panel entering deliberations:
+${jurorsDesc}
+
+Simulate 8-12 exchanges of realistic jury deliberation dialogue. Then provide the final vote, verdict, and key factors that drove the decision.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            deliberationExchanges: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  jurorId: { type: Type.NUMBER },
+                  jurorName: { type: Type.STRING },
+                  statement: { type: Type.STRING }
+                },
+                required: ['jurorId', 'jurorName', 'statement']
+              }
+            },
+            finalVote: {
+              type: Type.OBJECT,
+              properties: {
+                guilty: { type: Type.NUMBER },
+                notGuilty: { type: Type.NUMBER },
+                undecided: { type: Type.NUMBER }
+              },
+              required: ['guilty', 'notGuilty', 'undecided']
+            },
+            verdict: { type: Type.STRING },
+            verdictConfidence: { type: Type.NUMBER },
+            keyFactors: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ['deliberationExchanges', 'finalVote', 'verdict', 'verdictConfidence', 'keyFactors']
+        }
+      }
+    }),
+    45000
+  );
+  return JSON.parse(response.text || '{}');
+};
+
 export const analyzeTranscription = async (
   transcriptText: string,
   caseContext: string,

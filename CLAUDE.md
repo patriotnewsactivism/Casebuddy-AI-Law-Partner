@@ -4,161 +4,140 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**LexSim** is an AI-powered legal trial preparation platform built with React, TypeScript, and Vite. It integrates with Google's Gemini AI to provide:
+**CaseBuddy** is an AI-powered legal trial preparation platform built with React 19, TypeScript, and Vite. The internal package name is `lexsim` (a legacy holdover — the brand is CaseBuddy). It integrates with Google's Gemini AI to provide:
 
 - Interactive witness examination simulations
 - AI-driven trial strategy analysis
 - Real-time courtroom practice with live voice interaction
 - Legal document analysis and drafting assistance
-
-The app uses Google's Gemini API (including advanced features like thinking models, live API with audio, and structured output) to simulate realistic legal scenarios.
+- Jury analysis, deposition prep, evidence vault, verdict prediction
 
 ## Development Commands
 
-### Essential Commands
 ```bash
-# Install dependencies
-npm install
-
-# Run development server (http://localhost:3000)
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
+npm install          # Install dependencies
+npm run dev          # Development server at http://localhost:5000
+npm run build        # Production build
+npm run preview      # Preview production build
 ```
 
 ### Environment Setup
-- Set `GEMINI_API_KEY` in `.env.local` before running the app
-- The Vite config exposes this as `process.env.API_KEY` and `process.env.GEMINI_API_KEY` to the app
+- Set `GEMINI_API_KEY` in `.env.local`
+- Vite exposes it as `process.env.API_KEY`, `process.env.GEMINI_API_KEY`, and `import.meta.env.VITE_GEMINI_API_KEY` (all three aliases are defined in `vite.config.ts`)
 
 ## Architecture
 
-### Core Application Structure
+### Project Layout
 
-**App.tsx** - Main application shell with:
-- HashRouter-based routing (required for static deployment)
-- Global `AppContext` providing case management state (cases, activeCase, setActiveCase, addCase)
-- Sidebar navigation with responsive mobile menu
-- Layout wrapper for all pages
+All source files live at the **repository root** (no `src/` directory):
 
-**Routing:**
-- `/` - Dashboard
-- `/cases` - Case Manager
-- `/witness-lab` - Witness Lab (text-based witness simulation)
-- `/practice` - Trial Simulator (live audio-based courtroom practice)
-- `/strategy` - Strategy Room (AI insights using thinking models)
+```
+App.tsx          # Application shell, routing, AppContext, Sidebar
+index.tsx        # Entry point
+index.css        # Global styles (Tailwind)
+types.ts         # All TypeScript types and enums
+constants.ts     # MOCK_CASES (intentionally empty), MOCK_WITNESSES, MOCK_OPPONENT, MOCK_CASE_TEMPLATES
+components/      # One file per page/feature
+services/        # geminiService.ts — all Gemini API calls
+utils/           # errorHandler.ts, storage.ts, fileValidation.ts
+server/          # db.ts — Drizzle/Postgres stub (vestigial, not wired to the Vite frontend)
+supabase/        # Supabase CLI state files
+```
+
+### Routing (HashRouter — required for static hosting)
+
+Public routes (no Layout wrapper):
+- `/` → `LandingPage`
+- `/privacy-policy` → `PrivacyPolicy`
+- `/tos` → `TermsOfService`
+
+App routes (wrapped in `<Layout>` with sidebar):
+- `/app` → Dashboard
+- `/app/cases` → CaseManager (Case Files)
+- `/app/evidence` → EvidenceVault
+- `/app/practice` → ArgumentPractice (Trial Simulator — live audio)
+- `/app/witness-lab` → WitnessLab
+- `/app/jury` → JuryAnalyzer
+- `/app/deposition` → DepositionPrep
+- `/app/statements` → StatementBuilder
+- `/app/docs` → DraftingAssistant
+- `/app/strategy` → StrategyRoom (thinking models)
+- `/app/verdict` → VerdictPredictor
+- `/app/transcriber` → Transcriber & OCR
+- `/app/client-update` → ClientUpdate
+- `/app/settings` → Settings
 
 ### State Management
 
-The app uses React Context (`AppContext`) for global state:
-- `cases: Case[]` - All cases in the system
-- `activeCase: Case | null` - Currently selected case
-- `setActiveCase(c: Case)` - Set active case
-- `addCase(c: Case)` - Add new case
+`AppContext` (defined in `App.tsx`) provides global case state:
+- `cases: Case[]` / `activeCase: Case | null` / `setActiveCase` / `addCase`
 
-**Important:** `MOCK_CASES` is intentionally empty in `constants.ts`. Real case data should be entered by users. Mock case templates are available in `MOCK_CASE_TEMPLATES` for practice/simulation.
+`utils/storage.ts` provides localStorage persistence with `lexsim_*` keys for cases, active case ID, user preferences, and trial sessions. The storage utilities exist and work but must be explicitly called — `AppContext` does **not** auto-persist on its own.
 
-### AI Service Layer (services/geminiService.ts)
+### AI Service Layer (`services/geminiService.ts`)
 
-All Gemini API interactions are centralized here:
+All Gemini API calls go through here, wrapped with `retryWithBackoff` (3 retries, exponential backoff) and `withTimeout` (30s default) from `utils/errorHandler.ts`.
 
-1. **analyzeDocument** - Structured JSON extraction from legal documents (supports text + images)
-2. **generateWitnessResponse** - Chat-based witness personality simulation (nervous/hostile/cooperative)
-3. **predictStrategy** - Uses `gemini-3-pro-preview` with thinking budget for deep strategic analysis
-4. **generateOpponentResponse** - Simulates opposing counsel in arguments
-5. **getCoachingTip** - Provides real-time feedback with rhetorical analysis and fallacy detection
-6. **getTrialSimSystemInstruction** - Dynamic system instructions generator for multi-phase trial simulation
+Key functions:
+- **analyzeDocument** — structured JSON extraction from legal documents (text + image)
+- **generateWitnessResponse** — personality-driven witness simulation (hostile/nervous/cooperative)
+- **predictStrategy** — deep strategy analysis using `gemini-2.5-pro` with `thinkingConfig`
+- **generateOpponentResponse** — opposing counsel simulation
+- **getCoachingTip** — rhetorical feedback with fallacy detection
+- **getTrialSimSystemInstruction** — dynamic system prompt for multi-phase trial simulation
 
-**Key Models Used:**
-- `gemini-2.5-flash` - Fast responses for chat/witness/opponent simulation
-- `gemini-3-pro-preview` - Deep reasoning for strategy (with `thinkingConfig`)
-- Live API - Audio-based real-time courtroom simulation in ArgumentPractice
+**Models in use:**
+- `gemini-2.5-flash` — fast chat, witness/opponent simulation
+- `gemini-2.5-pro` — strategy (with `thinkingConfig: { thinkingBudget: 2048 }`)
+- `gemini-live-2.5-flash-preview` — live audio in ArgumentPractice
 
-### Components
+**Patterns:**
+- All non-live responses use `responseMimeType: "application/json"` + `responseSchema` for type-safe structured output
+- Live API (ArgumentPractice only) uses function calling: `raiseObjection` and `sendCoachingTip`
+- Audio: PCM 16kHz mono input/output — **not** standard WebM/MP3
 
-**Dashboard.tsx**
-- Overview statistics and charts
-- Displays case distribution by status using Recharts
+### Type System (`types.ts`)
 
-**CaseManager.tsx**
-- CRUD operations for cases
-- Document upload and AI-powered document analysis
-
-**WitnessLab.tsx**
-- Text-based witness cross-examination practice
-- Personality-driven witness responses (hostile, nervous, cooperative)
-
-**ArgumentPractice.tsx** (Most Complex)
-- Live audio-based trial simulation using Gemini Live API
-- Supports multiple trial phases: pre-trial-motions, voir-dire, opening-statement, direct-examination, cross-examination, closing-argument, sentencing
-- Three difficulty modes: learn, practice, trial
-- Real-time objection system with visual alerts
-- Uses Web Audio API for microphone input and audio playback
-- Function calling integration for objections and coaching tips
-
-**StrategyRoom.tsx**
-- AI-powered case strategy analysis
-- Uses thinking models for complex legal reasoning
-- Opponent profiling and tactical predictions
-
-### Type System (types.ts)
-
-Core types:
-- `Case` - Case metadata with winProbability
-- `CaseStatus` - Enum: PRE_TRIAL, DISCOVERY, TRIAL, APPEAL, CLOSED
-- `TrialPhase` - Union type for trial simulation phases
-- `SimulationMode` - 'learn' | 'practice' | 'trial'
-- `Witness` - Personality-driven witness profiles
-- `Message` - Chat message structure
-- `CoachingAnalysis` - Structured feedback with fallacy detection
-- `OpposingProfile` - Opponent behavioral modeling
-
-## Key Technical Details
-
-### Path Aliases
-- `@/*` maps to project root (configured in tsconfig.json and vite.config.ts)
+- `Case` — case metadata with `winProbability`
+- `CaseStatus` — enum: PRE_TRIAL, DISCOVERY, TRIAL, APPEAL, CLOSED
+- `DocumentType` — DEPOSITION, MOTION, EVIDENCE, CONTRACT, OTHER
+- `TrialPhase` — union of 8 phase strings (pre-trial-motions through sentencing)
+- `SimulationMode` — `'learn' | 'practice' | 'trial'`
+- `Witness` — with `personality` string and `credibilityScore`
+- `Message` — sender: `'user' | 'witness' | 'system' | 'opponent' | 'coach'`
+- `CoachingAnalysis` — includes `fallaciesIdentified`, `rhetoricalEffectiveness`, `teleprompterScript`
+- `OpposingProfile` — aggressiveness/settlement tendency modeling
+- `Transcription` — audio transcription with optional speaker diarization
 
 ### Styling
-- Tailwind CSS with custom color scheme (slate backgrounds, gold accents)
-- Custom colors: `text-gold-500`, `bg-slate-950`, `border-slate-800`
 
-### Gemini API Patterns
+Tailwind CSS with a dark slate + gold color scheme:
+- Backgrounds: `bg-slate-950`, `bg-slate-900`, `bg-slate-800`
+- Accents: `text-gold-500`, `text-gold-400`, `border-gold-500`
 
-**Structured Output:**
-All AI functions use `responseMimeType: "application/json"` with `responseSchema` for type-safe responses.
+### Path Aliases
 
-**Function Calling (ArgumentPractice only):**
-The live API session can call:
-- `raiseObjection` - Flash objection on screen
-- `sendCoachingTip` - Provide teleprompter text
+`@/*` maps to the repository root (configured in `tsconfig.json` and `vite.config.ts`).
 
-**Thinking Models:**
-Strategy analysis uses `thinkingConfig: { thinkingBudget: 2048 }` for deep reasoning.
+## Key Gotchas
 
-**Live API Audio:**
-- Input: PCM 16kHz mono audio from microphone
-- Output: Base64-encoded PCM audio decoded to AudioBuffer
-- Connection managed via `ai.live.connect({ model: 'gemini-live-2.5-flash-preview' })`
+1. **API key**: Must be `GEMINI_API_KEY` in `.env.local` (Vite exposes it via 3 aliases — see `vite.config.ts`)
+2. **Dev port is 5000**, not 3000
+3. **`MOCK_CASES` is intentionally empty** — use `MOCK_CASE_TEMPLATES` in `constants.ts` for simulation templates
+4. **Live audio format**: 16kHz PCM mono only — standard browser audio formats won't work with the Live API
+5. **`server/db.ts`** is a Drizzle/Postgres stub that imports `@shared/schema` (which doesn't exist) — it is not wired to the Vite frontend and should be ignored unless adding a real backend
+6. **localStorage keys** are prefixed `lexsim_*` — a legacy name from before the CaseBuddy rebrand
 
-### Image/Document Upload
-- `fileToGenerativePart` converts File to base64 inline data for Gemini
-- Used in document analysis for scanned PDFs/images
+## Planned Work (see `TODO.md`)
 
-## Common Gotchas
+Key upcoming features tracked in `TODO.md`:
+- **Agent personas**: 8 named AI agents (Maya, Lex, Doc, Rex, Sol, Sierra, Jules, Max) to be assigned to each module via `src/agents/personas.ts` and a reusable `<AgentHeader />` component
+- **JurySimulator page** (`/jury` — currently `JuryAnalyzer` exists; full simulator is planned)
+- **WitnessPrep page** (`/witnesses` — route exists in plan but not yet in `App.tsx`)
+- **API integrations**: CourtListener, PACER, Stripe, Twilio, DocuSign, Deepgram, SendGrid, Cal.com
+- **Supabase cloud sync** for the case store (localStorage + cloud merge)
+- **PDF export** for witness prep packages and intake summaries
 
-1. **API Key**: Must be set in `.env.local` as `GEMINI_API_KEY`
-2. **Routing**: Uses HashRouter (not BrowserRouter) for static hosting compatibility
-3. **Empty Mock Data**: `MOCK_CASES` is intentionally empty; use `MOCK_CASE_TEMPLATES` for examples
-4. **Live API Audio Format**: Must be 16kHz PCM mono (not standard WebM/MP3)
-5. **Context Persistence**: AppContext state is lost on refresh; no localStorage persistence implemented
+## Testing
 
-## Testing Notes
-
-No test framework is currently configured. When adding tests:
-- Use the mock case templates from `MOCK_CASE_TEMPLATES`
-- Mock Gemini API responses in tests to avoid API calls
-- Test witness personality variations (hostile/nervous/cooperative)
-- Test trial phase transitions in ArgumentPractice
+No test framework is configured. When adding tests, mock Gemini API responses to avoid live API calls, and use `MOCK_CASE_TEMPLATES` from `constants.ts` as fixture data.

@@ -3,6 +3,10 @@ import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -178,6 +182,7 @@ Generate the complete document ready for attorney review.`;
 
   return (
     <div className="space-y-6">
+      <AgentHeader agent={DOC} compact />
       <div>
         <h1 className="text-3xl font-bold text-white font-serif">Drafting Assistant</h1>
         <p className="text-slate-400 mt-2">AI-powered legal document generation and drafting support</p>

@@ -4,6 +4,10 @@ import { MOCK_OPPONENT } from '../constants';
 import { predictStrategy } from '../services/geminiService';
 import { StrategyInsight } from '../types';
 import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw } from 'lucide-react';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const LEX = OPERATIONAL_AGENTS.find(a => a.id === 'lex')!;
 
 const StrategyRoom = () => {
   const { activeCase } = useContext(AppContext);
@@ -31,6 +35,7 @@ const StrategyRoom = () => {
 
   return (
     <div className="space-y-8">
+      <AgentHeader agent={LEX} compact />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
             <h1 className="text-3xl font-bold font-serif text-white">War Room Strategy</h1>

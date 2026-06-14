@@ -7,6 +7,10 @@ import { analyzeDocument, fileToGenerativePart } from '../services/geminiService
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
 import { validateFile } from '../utils/fileValidation';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
 const CaseManager = () => {
   const { cases, activeCase, setActiveCase, addCase } = useContext(AppContext);
@@ -114,7 +118,9 @@ const CaseManager = () => {
   };
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-8">
+    <div className="space-y-5">
+      <AgentHeader agent={MAYA} compact />
+      <div className="flex flex-col lg:flex-row gap-8">
       {/* Case List Sidebar */}
       <div className="w-full lg:w-1/3 flex flex-col gap-6">
         <div className="flex items-center justify-between">
@@ -416,6 +422,7 @@ const CaseManager = () => {
            </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
