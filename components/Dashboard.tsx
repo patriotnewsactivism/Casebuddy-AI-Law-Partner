@@ -1,17 +1,40 @@
 
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users } from 'lucide-react';
+import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList } from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
-const StatCard = ({ icon: Icon, title, value, subtext, color }: any) => (
+interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  matterType: string;
+  description: string;
+  urgency: string;
+  courtDate: string;
+  aiAssessment: { greeting: string; summary: string; nextSteps: string[]; urgencyAssessment: string };
+  submittedAt: number;
+}
+
+function relativeTime(ts: number): string {
+  const diffMs = Date.now() - ts;
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays}d ago`;
+}
+
+const StatCard = ({ icon: Icon, title, value, subtext, color, valueColor, pulse }: any) => (
   <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-shadow">
     <div className="flex items-start justify-between">
       <div>
         <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
-        <h3 className="text-2xl font-bold text-white">{value}</h3>
+        <h3 className={`text-2xl font-bold ${valueColor ?? 'text-white'} ${pulse ? 'animate-pulse' : ''}`}>{value}</h3>
         {subtext && <p className={`text-xs mt-2 ${color}`}>{subtext}</p>}
       </div>
       <div className="p-3 bg-slate-700/50 rounded-lg">
@@ -32,6 +55,16 @@ const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
 
 const Dashboard = () => {
   const { cases, activeCase } = useContext(AppContext);
+  const [leads, setLeads] = useState<Lead[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('casebuddy_leads');
+      if (raw) setLeads(JSON.parse(raw));
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
 
   const statusCounts = cases.reduce((acc: any, curr) => {
     acc[curr.status] = (acc[curr.status] || 0) + 1;
@@ -42,6 +75,37 @@ const Dashboard = () => {
     name: status,
     count: statusCounts[status]
   }));
+
+  const daysUntil = activeCase?.nextCourtDate && activeCase.nextCourtDate !== 'TBD'
+    ? Math.ceil((new Date(activeCase.nextCourtDate).getTime() - Date.now()) / 86400000)
+    : null;
+
+  const hearingValue =
+    daysUntil === null
+      ? (activeCase ? activeCase.nextCourtDate : 'TBD')
+      : daysUntil < 0
+        ? 'OVERDUE'
+        : daysUntil === 0
+          ? 'TODAY'
+          : `${daysUntil}d`;
+
+  const hearingSubtext =
+    daysUntil !== null && daysUntil <= 7 && daysUntil >= 0
+      ? '⚠ Urgent'
+      : activeCase
+        ? `For: ${activeCase.title}`
+        : 'No active case';
+
+  const hearingColor =
+    daysUntil !== null && (daysUntil < 0 || daysUntil === 0)
+      ? 'text-red-400'
+      : daysUntil !== null && daysUntil <= 7
+        ? 'text-red-400'
+        : daysUntil !== null && daysUntil <= 30
+          ? 'text-amber-400'
+          : 'text-gold-500';
+
+  const hearingPulse = daysUntil === 0;
 
   return (
     <div className="space-y-4 sm:space-y-8">
@@ -62,9 +126,11 @@ const Dashboard = () => {
         <StatCard
           icon={Calendar}
           title="Next Hearing"
-          value={activeCase && activeCase.nextCourtDate !== 'TBD' ? activeCase.nextCourtDate : "TBD"}
-          subtext={activeCase ? `For: ${activeCase.title}` : "No active case"}
-          color="text-gold-500"
+          value={hearingValue}
+          subtext={hearingSubtext}
+          color={hearingColor}
+          valueColor={daysUntil !== null && (daysUntil < 0 || daysUntil <= 7) ? 'text-red-400' : daysUntil !== null && daysUntil <= 30 ? 'text-amber-400' : 'text-white'}
+          pulse={hearingPulse}
         />
         <StatCard
           icon={TrendingUp}
@@ -81,6 +147,33 @@ const Dashboard = () => {
           color="text-blue-400"
         />
       </div>
+
+      {/* Maya CTA — only when no active case */}
+      {!activeCase && (
+        <div className="bg-violet-500/10 border border-violet-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xl shrink-0">
+            ⚖️
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-violet-300 text-sm">Maya · Case Intake Specialist</p>
+            <p className="text-slate-300 text-sm mt-0.5">Ready to open your first case? Maya will guide you through intake in under 2 minutes.</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              to="/start"
+              className="btn-gold inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
+            >
+              Start Intake <ArrowRight size={13} />
+            </Link>
+            <Link
+              to="/app/cases"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors"
+            >
+              Add Case Manually
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Meet the Team */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-4 sm:p-6">
@@ -193,6 +286,52 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Leads Pipeline */}
+      {leads.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <ClipboardList size={18} className="text-violet-400" />
+              Incoming Leads
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-400 text-xs font-bold">
+                {leads.length}
+              </span>
+            </h2>
+            <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
+              View All <ArrowRight size={12} className="inline" />
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+            {leads.map(lead => (
+              <div
+                key={lead.id}
+                className="shrink-0 w-72 bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2.5 hover:border-violet-500/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold text-white text-sm truncate">{lead.name}</p>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-violet-500/20 border border-violet-500/30 text-violet-300 font-medium">
+                    {lead.matterType}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                  {lead.aiAssessment?.urgencyAssessment ?? lead.description}
+                </p>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-slate-500">{relativeTime(lead.submittedAt)}</span>
+                  <Link
+                    to="/app/cases"
+                    onClick={() => sessionStorage.setItem('casebuddy_open_lead', lead.id)}
+                    className="text-xs text-violet-400 hover:text-violet-300 font-semibold transition-colors flex items-center gap-1"
+                  >
+                    Open as Case <ArrowRight size={11} />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

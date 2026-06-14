@@ -1,7 +1,8 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateClientUpdate } from '../services/geminiService';
-import { Mail, Loader, Copy, Download, RefreshCw, Check } from 'lucide-react';
+import { sendCaseUpdateEmail } from '../services/integrationService';
+import { Mail, Loader, Copy, Download, RefreshCw, Check, Send } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -37,6 +38,9 @@ const ClientUpdate = () => {
   const [loading, setLoading] = useState(false);
   const [letter, setLetter] = useState<{ subject: string; salutation: string; body: string; closing: string; fullLetter: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [clientEmail, setClientEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [history, setHistory] = useState<SavedLetter[]>(() => {
     try { return JSON.parse(localStorage.getItem('client_letters') || '[]'); } catch { return []; }
   });
@@ -53,6 +57,7 @@ const ClientUpdate = () => {
         clientName
       );
       setLetter(result);
+      setEmailSent(false);
       const saved: SavedLetter = {
         id: Date.now().toString(),
         caseTitle: activeCase.title,
@@ -93,6 +98,25 @@ const ClientUpdate = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const sendEmail = async () => {
+    if (!letter || !activeCase || !clientEmail.trim()) return;
+    setSending(true);
+    try {
+      await sendCaseUpdateEmail(clientEmail, clientName, activeCase.title, letter.fullLetter);
+      setEmailSent(true);
+      toast.success('Email sent!');
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.toLowerCase().includes('not configured')) {
+        toast.warn('SendGrid not configured — add VITE_SENDGRID_API_KEY to .env.local to enable email sending');
+      } else {
+        toast.error('Email failed. Check your SendGrid configuration.');
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   if (!activeCase) {
@@ -222,6 +246,36 @@ const ClientUpdate = () => {
                   <div className="border-t border-gray-200 mt-8 pt-6">
                     <p className="text-gray-400 text-xs">This communication is protected by attorney-client privilege and is intended solely for the addressee.</p>
                   </div>
+                </div>
+
+                {/* Email send section */}
+                <div className="mt-6 max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="email"
+                    value={clientEmail}
+                    onChange={e => { setClientEmail(e.target.value); setEmailSent(false); }}
+                    placeholder="Client email address"
+                    className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm"
+                  />
+                  <button
+                    onClick={sendEmail}
+                    disabled={!clientEmail.trim() || sending || emailSent}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      emailSent
+                        ? 'bg-green-600 text-white cursor-default'
+                        : !clientEmail.trim() || sending
+                        ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {sending ? (
+                      <><Loader className="animate-spin" size={14} /> Sending...</>
+                    ) : emailSent ? (
+                      <><Check size={14} /> Email sent!</>
+                    ) : (
+                      <><Send size={14} /> Send via Email</>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

@@ -28,6 +28,42 @@ interface MayaAssessment {
   urgencyAssessment: string;
 }
 
+interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  matterType: string;
+  description: string;
+  urgency: string;
+  courtDate: string;
+  aiAssessment: MayaAssessment;
+  submittedAt: number;
+}
+
+function saveLead(form: IntakeFormData, assessment: MayaAssessment) {
+  try {
+    const raw = localStorage.getItem('casebuddy_leads');
+    const existing: Lead[] = raw ? JSON.parse(raw) : [];
+    const lead: Lead = {
+      id: `lead_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      matterType: form.matterType,
+      description: form.description,
+      urgency: form.urgency,
+      courtDate: form.courtDate,
+      aiAssessment: assessment,
+      submittedAt: Date.now(),
+    };
+    const updated = [lead, ...existing].slice(0, 50);
+    localStorage.setItem('casebuddy_leads', JSON.stringify(updated));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 
 const MATTER_TYPES = [
@@ -148,6 +184,7 @@ Return a JSON object with exactly these fields:
       const raw = response.text ?? '';
       const parsed: MayaAssessment = JSON.parse(raw);
       setAssessment(parsed);
+      saveLead(form, parsed);
       setStep(4); // show results
     } catch (err: any) {
       setError(err?.message ?? 'Something went wrong. Please try again.');

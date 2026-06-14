@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase } from 'lucide-react';
+import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
 import { consultSpecialist } from '../services/geminiService';
@@ -67,16 +67,55 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
   );
 };
 
-const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack }: {
+const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }: {
   specialist: LegalSpecialist;
   session: ConsultationSession;
   onSend: (text: string) => void;
   onReset: () => void;
   loading: boolean;
   onBack?: () => void;
+  activeCase?: { title: string } | null;
 }) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const exportTranscript = () => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`
+      <html><head>
+        <title>Consultation — ${specialist.name}</title>
+        <style>
+          body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; color: #1a1a1a; line-height: 1.6; }
+          h1 { font-size: 22px; border-bottom: 2px solid #d4af37; padding-bottom: 8px; }
+          .meta { color: #666; font-size: 13px; margin-bottom: 24px; }
+          .msg { margin-bottom: 16px; }
+          .msg-user { text-align: right; }
+          .bubble { display: inline-block; max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; }
+          .bubble-user { background: #1e293b; color: #f1f5f9; }
+          .bubble-ai { background: #f8f5e6; color: #1a1a1a; border: 1px solid #d4af37; }
+          .label { font-size: 11px; color: #999; margin-bottom: 4px; }
+          .disclaimer { margin-top: 40px; padding: 12px; border: 1px solid #ddd; font-size: 12px; color: #666; }
+          @media print { body { margin: 20px; } }
+        </style>
+      </head><body>
+        <h1>Consultation: ${specialist.name} — ${specialist.practiceArea}</h1>
+        <div class="meta">
+          Exported ${new Date().toLocaleDateString()} · ${session.messages.length} messages
+          ${activeCase ? `· Case: ${activeCase.title}` : ''}
+        </div>
+        ${session.messages.map(m => `
+          <div class="msg ${m.role === 'user' ? 'msg-user' : ''}">
+            <div class="label">${m.role === 'user' ? 'You' : specialist.name} · ${new Date(m.timestamp).toLocaleTimeString()}</div>
+            <div class="bubble ${m.role === 'user' ? 'bubble-user' : 'bubble-ai'}">${m.text.replace(/\n/g, '<br/>')}</div>
+          </div>
+        `).join('')}
+        <div class="disclaimer">⚠ This is AI-generated information for educational and planning purposes only. It does not constitute legal advice. Always consult a licensed attorney for representation.</div>
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -104,6 +143,12 @@ const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack }: {
         <div className="flex-1 min-w-0">
           <AgentHeader agent={specialist} compact />
         </div>
+        {session.messages.length > 0 && (
+          <button onClick={exportTranscript} title="Export transcript"
+            className="p-2 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors shrink-0">
+            <FileDown size={16} />
+          </button>
+        )}
         <button onClick={onReset} title="New consultation"
           className="p-2 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors shrink-0">
           <RotateCcw size={16} />
@@ -363,6 +408,7 @@ const LegalTeam: React.FC = () => {
             onReset={handleReset}
             loading={loading}
             onBack={() => setMobileShowChat(false)}
+            activeCase={activeCase}
           />
         </div>
       </div>

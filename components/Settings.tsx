@@ -1,8 +1,38 @@
 
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useRef } from 'react';
 import { AppContext } from '../App';
-import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye } from 'lucide-react';
 import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
+
+const FIRM_BRANDING_KEY = 'casebuddy_firm_branding';
+const FIRM_LOGO_KEY = 'casebuddy_firm_logo';
+
+interface FirmBranding {
+  firmName: string;
+  tagline: string;
+  whiteLabel: boolean;
+}
+
+const loadFirmBranding = (): FirmBranding => {
+  try {
+    const raw = localStorage.getItem(FIRM_BRANDING_KEY);
+    return raw ? JSON.parse(raw) : { firmName: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false };
+  } catch {
+    return { firmName: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false };
+  }
+};
+
+const saveFirmBranding = (branding: FirmBranding) => {
+  localStorage.setItem(FIRM_BRANDING_KEY, JSON.stringify(branding));
+};
+
+const loadFirmLogo = (): string | null => {
+  try {
+    return localStorage.getItem(FIRM_LOGO_KEY);
+  } catch {
+    return null;
+  }
+};
 
 const Settings = () => {
   const { cases, theme, setTheme } = useContext(AppContext);
@@ -11,6 +41,13 @@ const Settings = () => {
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   const [storageInfo, setStorageInfo] = useState({ used: 0, available: 0, percentage: 0 });
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Firm Branding state
+  const [firmName, setFirmName] = useState('CaseBuddy');
+  const [tagline, setTagline] = useState('AI-Powered Legal Platform');
+  const [whiteLabel, setWhiteLabel] = useState(false);
+  const [firmLogo, setFirmLogo] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const currentApiKey = process.env.API_KEY || '';
   const isApiKeyConfigured = currentApiKey && currentApiKey !== '';
@@ -21,6 +58,13 @@ const Settings = () => {
     setTitle(prefs.title);
     setAutoSaveEnabled(prefs.autoSave);
     updateStorageInfo();
+
+    // Load firm branding
+    const branding = loadFirmBranding();
+    setFirmName(branding.firmName);
+    setTagline(branding.tagline);
+    setWhiteLabel(branding.whiteLabel);
+    setFirmLogo(loadFirmLogo());
   }, []);
 
   useEffect(() => {
@@ -98,6 +142,34 @@ const Settings = () => {
         }
       }
     }
+  };
+
+  const handleSaveFirmBranding = () => {
+    saveFirmBranding({ firmName, tagline, whiteLabel });
+    setSaveMessage('Firm branding saved successfully!');
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      localStorage.setItem(FIRM_LOGO_KEY, dataUrl);
+      setFirmLogo(dataUrl);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
+  const handleRemoveLogo = () => {
+    localStorage.removeItem(FIRM_LOGO_KEY);
+    setFirmLogo(null);
   };
 
   return (
@@ -308,6 +380,138 @@ const Settings = () => {
             Save Profile
           </button>
           <p className="text-xs text-slate-400">Profile information is stored locally and displayed in the header.</p>
+        </div>
+      </div>
+
+      {/* Firm Branding */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Building2 className="text-gold-500" size={24} />
+          <h2 className="text-xl font-semibold text-white">Firm Branding</h2>
+        </div>
+
+        <div className="space-y-4">
+          {/* Firm Name */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Firm Name</label>
+            <input
+              type="text"
+              value={firmName}
+              onChange={(e) => setFirmName(e.target.value)}
+              placeholder="CaseBuddy"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+            />
+          </div>
+
+          {/* Tagline */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Tagline</label>
+            <input
+              type="text"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="AI-Powered Legal Platform"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+            />
+          </div>
+
+          {/* Primary Attorney (reuses displayName) */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Primary Attorney Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Attorney J. Doe"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">This also updates your user profile display name.</p>
+          </div>
+
+          {/* Logo Upload */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Firm Logo</label>
+            {firmLogo ? (
+              <div className="flex items-center gap-4 p-3 bg-slate-900/50 rounded-lg">
+                <img src={firmLogo} alt="Firm Logo" className="h-12 w-auto max-w-[120px] object-contain rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-300 truncate">Logo uploaded</p>
+                  <p className="text-xs text-slate-500">Stored in browser localStorage</p>
+                </div>
+                <div className="flex gap-2">
+                  <label className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg cursor-pointer transition-colors text-slate-300">
+                    Replace
+                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" ref={logoInputRef} />
+                  </label>
+                  <button
+                    onClick={handleRemoveLogo}
+                    className="px-3 py-1.5 text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-700 rounded-lg text-red-400 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center gap-2 px-4 py-6 bg-slate-900/50 border-2 border-dashed border-slate-600 hover:border-gold-500 rounded-lg cursor-pointer transition-colors group">
+                <Upload size={18} className="text-slate-500 group-hover:text-gold-500 transition-colors" />
+                <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Click to upload logo (PNG, JPG, SVG)</span>
+                <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+              </label>
+            )}
+          </div>
+
+          {/* White-label toggle */}
+          <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+            <div>
+              <p className="text-slate-300 font-medium">White-Label Mode</p>
+              <p className="text-xs text-slate-400 mt-1">Hide "CaseBuddy" branding and replace with your firm name</p>
+            </div>
+            <button
+              onClick={() => setWhiteLabel(v => !v)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${whiteLabel ? 'bg-gold-500' : 'bg-slate-600'}`}
+            >
+              <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${whiteLabel ? 'transform translate-x-6' : ''}`} />
+            </button>
+          </div>
+
+          {/* Preview Card */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Eye size={14} className="text-slate-400" />
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Header Preview</p>
+            </div>
+            <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                {firmLogo ? (
+                  <img src={firmLogo} alt="Logo" className="h-8 w-auto max-w-[80px] object-contain" />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gold-500/20 border border-gold-500/40 flex items-center justify-center">
+                    <Building2 size={16} className="text-gold-400" />
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-serif font-bold text-white">
+                    {whiteLabel ? (firmName || 'Your Firm Name') : 'CaseBuddy'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {whiteLabel ? (tagline || 'Your Tagline') : 'AI-Powered Legal Platform'}
+                  </p>
+                </div>
+                <div className="ml-auto text-right">
+                  <p className="text-xs font-semibold text-slate-300">{displayName || 'Attorney J. Doe'}</p>
+                  <p className="text-xs text-slate-500">{title || 'Senior Litigator'}</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">This preview reflects how your branding will appear in the app header.</p>
+          </div>
+
+          <button
+            onClick={handleSaveFirmBranding}
+            className="w-full bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold py-2 px-4 rounded-lg transition-colors"
+          >
+            Save Firm Branding
+          </button>
         </div>
       </div>
 

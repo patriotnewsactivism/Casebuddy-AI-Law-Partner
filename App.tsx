@@ -4,7 +4,7 @@ import { HashRouter, Routes, Route, Navigate, useLocation, Link } from 'react-ro
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2
+  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -33,6 +33,7 @@ import Integrations from './components/Integrations';
 import DeadlineTracker from './components/DeadlineTracker';
 import ActiveCaseBar from './components/ActiveCaseBar';
 import IntakePage from './components/IntakePage';
+import WarRoom from './components/WarRoom';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId } from './utils/storage';
@@ -44,6 +45,7 @@ const NAV_GROUPS = [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
+      { path: '/app/war-room', icon: Shield, label: 'War Room' },
     ]
   },
   {
@@ -286,6 +288,7 @@ const App = () => {
           <Route path="/app/legal-team" element={<Layout><LegalTeam /></Layout>} />
           <Route path="/app/integrations" element={<Layout><Integrations /></Layout>} />
           <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
+          <Route path="/app/war-room" element={<Layout><WarRoom /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
