@@ -3,7 +3,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall } from 'lucide-react';
+import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall, Network, Rocket } from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 import IntakeWidget from './IntakeWidget';
@@ -31,17 +31,18 @@ function relativeTime(ts: number): string {
   return `${diffDays}d ago`;
 }
 
-const StatCard = ({ icon: Icon, title, value, subtext, color, valueColor, pulse }: any) => (
-  <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-shadow">
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
-        <h3 className={`text-2xl font-bold ${valueColor ?? 'text-white'} ${pulse ? 'animate-pulse' : ''}`}>{value}</h3>
-        {subtext && <p className={`text-xs mt-2 ${color}`}>{subtext}</p>}
+const StatCard = ({ icon: Icon, title, value, subtext, subColor, valueColor, pulse, tile, glow }: any) => (
+  <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950/40 p-4 sm:p-5 hover:border-slate-700 transition-colors">
+    <div className={`absolute -top-10 -right-10 w-28 h-28 rounded-full blur-3xl opacity-[0.15] ${glow}`} />
+    <div className="relative">
+      <div className="flex items-center gap-2.5">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tile}`}>
+          <Icon size={17} />
+        </div>
+        <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider">{title}</p>
       </div>
-      <div className="p-3 bg-slate-700/50 rounded-lg">
-        <Icon className="text-slate-300" size={24} />
-      </div>
+      <h3 className={`text-2xl sm:text-3xl font-bold mt-3 tracking-tight ${valueColor ?? 'text-white'} ${pulse ? 'animate-pulse' : ''}`}>{value}</h3>
+      {subtext && <p className={`text-xs mt-1 ${subColor ?? 'text-slate-500'}`}>{subtext}</p>}
     </div>
   </div>
 );
@@ -53,6 +54,19 @@ const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
     <p className={`text-xs sm:text-sm font-bold text-center ${agent.colorClass}`}>{agent.name}</p>
     <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
   </Link>
+);
+
+const SectionHeader = ({ icon: Icon, title, subtitle, accent, action }: any) => (
+  <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center gap-2.5">
+      <Icon size={18} className={accent ?? 'text-gold-400'} />
+      <div>
+        <h2 className="text-base sm:text-lg font-bold text-white leading-tight">{title}</h2>
+        {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+    {action}
+  </div>
 );
 
 const RelevantCases = ({ activeCase }: { activeCase: any }) => {
@@ -74,14 +88,12 @@ const RelevantCases = ({ activeCase }: { activeCase: any }) => {
   if (!activeCase) return null;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold text-white flex items-center gap-2">
-          <BookOpen size={16} className="text-gold-400" />
-          Relevant Case Law
-        </h3>
-        <span className="text-xs text-slate-500">via CourtListener</span>
-      </div>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <SectionHeader
+        icon={BookOpen}
+        title="Relevant Case Law"
+        action={<span className="text-xs text-slate-500">via CourtListener</span>}
+      />
 
       {loading && (
         <div className="flex items-center gap-2 text-slate-400 text-sm py-4 justify-center">
@@ -97,7 +109,7 @@ const RelevantCases = ({ activeCase }: { activeCase: any }) => {
       {!loading && results.length > 0 && (
         <div className="space-y-3">
           {results.map((r, i) => (
-            <div key={i} className="border border-slate-700 rounded-lg p-3 hover:border-gold-500/40 transition-colors">
+            <div key={i} className="border border-slate-800 rounded-xl p-3 hover:border-gold-500/40 transition-colors">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium text-slate-100 leading-snug line-clamp-2">{r.caseName}</p>
                 {r.absoluteUrl && (
@@ -108,7 +120,7 @@ const RelevantCases = ({ activeCase }: { activeCase: any }) => {
                 )}
               </div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                {r.court && <span className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded-full">{r.court}</span>}
+                {r.court && <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">{r.court}</span>}
                 {r.dateFiled && <span className="text-xs text-slate-500">{r.dateFiled.slice(0, 4)}</span>}
               </div>
               {r.snippet && (
@@ -121,6 +133,13 @@ const RelevantCases = ({ activeCase }: { activeCase: any }) => {
       )}
     </div>
   );
+};
+
+const greeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 };
 
 const Dashboard = () => {
@@ -166,127 +185,122 @@ const Dashboard = () => {
         ? `For: ${activeCase.title}`
         : 'No active case';
 
-  const hearingColor =
+  const hearingSubColor =
     daysUntil !== null && (daysUntil < 0 || daysUntil === 0)
       ? 'text-red-400'
       : daysUntil !== null && daysUntil <= 7
         ? 'text-red-400'
         : daysUntil !== null && daysUntil <= 30
           ? 'text-amber-400'
-          : 'text-gold-500';
+          : 'text-slate-500';
 
   const hearingPulse = daysUntil === 0;
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="space-y-4 sm:space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif">Welcome back, Counselor</h1>
-        <p className="text-slate-400 mt-1 sm:mt-2 text-sm sm:text-base">Here is the status of your active litigation.</p>
+    <div className="space-y-5 sm:space-y-7">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif">{greeting()}, Counselor</h1>
+          <p className="text-slate-400 mt-1 text-sm flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Firm online
+            </span>
+            <span className="text-slate-600">·</span>
+            {today}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/app/firm-command" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gold-500 hover:bg-gold-400 text-slate-950 text-sm font-bold transition-colors">
+            <Rocket size={15} /> Deploy the Firm
+          </Link>
+          <Link to="/app/firm" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-semibold transition-colors">
+            <PhoneCall size={15} /> Call
+          </Link>
+        </div>
       </div>
 
-      {/* Voice CTA — talk to the firm out loud */}
-      <Link
-        to="/app/firm"
-        className="group block rounded-2xl border border-gold-500/30 bg-gradient-to-r from-gold-500/10 via-amber-500/5 to-transparent p-4 sm:p-5 hover:border-gold-500/60 transition-all"
-      >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-gold-400 shrink-0 group-hover:scale-105 transition-transform">
-            <PhoneCall size={24} className="animate-pulse" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-white text-sm sm:text-base">Talk to your firm out loud</p>
-            <p className="text-slate-400 text-xs sm:text-sm mt-0.5">
-              Call any of your 8 team members — each has their own voice. They greet you, ask the questions, and walk you through it.
-            </p>
-          </div>
-          <span className="shrink-0 inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-gold-500 text-slate-950 text-xs sm:text-sm font-bold group-hover:scale-105 transition-transform">
-            Open the line <ArrowRight size={14} />
-          </span>
-        </div>
-      </Link>
-
-      {/* Voice intake pipeline */}
-      <IntakeWidget />
-
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={Briefcase}
           title="Active Cases"
           value={cases.length.toString()}
-          subtext={cases.length > 0 ? "Active litigation" : "No cases active"}
-          color="text-white"
+          subtext={cases.length > 0 ? 'In active litigation' : 'No cases yet'}
+          tile="bg-blue-500/15 text-blue-400"
+          glow="bg-blue-500"
         />
         <StatCard
           icon={Calendar}
           title="Next Hearing"
           value={hearingValue}
           subtext={hearingSubtext}
-          color={hearingColor}
+          subColor={hearingSubColor}
           valueColor={daysUntil !== null && (daysUntil < 0 || daysUntil <= 7) ? 'text-red-400' : daysUntil !== null && daysUntil <= 30 ? 'text-amber-400' : 'text-white'}
           pulse={hearingPulse}
+          tile="bg-gold-500/15 text-gold-400"
+          glow="bg-gold-500"
         />
         <StatCard
           icon={TrendingUp}
           title="Win Probability"
-          value={activeCase ? `${activeCase.winProbability}%` : "-"}
-          subtext={activeCase ? "Based on predictive analytics" : "Select a case"}
-          color={activeCase && activeCase.winProbability > 50 ? "text-green-400" : "text-slate-400"}
+          value={activeCase ? `${activeCase.winProbability}%` : '—'}
+          subtext={activeCase ? 'Predictive analytics' : 'Select a case'}
+          subColor={activeCase && activeCase.winProbability > 50 ? 'text-green-400' : 'text-slate-500'}
+          valueColor={activeCase && activeCase.winProbability > 50 ? 'text-green-400' : 'text-white'}
+          tile="bg-green-500/15 text-green-400"
+          glow="bg-green-500"
         />
         <StatCard
           icon={Activity}
           title="Trial Readiness"
-          value={cases.length > 0 ? "In Progress" : "-"}
-          subtext="AI Analysis Status"
-          color="text-blue-400"
+          value={cases.length > 0 ? 'In Progress' : '—'}
+          subtext="AI analysis status"
+          tile="bg-violet-500/15 text-violet-400"
+          glow="bg-violet-500"
         />
       </div>
 
-      {/* Maya CTA — only when no active case */}
-      {!activeCase && (
-        <div className="bg-violet-500/10 border border-violet-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xl shrink-0">
-            ⚖️
+      {/* Voice CTA + Intake pipeline */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+        <Link
+          to="/app/firm"
+          className="group relative overflow-hidden rounded-2xl border border-gold-500/30 bg-gradient-to-br from-gold-500/10 via-amber-500/5 to-transparent p-5 hover:border-gold-500/60 transition-all flex flex-col"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-gold-400 shrink-0 group-hover:scale-105 transition-transform">
+              <PhoneCall size={22} className="animate-pulse" />
+            </div>
+            <div>
+              <p className="font-bold text-white">Talk to your firm out loud</p>
+              <p className="text-slate-400 text-xs mt-0.5">8 team members, each with their own voice.</p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-violet-300 text-sm">Maya · Case Intake Specialist</p>
-            <p className="text-slate-300 text-sm mt-0.5">Ready to open your first case? Maya will guide you through intake in under 2 minutes.</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Link
-              to="/start"
-              className="btn-gold inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
-            >
-              Start Intake <ArrowRight size={13} />
-            </Link>
-            <Link
-              to="/app/cases"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors"
-            >
-              Add Case Manually
-            </Link>
-          </div>
-        </div>
-      )}
+          <p className="text-sm text-slate-400 mt-4 leading-relaxed flex-1">
+            They greet you, ask the questions, and walk you through it — like calling a real office.
+          </p>
+          <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-gold-400">
+            Open the line <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+          </span>
+        </Link>
+
+        <IntakeWidget />
+      </div>
 
       {/* Meet the Team */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Users size={18} className="text-gold-400" />
-              Meet Your AI Team
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">8 specialized agents ready to work your cases</p>
-          </div>
-          <Link to="/app/legal-team"
-            className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors font-semibold">
-            <Scale size={14} />
-            + 12 AI Lawyers
-            <ArrowRight size={13} />
-          </Link>
-        </div>
-
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <SectionHeader
+          icon={Users}
+          title="Your AI Team"
+          subtitle="8 specialized agents ready to work your cases"
+          action={
+            <Link to="/app/legal-team"
+              className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors font-semibold">
+              <Scale size={14} /> + 12 AI Lawyers <ArrowRight size={13} />
+            </Link>
+          }
+        />
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2 sm:gap-3">
           {OPERATIONAL_AGENTS.map(agent => (
             <AgentTeamCard key={agent.id} agent={agent} />
@@ -295,87 +309,65 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
-
-        {/* Left: Activity Chart / Empty State */}
-        <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col">
-          <h3 className="text-lg font-semibold text-white mb-6">Case Load Distribution</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+        {/* Left: Case Load chart */}
+        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col">
+          <SectionHeader icon={Activity} title="Case Load Distribution" accent="text-blue-400" />
           <div className="h-64 w-full flex-1">
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
-                  <XAxis
-                    dataKey="name"
-                    stroke="#64748b"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    stroke="#64748b"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9', borderRadius: '0.75rem' }}
                     itemStyle={{ color: '#f1f5f9' }}
                     cursor={{ fill: '#334155', opacity: 0.4 }}
                   />
-                  <Bar dataKey="count" fill="#d4af37" radius={[4, 4, 0, 0]} barSize={40} />
+                  <Bar dataKey="count" fill="#d4af37" radius={[6, 6, 0, 0]} barSize={40} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-700 rounded-lg">
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-800 rounded-xl">
                 <Briefcase size={32} className="mb-3 opacity-50" />
-                <p>No case data available.</p>
-                <Link to="/app/cases" className="text-gold-500 hover:underline text-sm mt-2">Create your first case</Link>
+                <p>No case data yet.</p>
+                <Link to="/app/intake-inbox" className="text-gold-500 hover:underline text-sm mt-2">Open your first case from intake</Link>
               </div>
             )}
           </div>
         </div>
 
         {/* Right: Quick Actions */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-          <div className="space-y-3">
-            <Link to="/app/cases" className="w-full flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700 rounded-lg border border-slate-600 transition-colors text-left group">
-              <span className="text-sm font-medium group-hover:text-white text-slate-200">Add New Case</span>
-              <Plus size={18} className="text-green-400"/>
-            </Link>
-            <Link to="/app/legal-team" className="w-full flex items-center justify-between p-4 bg-gold-500/10 hover:bg-gold-500/20 rounded-lg border border-gold-500/30 transition-colors text-left group">
-              <span className="text-sm font-medium text-gold-300 group-hover:text-gold-200">Consult AI Lawyers</span>
-              <Scale size={18} className="text-gold-400"/>
-            </Link>
-            <Link to="/app/practice" className="w-full flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700 rounded-lg border border-slate-600 transition-colors text-left group">
-              <span className="text-sm font-medium group-hover:text-white text-slate-200">Trial Simulator</span>
-              <Mic size={18} className="text-gold-500"/>
-            </Link>
-            <Link to="/app/jury-sim" className="w-full flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700 rounded-lg border border-slate-600 transition-colors text-left group">
-              <span className="text-sm font-medium group-hover:text-white text-slate-200">Jury Simulator</span>
-              <Users size={18} className="text-cyan-400"/>
-            </Link>
-            <Link to="/app/strategy" className="w-full flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700 rounded-lg border border-slate-600 transition-colors text-left group">
-              <span className="text-sm font-medium group-hover:text-white text-slate-200">Strategy & Tactics</span>
-              <TrendingUp size={18} className="text-purple-400"/>
-            </Link>
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6">
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wide mb-4">Quick Actions</h3>
+          <div className="space-y-2.5">
+            {[
+              { to: '/app/firm-command', label: 'Deploy the Firm', icon: Network, cls: 'bg-gold-500/10 border-gold-500/30 text-gold-300 hover:bg-gold-500/20', iconCls: 'text-gold-400' },
+              { to: '/app/intake-inbox', label: 'Intake Inbox', icon: ClipboardList, cls: 'bg-violet-500/10 border-violet-500/30 text-violet-200 hover:bg-violet-500/20', iconCls: 'text-violet-400' },
+              { to: '/app/legal-team', label: 'Consult AI Lawyers', icon: Scale, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-gold-400' },
+              { to: '/app/practice', label: 'Trial Simulator', icon: Mic, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-gold-500' },
+              { to: '/app/strategy', label: 'Strategy & Tactics', icon: TrendingUp, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-purple-400' },
+            ].map(a => (
+              <Link key={a.to} to={a.to} className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-colors text-left group ${a.cls}`}>
+                <span className="text-sm font-medium">{a.label}</span>
+                <a.icon size={17} className={a.iconCls} />
+              </Link>
+            ))}
           </div>
 
-          <div className="mt-6 pt-6 border-t border-slate-700">
+          <div className="mt-5 pt-5 border-t border-slate-800">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Active File</h4>
             {activeCase ? (
-               <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
-                  <p className="font-semibold text-white truncate">{activeCase.title}</p>
-                  <p className="text-xs text-slate-400 mt-1">Opponent: {activeCase.opposingCounsel}</p>
-               </div>
+              <Link to="/app/cases" className="block bg-slate-950/60 p-4 rounded-xl border border-slate-800 hover:border-gold-500/40 transition-colors">
+                <p className="font-semibold text-white truncate">{activeCase.title}</p>
+                <p className="text-xs text-slate-400 mt-1">Opponent: {activeCase.opposingCounsel || '—'}</p>
+              </Link>
             ) : (
-               <Link to="/app/cases" className="block bg-slate-900/50 p-4 rounded-lg border border-slate-700 border-dashed hover:border-gold-500/50 text-center transition-colors">
-                  <p className="text-sm text-slate-400 flex items-center justify-center gap-2">
-                    <Briefcase size={14} />
-                    Select Case
-                  </p>
-               </Link>
+              <Link to="/app/intake-inbox" className="block bg-slate-950/40 p-4 rounded-xl border border-slate-800 border-dashed hover:border-gold-500/50 text-center transition-colors">
+                <p className="text-sm text-slate-400 flex items-center justify-center gap-2">
+                  <Briefcase size={14} /> No active case — open one from intake
+                </p>
+              </Link>
             )}
           </div>
         </div>
@@ -384,26 +376,24 @@ const Dashboard = () => {
       {/* Relevant Case Law */}
       <RelevantCases activeCase={activeCase} />
 
-      {/* Leads Pipeline */}
+      {/* Legacy Leads Pipeline */}
       {leads.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <ClipboardList size={18} className="text-violet-400" />
-              Incoming Leads
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-400 text-xs font-bold">
-                {leads.length}
-              </span>
-            </h2>
-            <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
-              View All <ArrowRight size={12} className="inline" />
-            </Link>
-          </div>
+          <SectionHeader
+            icon={ClipboardList}
+            title="Incoming Leads"
+            accent="text-violet-400"
+            action={
+              <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
+                View All <ArrowRight size={12} className="inline" />
+              </Link>
+            }
+          />
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
             {leads.map(lead => (
               <div
                 key={lead.id}
-                className="shrink-0 w-72 bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2.5 hover:border-violet-500/40 transition-colors"
+                className="shrink-0 w-72 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-2.5 hover:border-violet-500/40 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-semibold text-white text-sm truncate">{lead.name}</p>
