@@ -1,7 +1,8 @@
 
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
-import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2, FileDown } from 'lucide-react';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 import { GoogleGenAI, Type } from "@google/genai";
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -236,6 +237,18 @@ Generate the complete document ready for attorney review.`;
     URL.revokeObjectURL(url);
   };
 
+  const exportPdf = () => {
+    const template = TEMPLATES.find(t => t.id === selectedTemplate);
+    const docTitle = template?.label || 'Legal Document';
+    const caseInfo = activeCase ? `Case: ${activeCase.title}` : '';
+    const html = textToPdfHtml(
+      docTitle,
+      [caseInfo, `Generated: ${new Date().toLocaleDateString()}`].filter(Boolean).join(' &nbsp;|&nbsp; '),
+      generatedContent,
+    );
+    printAsPdf(docTitle, html);
+  };
+
   return (
     <div className="space-y-6">
       <AgentHeader agent={DOC} compact />
@@ -365,6 +378,13 @@ Generate the complete document ready for attorney review.`;
                   title="Download as text file"
                 >
                   <Download className="text-slate-300" size={18} />
+                </button>
+                <button
+                  onClick={exportPdf}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold rounded-lg text-sm transition-colors"
+                  title="Export as PDF"
+                >
+                  <FileDown size={15} /> PDF
                 </button>
               </div>
             )}

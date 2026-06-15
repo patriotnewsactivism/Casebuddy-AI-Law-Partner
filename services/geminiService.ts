@@ -951,3 +951,95 @@ Provide a thorough legal analysis as JSON.`,
     throw new Error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
+
+// ─── War Room Briefing ────────────────────────────────────────────────────────
+
+export interface WarRoomTask {
+  id: string;
+  title: string;
+  description: string;
+  category: 'pre-trial' | 'discovery' | 'witnesses' | 'jury' | 'evidence' | 'drafting' | 'strategy';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  agent: string;
+  done: boolean;
+}
+
+export interface WarRoomBriefing {
+  tasks: WarRoomTask[];
+  riskLevel: 'critical' | 'elevated' | 'moderate' | 'low';
+  keyRisks: string[];
+  topPriority: string;
+  estimatedTrialReadiness: number;
+}
+
+export const generateWarRoomBriefing = async (
+  caseTitle: string,
+  caseSummary: string,
+  caseStatus: string,
+  nextCourtDate: string,
+): Promise<WarRoomBriefing> => {
+  return retryWithBackoff(async () => {
+    const prompt = `You are a senior trial attorney conducting a War Room briefing for the following case.
+
+Case: ${caseTitle}
+Status: ${caseStatus}
+Next Court Date: ${nextCourtDate || 'Not set'}
+Summary: ${caseSummary || 'No summary provided'}
+
+Generate a comprehensive trial preparation briefing including:
+1. 15-25 specific, actionable preparation tasks organized by category
+2. Priority level for each task (critical, high, medium, low)
+3. Which AI agent should handle each task (maya, lex, doc, rex, sol, jules, sierra, max)
+4. Overall case risk level
+5. Top 3-5 key risks that could derail the case
+6. The single most important thing to do first
+7. Trial readiness percentage (0-100)
+
+Categories: pre-trial (motions, hearings), discovery (depositions, document requests), witnesses (prep, cross strategy), jury (analysis, simulator), evidence (organization, authentication), drafting (motions, briefs, letters), strategy (overall planning)
+
+Be specific and practical — these are real tasks the attorney needs to execute.`;
+
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              tasks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    category: { type: Type.STRING },
+                    priority: { type: Type.STRING },
+                    agent: { type: Type.STRING },
+                    done: { type: Type.BOOLEAN },
+                  },
+                  required: ['id', 'title', 'description', 'category', 'priority', 'agent', 'done'],
+                },
+              },
+              riskLevel: { type: Type.STRING },
+              keyRisks: { type: Type.ARRAY, items: { type: Type.STRING } },
+              topPriority: { type: Type.STRING },
+              estimatedTrialReadiness: { type: Type.NUMBER },
+            },
+            required: ['tasks', 'riskLevel', 'keyRisks', 'topPriority', 'estimatedTrialReadiness'],
+          },
+        },
+      }),
+      45000
+    );
+
+    const parsed = JSON.parse(response.text || '{}') as WarRoomBriefing;
+    // Ensure each task has a unique id and done=false by default
+    parsed.tasks = parsed.tasks.map((t, i) => ({ ...t, id: t.id || `task-${i}`, done: false }));
+    return parsed;
+  });
+};
+

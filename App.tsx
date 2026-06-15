@@ -46,7 +46,7 @@ import UserGuide from './components/UserGuide';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 
 const NAV_GROUPS = [
   {
@@ -324,9 +324,16 @@ const App = () => {
     return unsub;
   }, []);
 
-  // Keep localStorage in sync with in-memory state
+  // Keep localStorage + Supabase in sync on every cases change.
+  // hasMounted guard prevents re-uploading the cloud data we just fetched.
+  const hasMounted = React.useRef(false);
   useEffect(() => {
     saveCases(cases);
+    if (hasMounted.current) {
+      syncLocalCasesToCloud(cases);
+    } else {
+      hasMounted.current = true;
+    }
   }, [cases]);
 
   const handleCloseOnboarding = () => {

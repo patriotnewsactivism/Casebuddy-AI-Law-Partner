@@ -1,11 +1,12 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateStatement } from '../services/geminiService';
-import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2 } from 'lucide-react';
+import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2, FileDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
@@ -104,6 +105,20 @@ const StatementBuilder = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = (s: Statement) => {
+    const html = `
+      <h1>${s.type === 'opening' ? 'Opening' : 'Closing'} Statement</h1>
+      <div class="meta">
+        Case: ${s.caseTitle} &nbsp;|&nbsp; Date: ${new Date(s.timestamp).toLocaleDateString()} &nbsp;|&nbsp; Theory: ${s.theory}
+      </div>
+      <h2>Full Statement</h2>
+      <div class="section">${s.fullText.split('\n\n').map(p => `<p>${p.replace(/\n/g,'<br/>')}</p>`).join('')}</div>
+      <h2>Talking Points</h2>
+      <ol>${s.talkingPoints.map(p => `<li>${p}</li>`).join('')}</ol>
+    `;
+    printAsPdf(`${s.type === 'opening' ? 'Opening' : 'Closing'} Statement — ${s.caseTitle}`, html);
   };
 
   if (!activeCase) {
@@ -257,8 +272,12 @@ const StatementBuilder = () => {
                 <Copy size={14} /> Copy
               </button>
               <button onClick={() => download(statement)}
-                className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold rounded-lg text-sm">
-                <Download size={14} /> Download
+                className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
+                <Download size={14} /> .txt
+              </button>
+              <button onClick={() => exportPdf(statement)}
+                className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-lg text-sm">
+                <FileDown size={14} /> Export PDF
               </button>
             </div>
           </div>

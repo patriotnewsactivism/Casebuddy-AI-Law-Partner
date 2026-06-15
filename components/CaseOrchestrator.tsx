@@ -2,8 +2,9 @@ import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
-  Network, Rocket, Loader2, Check, X, Circle, ChevronDown, Sparkles, Clock, FileText, RefreshCw,
+  Network, Rocket, Loader2, Check, X, Circle, ChevronDown, Sparkles, Clock, FileText, RefreshCw, FileDown,
 } from 'lucide-react';
+import { printAsPdf } from '../utils/pdfExport';
 import { AppContext } from '../App';
 import { LEGAL_SPECIALISTS, getSpecialistById } from '../agents/personas';
 import { runOrchestration, saveRun, loadRun, WorkProduct } from '../services/orchestrationService';
@@ -216,6 +217,28 @@ const CaseOrchestrator: React.FC = () => {
       {/* Activity feed / work products */}
       {products.length > 0 && (
         <div className="space-y-3">
+          {/* Export all button */}
+          {!running && products.some(p => p.content) && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  const done = products.filter(p => p.content);
+                  const html = done.map(p => `
+                    <h2>${p.emoji} ${p.agentName} — ${p.title}</h2>
+                    <div class="section">${p.content!.split('\n\n').map(b => `<p>${b.replace(/\n/g,'<br/>')}</p>`).join('')}</div>
+                  `).join('<hr style="margin:24px 0;border-color:#ddd"/>');
+                  const caseTitle = activeCase?.title ?? 'Case';
+                  printAsPdf(
+                    `Firm Command Work Products — ${caseTitle}`,
+                    `<h1>Firm Command Briefing</h1><div class="meta">Case: ${caseTitle} &nbsp;|&nbsp; Generated: ${new Date().toLocaleDateString()}</div>${html}`
+                  );
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold text-sm transition-colors"
+              >
+                <FileDown size={15} /> Export All as PDF
+              </button>
+            </div>
+          )}
           {products.map(p => {
             const isOpen = expanded === p.taskId;
             return (
