@@ -22,13 +22,19 @@ type DocumentTemplate =
   | 'memorandum-of-law'
   | 'opening-statement'
   | 'closing-argument'
-  | 'demand-letter';
+  | 'demand-letter'
+  | 'complaint-petition'
+  | 'answer-response'
+  | 'foia-request'
+  | 'subpoena'
+  | 'affidavit-declaration'
+  | 'engagement-letter';
 
 interface TemplateOption {
   id: DocumentTemplate;
   label: string;
   description: string;
-  category: 'Motion' | 'Discovery' | 'Brief' | 'Trial' | 'Pre-Litigation';
+  category: 'Motion' | 'Discovery' | 'Brief' | 'Trial' | 'Pre-Litigation' | 'Pleading' | 'Records';
 }
 
 const TEMPLATES: TemplateOption[] = [
@@ -91,6 +97,42 @@ const TEMPLATES: TemplateOption[] = [
     label: 'Demand Letter',
     description: 'Pre-litigation demand for settlement',
     category: 'Pre-Litigation'
+  },
+  {
+    id: 'complaint-petition',
+    label: 'Complaint / Petition',
+    description: 'Initiate a lawsuit; state claims and relief sought',
+    category: 'Pleading'
+  },
+  {
+    id: 'answer-response',
+    label: 'Answer / Response',
+    description: 'Respond to a complaint with defenses and admissions/denials',
+    category: 'Pleading'
+  },
+  {
+    id: 'foia-request',
+    label: 'FOIA / Public Records Request',
+    description: 'Request government records under FOIA or state public records law',
+    category: 'Records'
+  },
+  {
+    id: 'subpoena',
+    label: 'Subpoena',
+    description: 'Compel testimony or production of documents',
+    category: 'Discovery'
+  },
+  {
+    id: 'affidavit-declaration',
+    label: 'Affidavit / Declaration',
+    description: 'Sworn statement of facts under penalty of perjury',
+    category: 'Pleading'
+  },
+  {
+    id: 'engagement-letter',
+    label: 'Engagement Letter',
+    description: 'Attorney-client retainer agreement defining scope and fees',
+    category: 'Pre-Litigation'
   }
 ];
 
@@ -104,7 +146,7 @@ const DraftingAssistant = () => {
   const [copied, setCopied] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = ['All', 'Motion', 'Discovery', 'Brief', 'Trial', 'Pre-Litigation'];
+  const categories = ['All', 'Pleading', 'Motion', 'Discovery', 'Brief', 'Trial', 'Pre-Litigation', 'Records'];
 
   const filteredTemplates = selectedCategory === 'All'
     ? TEMPLATES
@@ -131,11 +173,24 @@ const DraftingAssistant = () => {
         ? `Case: ${activeCase.title}\nClient: ${activeCase.client}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`
         : 'No active case selected. Generate a general template.';
 
+      const foiaGuidance = selectedTemplate === 'foia-request'
+        ? `
+
+FOIA / Public Records Request Specific Requirements:
+- Identify the appropriate government agency (and the correct office/records custodian within it) that holds the records sought.
+- Cite the correct controlling statute: the federal Freedom of Information Act, 5 U.S.C. § 552, for records held by federal agencies, OR the relevant state public records act (e.g., a state's Public Records Act / Open Records Act / Freedom of Information Law) when the records are held by a state or local government body. Identify the applicable statute explicitly.
+- Describe the records sought with precision and specificity (date ranges, custodians, subject matter, record types, file/case numbers where known) so the agency can readily locate them, while avoiding overly narrow language that could be used to exclude responsive records.
+- Include a fee waiver request, explaining that disclosure is in the public interest and not primarily in the requester's commercial interest where that justification applies.
+- Include a request for expedited processing where appropriate, with a brief justification (e.g., compelling need, urgency to inform the public).
+- Include a statement requesting that any reasonably segregable non-exempt portions of records be released even if some material is withheld, and that the agency cite the specific exemption for any withholding.
+- Provide the statutory response deadline reference and preferred format/delivery for the records.`
+        : '';
+
       const prompt = `You are an expert legal document drafter. Generate a professional ${template?.label} for the following case.
 
 ${caseContext}
 
-Additional Instructions: ${customPrompt || 'None'}
+Additional Instructions: ${customPrompt || 'None'}${foiaGuidance}
 
 Requirements:
 1. Use proper legal formatting and citations (use [Citation] placeholders where specific case law would be cited)

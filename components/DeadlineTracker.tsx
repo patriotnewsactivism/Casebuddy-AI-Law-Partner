@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AppContext } from '../App';
-import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X, Scale, Loader2, Gavel } from 'lucide-react';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
+import { GoogleGenAI } from '@google/genai';
 
 const SOL = OPERATIONAL_AGENTS.find(a => a.id === 'sol')!;
 const STORAGE_KEY = 'casebuddy_deadlines';
@@ -68,6 +69,41 @@ const urgencyBadge = (days: number, completed: boolean) => {
 
 const EMPTY_FORM = { caseTitle: '', type: 'filing-deadline' as DeadlineType, label: '', dueDate: '', reminderDays: 7, notes: '' };
 
+/* ─── SOL Calculator ─────────────────────────────────────────────────────── */
+
+const CLAIM_TYPES = [
+  'Personal Injury',
+  'Breach of Contract',
+  'Medical Malpractice',
+  'Defamation',
+  'Property Damage',
+  'Fraud',
+  'Wrongful Death',
+  'Section 1983 Civil Rights',
+  'Employment Discrimination',
+  'Other',
+];
+
+interface SolResult {
+  limitationYears: string;
+  deadlineDate: string;
+  statuteCitation: string;
+  notes: string;
+  tollingConsiderations: string;
+}
+
+const EMPTY_SOL_FORM = { jurisdiction: '', claimType: 'Personal Injury', accrualDate: '' };
+
+// Try to coerce the AI-returned deadline into an ISO yyyy-mm-dd date for daysUntil().
+const parseIsoDate = (s: string): string | null => {
+  if (!s) return null;
+  const iso = s.match(/\d{4}-\d{2}-\d{2}/);
+  if (iso) return iso[0];
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+};
+
 const DeadlineTracker: React.FC = () => {
   const { activeCase } = useContext(AppContext);
   const [deadlines, setDeadlines] = useState<Deadline[]>(() => {
@@ -79,9 +115,92 @@ const DeadlineTracker: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'overdue' | 'done'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // SOL Calculator state
+  const [solForm, setSolForm] = useState({ ...EMPTY_SOL_FORM });
+  const [solLoading, setSolLoading] = useState(false);
+  const [solError, setSolError] = useState<string | null>(null);
+  const [solResult, setSolResult] = useState<SolResult | null>(null);
+  const [solAdded, setSolAdded] = useState(false);
+
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(deadlines)); } catch {}
   }, [deadlines]);
+
+  const calculateSol = async () => {
+    if (!solForm.jurisdiction.trim() || !solForm.claimType.trim()) {
+      toast.error('Jurisdiction and claim type are required');
+      return;
+    }
+    setSolLoading(true);
+    setSolError(null);
+    setSolResult(null);
+    setSolAdded(false);
+    try {
+      const apiKey = process.env.API_KEY || '';
+      const ai = new GoogleGenAI({ apiKey });
+
+      const accrualText = solForm.accrualDate
+        ? new Date(solForm.accrualDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        : 'not provided';
+
+      const prompt = `You are a legal research assistant. Estimate the statute of limitations for the following claim. Be accurate and conservative.
+
+- Jurisdiction / State: ${solForm.jurisdiction}
+- Claim type: ${solForm.claimType}
+- Incident / accrual date: ${accrualText}
+
+Return ONLY a JSON object with exactly these string fields:
+- limitationYears: the limitation period (e.g. "3 years", "2 years", "1 year"). Be specific to the jurisdiction and claim type.
+- deadlineDate: the computed filing deadline as an ISO date (YYYY-MM-DD) measured from the accrual date if an accrual date was provided; if no accrual date was provided, briefly describe how the deadline is measured.
+- statuteCitation: the controlling statute citation (e.g. "Miss. Code Ann. § 15-1-49") or "Unknown" if uncertain.
+- notes: a concise plain-language explanation of the limitation period and how it applies.
+- tollingConsiderations: key tolling/exception considerations (minority, discovery rule, fraudulent concealment, government claims notice, etc.).`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { responseMimeType: 'application/json' },
+      });
+
+      const parsed: SolResult = JSON.parse(response.text ?? '{}');
+      setSolResult(parsed);
+    } catch (err: any) {
+      setSolError(err?.message ?? 'Failed to calculate statute of limitations. Please try again.');
+    } finally {
+      setSolLoading(false);
+    }
+  };
+
+  const addSolAsDeadline = () => {
+    if (!solResult) return;
+    const iso = parseIsoDate(solResult.deadlineDate);
+    if (!iso) {
+      toast.error('No concrete deadline date to add — provide an accrual date and recalculate.');
+      return;
+    }
+    const noteParts = [
+      `Claim: ${solForm.claimType} (${solForm.jurisdiction})`,
+      solResult.limitationYears ? `Limitation: ${solResult.limitationYears}` : '',
+      solResult.statuteCitation ? `Citation: ${solResult.statuteCitation}` : '',
+      solResult.tollingConsiderations ? `Tolling: ${solResult.tollingConsiderations}` : '',
+      'AI estimate — verify with a licensed attorney.',
+    ].filter(Boolean);
+
+    const d: Deadline = {
+      id: `dl_${Date.now()}`,
+      caseTitle: activeCase?.title || `${solForm.claimType} matter`,
+      type: 'statute-of-limitations',
+      label: `SOL — ${solForm.claimType} (${solForm.jurisdiction})`,
+      dueDate: iso,
+      reminderDays: 30,
+      notes: noteParts.join(' · '),
+      completed: false,
+      createdAt: Date.now(),
+    };
+    setDeadlines(prev => [d, ...prev]);
+    setSolAdded(true);
+    toast.success('Statute-of-limitations deadline added');
+  };
 
   const addDeadline = () => {
     if (!form.caseTitle.trim() || !form.dueDate || !form.label.trim()) {
@@ -153,6 +272,136 @@ const DeadlineTracker: React.FC = () => {
             <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── SOL Calculator ── */}
+      <div className="card-premium p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-gold-500/10 border border-gold-500/30 shrink-0">
+            <Scale size={20} className="text-gold-400" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold font-serif text-white">SOL Calculator</h2>
+            <p className="text-slate-400 text-sm mt-0.5">
+              Estimate the statute of limitations by jurisdiction and claim type. Sol uses AI to compute the filing deadline.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">State / Jurisdiction *</label>
+            <input
+              value={solForm.jurisdiction}
+              onChange={e => setSolForm(p => ({ ...p, jurisdiction: e.target.value }))}
+              placeholder="Mississippi, Federal…"
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 text-sm focus:border-gold-500 outline-none" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Claim Type *</label>
+            <select
+              value={solForm.claimType}
+              onChange={e => setSolForm(p => ({ ...p, claimType: e.target.value }))}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:border-gold-500 outline-none">
+              {CLAIM_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Incident / Accrual Date</label>
+            <input
+              type="date"
+              value={solForm.accrualDate}
+              onChange={e => setSolForm(p => ({ ...p, accrualDate: e.target.value }))}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:border-gold-500 outline-none" />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={calculateSol} disabled={solLoading}
+            className="btn-gold px-5 py-2 disabled:opacity-60 inline-flex items-center gap-2">
+            {solLoading ? <><Loader2 size={16} className="animate-spin" /> Calculating…</> : <><Gavel size={16} /> Calculate SOL</>}
+          </button>
+          {solResult && (
+            <button onClick={() => { setSolResult(null); setSolError(null); setSolAdded(false); }}
+              className="btn-ghost px-4 py-2 text-sm">Clear</button>
+          )}
+        </div>
+
+        {solError && (
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Could not calculate</p>
+              <p className="text-xs mt-0.5">{solError}</p>
+            </div>
+          </div>
+        )}
+
+        {solResult && (() => {
+          const iso = parseIsoDate(solResult.deadlineDate);
+          const days = iso ? daysUntil(iso) : null;
+          return (
+            <div className="rounded-xl border border-gold-500/30 bg-gold-500/5 p-5 space-y-4">
+              {/* Prominent deadline */}
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-gold-400 font-bold mb-1">Estimated Filing Deadline</p>
+                  {iso ? (
+                    <p className="text-2xl font-bold text-white">
+                      {new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  ) : (
+                    <p className="text-base text-slate-200">{solResult.deadlineDate || 'See notes'}</p>
+                  )}
+                </div>
+                {days !== null && urgencyBadge(days, false)}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Limitation Period</p>
+                  <p className="text-slate-200">{solResult.limitationYears || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Statute Citation</p>
+                  <p className="text-slate-200">{solResult.statuteCitation || '—'}</p>
+                </div>
+              </div>
+
+              {solResult.notes && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Notes</p>
+                  <p className="text-slate-300 text-sm leading-relaxed">{solResult.notes}</p>
+                </div>
+              )}
+              {solResult.tollingConsiderations && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Tolling Considerations</p>
+                  <p className="text-slate-300 text-sm leading-relaxed">{solResult.tollingConsiderations}</p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button onClick={addSolAsDeadline} disabled={solAdded}
+                  className="btn-gold px-4 py-2 text-sm disabled:opacity-60 inline-flex items-center gap-1.5">
+                  {solAdded ? <><CheckCircle size={15} /> Added</> : <><Plus size={15} /> Add as Deadline</>}
+                </button>
+                {!parseIsoDate(solResult.deadlineDate) && (
+                  <span className="text-xs text-slate-500">Provide an accrual date for a datable deadline.</span>
+                )}
+              </div>
+
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>
+                  Statute-of-limitations rules are complex, vary by jurisdiction, and are subject to exceptions and tolling
+                  (discovery rule, minority, government-claim notice periods, fraudulent concealment, and more). This AI estimate
+                  may be wrong. Do NOT rely on it alone — verify every deadline with a licensed attorney before acting.
+                </span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Add deadline form */}

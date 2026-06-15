@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar } from 'lucide-react';
+import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -41,6 +41,17 @@ interface Lead {
   submittedAt: number;
 }
 
+interface ConflictMatch {
+  party: string;          // the name that matched
+  reason: string;         // human-readable explanation
+  severity: 'warning' | 'high';
+}
+
+interface ConflictResult {
+  clear: boolean;
+  matches: ConflictMatch[];
+}
+
 function saveLead(form: IntakeFormData, assessment: MayaAssessment) {
   try {
     const raw = localStorage.getItem('casebuddy_leads');
@@ -61,6 +72,117 @@ function saveLead(form: IntakeFormData, assessment: MayaAssessment) {
     localStorage.setItem('casebuddy_leads', JSON.stringify(updated));
   } catch {
     // ignore storage errors
+  }
+}
+
+/* ─── Conflict check (heuristic, client-side) ────────────────────────────── */
+
+// Normalize a name to a comparable token form (lowercase, collapse whitespace)
+function normName(s: string): string {
+  return (s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Extract candidate proper-noun names from a free-text description.
+// Heuristic: capitalized words (optionally multi-word), excluding common starts.
+function extractNames(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b/g) || [];
+  const stop = new Set(['I', 'The', 'A', 'An', 'My', 'We', 'They', 'He', 'She', 'It', 'On', 'In', 'At', 'For']);
+  return Array.from(new Set(matches.map(m => m.trim()).filter(m => !stop.has(m))));
+}
+
+// Returns true if two names share a meaningful surname/word token.
+function namesOverlap(a: string, b: string): boolean {
+  const ta = new Set(normName(a).split(' ').filter(w => w.length >= 3));
+  const tb = normName(b).split(' ').filter(w => w.length >= 3);
+  return tb.some(w => ta.has(w));
+}
+
+function runConflictCheck(form: IntakeFormData): ConflictResult {
+  const matches: ConflictMatch[] = [];
+  try {
+    // Candidate names involved on the new client's side
+    const newParties = Array.from(new Set([
+      form.name,
+      ...extractNames(form.description),
+    ].map(n => n.trim()).filter(Boolean)));
+
+    // 1) Existing cases
+    let cases: any[] = [];
+    try {
+      const raw = localStorage.getItem('lexsim_cases');
+      cases = raw ? JSON.parse(raw) : [];
+    } catch { cases = []; }
+    if (!Array.isArray(cases)) cases = [];
+
+    for (const c of cases) {
+      const title = c?.title || 'an existing case';
+      const client = c?.client || '';
+      const opposing = c?.opposingCounsel || '';
+
+      for (const party of newParties) {
+        if (opposing && namesOverlap(party, opposing)) {
+          matches.push({
+            party,
+            reason: `Name "${party}" matches opposing counsel "${opposing}" in case "${title}"`,
+            severity: 'high',
+          });
+        }
+        if (client && namesOverlap(party, client)) {
+          matches.push({
+            party,
+            reason: `Name "${party}" matches an existing client "${client}" in case "${title}"`,
+            severity: 'warning',
+          });
+        }
+      }
+    }
+
+    // 2) Prior leads
+    let leads: any[] = [];
+    try {
+      const raw = localStorage.getItem('casebuddy_leads');
+      leads = raw ? JSON.parse(raw) : [];
+    } catch { leads = []; }
+    if (!Array.isArray(leads)) leads = [];
+
+    for (const l of leads) {
+      const leadName = l?.name || '';
+      if (!leadName) continue;
+      // Skip self-match against a freshly saved identical lead by ignoring exact same email+name
+      if (normName(leadName) === normName(form.name) && (l?.email || '') === form.email) continue;
+      for (const party of newParties) {
+        if (namesOverlap(party, leadName)) {
+          matches.push({
+            party,
+            reason: `Name "${party}" matches a prior intake lead "${leadName}"`,
+            severity: 'warning',
+          });
+        }
+      }
+      // Names mentioned inside a prior lead's description
+      for (const otherParty of extractNames(l?.description || '')) {
+        if (namesOverlap(form.name, otherParty)) {
+          matches.push({
+            party: form.name,
+            reason: `Client "${form.name}" is named in a prior intake lead from "${leadName}"`,
+            severity: 'high',
+          });
+        }
+      }
+    }
+
+    // De-duplicate by reason text
+    const seen = new Set<string>();
+    const unique = matches.filter(m => {
+      if (seen.has(m.reason)) return false;
+      seen.add(m.reason);
+      return true;
+    });
+
+    return { clear: unique.length === 0, matches: unique };
+  } catch {
+    return { clear: true, matches: [] };
   }
 }
 
@@ -118,6 +240,14 @@ const IntakePage: React.FC = () => {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [assessment, setAssessment] = useState<MayaAssessment | null>(null);
+  const [conflict, setConflict]   = useState<ConflictResult | null>(null);
+
+  // Engagement letter
+  const [letter, setLetter]           = useState<string | null>(null);
+  const [letterLoading, setLetterLoading] = useState(false);
+  const [letterError, setLetterError] = useState<string | null>(null);
+  const [letterOpen, setLetterOpen]   = useState(false);
+  const [copied, setCopied]           = useState(false);
 
   const [form, setForm] = useState<IntakeFormData>({
     name: '',
@@ -183,6 +313,11 @@ Return a JSON object with exactly these fields:
 
       const raw = response.text ?? '';
       const parsed: MayaAssessment = JSON.parse(raw);
+
+      // Run conflict check BEFORE saving the new lead so we don't match against ourselves.
+      const conflictResult = runConflictCheck(form);
+      setConflict(conflictResult);
+
       setAssessment(parsed);
       saveLead(form, parsed);
       setStep(4); // show results
@@ -191,6 +326,73 @@ Return a JSON object with exactly these fields:
     } finally {
       setLoading(false);
     }
+  };
+
+  /* ── Engagement letter generation ── */
+  const generateLetter = async () => {
+    setLetterLoading(true);
+    setLetterError(null);
+    setLetterOpen(true);
+    try {
+      const apiKey = (process.env.API_KEY as string) || '';
+      const ai = new GoogleGenAI({ apiKey });
+
+      const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      const prompt = `Draft a professional attorney-client engagement letter for a law firm onboarding a new client. Output ONLY the letter text (plain text, no markdown code fences).
+
+Use these intake details:
+- Date: ${today}
+- Client name: ${form.name}
+- Client email: ${form.email}
+- Client phone: ${form.phone || 'Not provided'}
+- Matter type: ${form.matterType}
+- Matter description: ${form.description}
+
+The letter MUST include these clearly labeled sections:
+1. A header with date and addressed to the client by name.
+2. Scope of Representation — describe the matter and what the firm will and will not handle.
+3. Fee Structure — use the literal placeholder [FEE STRUCTURE] where rates/retainer terms would go, plus a short explanation that fees and billing terms will be specified there.
+4. Client Responsibilities — what the client must do (provide information, communicate, etc.).
+5. Signature blocks — separate signature/date lines for both the attorney (with [ATTORNEY NAME] / [FIRM NAME] placeholders) and the client.
+
+Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NAME], [FIRM ADDRESS] where firm-specific details are unknown.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+
+      setLetter(response.text ?? '');
+    } catch (err: any) {
+      setLetterError(err?.message ?? 'Failed to generate the engagement letter. Please try again.');
+    } finally {
+      setLetterLoading(false);
+    }
+  };
+
+  const copyLetter = async () => {
+    if (!letter) return;
+    try {
+      await navigator.clipboard.writeText(letter);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
+  const downloadLetter = () => {
+    if (!letter) return;
+    const blob = new Blob([letter], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = (form.name || 'client').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+    a.download = `engagement_letter_${safeName}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   /* ── label helper ── */
@@ -366,6 +568,49 @@ Return a JSON object with exactly these fields:
         {step === 4 && assessment && !loading && (
           <div className="space-y-6">
 
+            {/* ── Conflict check result ── */}
+            {conflict && (
+              conflict.clear ? (
+                <div className="card-premium p-5 sm:p-6 border border-green-500/30 bg-green-500/5">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck size={22} className="text-green-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-bold text-green-300">✓ No conflicts detected</h3>
+                      <p className="text-slate-400 text-sm mt-1">
+                        We compared this client and the parties mentioned in their description against your existing case files and prior intake leads, and found no obvious matches.
+                      </p>
+                      <p className="text-xs text-slate-500 mt-2">
+                        This is an automated heuristic screen only — a manual conflict-of-interest review is still required before accepting the matter.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card-premium p-5 sm:p-6 border border-amber-500/40 bg-amber-500/8">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert size={22} className="text-amber-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-amber-300">⚠ Potential conflict — review required</h3>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Our automated screen found {conflict.matches.length} possible {conflict.matches.length === 1 ? 'match' : 'matches'} against your existing records:
+                      </p>
+                      <ul className="mt-3 space-y-2">
+                        {conflict.matches.map((m, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${m.severity === 'high' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                            <span className={m.severity === 'high' ? 'text-red-200' : 'text-amber-100'}>{m.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-slate-500 mt-3">
+                        This is an automated heuristic screen and may produce false positives. A manual conflict-of-interest review by an attorney is still required before accepting this matter.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
+
             {/* Greeting */}
             <div className="card-premium p-6 sm:p-8">
               <div className="flex items-center gap-3 mb-4">
@@ -411,6 +656,92 @@ Return a JSON object with exactly these fields:
                   </ol>
                 </div>
               </div>
+            </div>
+
+            {/* ── Engagement letter ── */}
+            <div className="card-premium p-6 sm:p-8 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-gold-500/10 border border-gold-500/30 shrink-0">
+                  <ScrollText size={20} className="text-gold-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold font-serif text-white">Engagement Letter</h3>
+                  <p className="text-slate-400 text-sm mt-0.5">
+                    Draft a professional attorney-client engagement letter from this intake — scope, fees, responsibilities, and signature blocks.
+                  </p>
+                </div>
+              </div>
+
+              {!letter && !letterLoading && (
+                <button
+                  onClick={generateLetter}
+                  className="btn-gold inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                >
+                  <ScrollText size={16} /> Generate Engagement Letter
+                </button>
+              )}
+
+              {letterLoading && (
+                <div className="flex items-center gap-3 text-slate-300 text-sm">
+                  <Loader2 size={18} className="text-gold-400 animate-spin" />
+                  Drafting engagement letter…
+                </div>
+              )}
+
+              {letterError && !letterLoading && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300">
+                  <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Could not generate letter</p>
+                    <p className="text-xs mt-0.5">{letterError}</p>
+                  </div>
+                </div>
+              )}
+
+              {letter && !letterLoading && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setLetterOpen(o => !o)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
+                    >
+                      {letterOpen ? <ChevronRight size={15} className="rotate-90 transition-transform" /> : <ChevronRight size={15} className="transition-transform" />}
+                      {letterOpen ? 'Hide letter' : 'Show letter'}
+                    </button>
+                    <button
+                      onClick={copyLetter}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
+                    >
+                      <Copy size={15} /> {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={downloadLetter}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
+                    >
+                      <Download size={15} /> Download
+                    </button>
+                    <button
+                      onClick={generateLetter}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white transition-all"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+
+                  {letterOpen && (
+                    <pre className="whitespace-pre-wrap break-words text-sm text-slate-200 leading-relaxed bg-slate-950/60 border border-slate-800 rounded-xl p-4 max-h-[28rem] overflow-y-auto font-sans">
+                      {letter}
+                    </pre>
+                  )}
+
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>
+                      This is an AI-generated draft. It must be reviewed, customized (fees, scope, firm details), and approved by a licensed attorney before it is sent to or signed by any client.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* CTA */}

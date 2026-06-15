@@ -34,6 +34,8 @@ import DeadlineTracker from './components/DeadlineTracker';
 import ActiveCaseBar from './components/ActiveCaseBar';
 import IntakePage from './components/IntakePage';
 import WarRoom from './components/WarRoom';
+import CopilotSidebar from './components/CopilotSidebar';
+import FoiaCenter from './components/FoiaCenter';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
@@ -80,6 +82,7 @@ const NAV_GROUPS = [
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
+      { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
     ]
   },
@@ -203,6 +206,8 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
           </div>
         </main>
       </div>
+
+      <CopilotSidebar />
     </div>
   );
 };
@@ -299,6 +304,7 @@ const App = () => {
           <Route path="/app/integrations" element={<Layout><Integrations /></Layout>} />
           <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
           <Route path="/app/war-room" element={<Layout><WarRoom /></Layout>} />
+          <Route path="/app/foia" element={<Layout><FoiaCenter /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

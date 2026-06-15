@@ -850,6 +850,42 @@ Simulate 8-12 exchanges of realistic jury deliberation dialogue. Then provide th
   return JSON.parse(response.text || '{}');
 };
 
+export const askCopilot = async (
+  question: string,
+  history: { role: 'user' | 'model'; text: string }[],
+  caseContext?: string
+): Promise<string> => {
+  return retryWithBackoff(async () => {
+    const contextBlock = caseContext
+      ? `\n\nACTIVE CASE CONTEXT (ground your answers in this when relevant):\n${caseContext}\n`
+      : '\n\nNo active case is currently selected. Answer generally and suggest the attorney select a case for tailored advice.\n';
+
+    const systemInstruction =
+      "You are the CaseBuddy Legal Copilot, a senior litigation partner AI. You help attorneys with case strategy, legal questions, drafting, and analysis. Be concise, practical, and tactical. When a case context is provided, ground your answers in it. Always note when something needs attorney review or jurisdiction-specific verification." +
+      contextBlock;
+
+    const chat = ai.chats.create({
+      model: 'gemini-2.5-flash',
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+      },
+      history: history.map(h => ({
+        role: h.role,
+        parts: [{ text: h.text }],
+      })),
+    });
+
+    const response = await withTimeout(
+      chat.sendMessage({ message: question }),
+      30000
+    );
+
+    if (!response.text) throw new Error('Empty response from Legal Copilot');
+    return response.text;
+  }, 3);
+};
+
 export const analyzeTranscription = async (
   transcriptText: string,
   caseContext: string,
