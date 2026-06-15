@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { createBlob, decode, decodeAudioData } from '../utils/liveAudio';
+import { GoogleGenAI } from '@google/genai';
+import { streamTTS, createPCMPlayer, openSTTSocket, DeepgramTranscriptEvent } from '../services/deepgramService';
 
-const NATIVE_AUDIO_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
+// Gemini 2.5 Flash for the brain — Deepgram Aura-2 for the voice.
+const GEMINI_TEXT_MODEL = 'gemini-2.5-flash';
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
@@ -14,7 +15,7 @@ export interface VoiceTurn {
 }
 
 export interface UseVoiceAgentOptions {
-  voiceName: string;
+  voiceName: string;          // Deepgram Aura-2 model name, e.g. "aura-2-harmonia-en"
   systemInstruction: string;
   openingDirective: string;
   caseContext?: string;
@@ -23,21 +24,16 @@ export interface UseVoiceAgentOptions {
 export interface UseVoiceAgentResult {
   status: VoiceStatus;
   error: string | null;
-  /** Who is currently producing audio. null when nobody is mid-turn. */
   activeSpeaker: Speaker | null;
-  /** Live, still-streaming caption for the current turn. */
   liveCaption: { speaker: Speaker; text: string } | null;
-  /** Completed conversation turns, in order. */
   transcript: VoiceTurn[];
-  /** Mic input level 0-100, for visualizing that you're being heard. */
   inputLevel: number;
-  /** True while the agent's audio is actively playing. */
   agentSpeaking: boolean;
   start: () => Promise<void>;
   stop: () => void;
 }
 
-const getApiKey = () =>
+const getGeminiKey = () =>
   import.meta.env.VITE_GEMINI_API_KEY ||
   import.meta.env.VITE_API_KEY ||
   (window as any).__GEMINI_API_KEY ||
@@ -54,42 +50,39 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentResul
   const [inputLevel, setInputLevel] = useState(0);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
 
-  const sessionRef = useRef<any>(null);
-  const inputCtxRef = useRef<AudioContext | null>(null);
-  const outputCtxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const nextStartRef = useRef(0);
-  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const inputBuf = useRef('');
-  const outputBuf = useRef('');
-  const captionTimer = useRef<any>(null);
-  const speakingTimer = useRef<any>(null);
-
-  // Keep latest options in refs so callbacks don't go stale.
   const optsRef = useRef(options);
   optsRef.current = options;
 
+  // Refs for cleanup
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const inputCtxRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sttRef = useRef<{ sendAudio: (d: ArrayBuffer) => void; close: () => void } | null>(null);
+  const playerRef = useRef<{ playChunk: (c: Uint8Array) => Promise<void>; stop: () => void } | null>(null);
+  const chatRef = useRef<any>(null); // Gemini chat session
+  const captionTimer = useRef<any>(null);
+  const isListeningRef = useRef(false);
+  const interimBuf = useRef('');
+  const finalBuf = useRef('');
+  const agentBusy = useRef(false); // prevent overlapping agent responses
+
   const stop = useCallback(() => {
+    isListeningRef.current = false;
     try { processorRef.current?.disconnect(); } catch { /* noop */ }
     processorRef.current = null;
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
+    micStreamRef.current?.getTracks().forEach(t => t.stop());
+    micStreamRef.current = null;
     try { inputCtxRef.current?.close(); } catch { /* noop */ }
-    try { outputCtxRef.current?.close(); } catch { /* noop */ }
     inputCtxRef.current = null;
-    outputCtxRef.current = null;
-    sourcesRef.current.forEach(s => { try { s.stop(); } catch { /* noop */ } });
-    sourcesRef.current.clear();
-    nextStartRef.current = 0;
-    inputBuf.current = '';
-    outputBuf.current = '';
+    sttRef.current?.close();
+    sttRef.current = null;
+    playerRef.current?.stop();
+    playerRef.current = null;
+    chatRef.current = null;
     clearTimeout(captionTimer.current);
-    clearTimeout(speakingTimer.current);
-    if (sessionRef.current) {
-      sessionRef.current.then((s: any) => { try { s.close(); } catch { /* noop */ } });
-      sessionRef.current = null;
-    }
+    interimBuf.current = '';
+    finalBuf.current = '';
+    agentBusy.current = false;
     setStatus('idle');
     setActiveSpeaker(null);
     setLiveCaption(null);
@@ -97,10 +90,76 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentResul
     setAgentSpeaking(false);
   }, []);
 
+  /** Send user text to Gemini 2.5, stream reply, speak via Deepgram Aura-2 */
+  const agentRespond = useCallback(async (userText: string) => {
+    if (agentBusy.current || !chatRef.current || !playerRef.current) return;
+    agentBusy.current = true;
+
+    // Add user turn to transcript
+    setTranscript(prev => [...prev, { speaker: 'you', text: userText, timestamp: Date.now() }]);
+    setActiveSpeaker('agent');
+
+    try {
+      // Stream text from Gemini
+      const result = await chatRef.current.sendMessageStream(userText);
+
+      let fullResponse = '';
+      let chunkBuffer = '';
+
+      for await (const chunk of result.stream) {
+        const text = chunk.text();
+        if (!text) continue;
+        chunkBuffer += text;
+        fullResponse += text;
+        setLiveCaption({ speaker: 'agent', text: fullResponse });
+
+        // Send to Deepgram TTS when we hit a sentence boundary (natural chunking)
+        const sentenceEnd = chunkBuffer.search(/[.!?]\s/);
+        if (sentenceEnd !== -1 && playerRef.current) {
+          const sentence = chunkBuffer.slice(0, sentenceEnd + 1).trim();
+          chunkBuffer = chunkBuffer.slice(sentenceEnd + 2);
+          if (sentence) {
+            try {
+              for await (const pcmChunk of streamTTS(sentence, optsRef.current.voiceName)) {
+                playerRef.current?.playChunk(pcmChunk);
+              }
+            } catch (ttsErr) {
+              console.error('TTS chunk error:', ttsErr);
+            }
+          }
+        }
+      }
+
+      // Speak any remaining buffer text
+      const remaining = chunkBuffer.trim();
+      if (remaining && playerRef.current) {
+        try {
+          for await (const pcmChunk of streamTTS(remaining, optsRef.current.voiceName)) {
+            playerRef.current?.playChunk(pcmChunk);
+          }
+        } catch (ttsErr) {
+          console.error('TTS tail error:', ttsErr);
+        }
+      }
+
+      if (fullResponse.trim()) {
+        setTranscript(prev => [...prev, { speaker: 'agent', text: fullResponse.trim(), timestamp: Date.now() }]);
+      }
+
+      clearTimeout(captionTimer.current);
+      captionTimer.current = setTimeout(() => setLiveCaption(null), 2500);
+    } catch (e) {
+      console.error('Agent respond error:', e);
+    } finally {
+      agentBusy.current = false;
+      setActiveSpeaker(null);
+    }
+  }, []);
+
   const start = useCallback(async () => {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setError('Gemini API key not found. The voice line needs VITE_GEMINI_API_KEY configured.');
+    const geminiKey = getGeminiKey();
+    if (!geminiKey) {
+      setError('Gemini API key not found (VITE_GEMINI_API_KEY).');
       setStatus('error');
       return;
     }
@@ -110,136 +169,105 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentResul
     setTranscript([]);
 
     try {
-      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      await inputCtx.resume();
-      await outputCtx.resume();
-      inputCtxRef.current = inputCtx;
-      outputCtxRef.current = outputCtx;
-
-      const outputNode = outputCtx.createGain();
-      outputNode.connect(outputCtx.destination);
-
+      // 1. Mic access
       let micStream: MediaStream;
       try {
         micStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
-        streamRef.current = micStream;
+        micStreamRef.current = micStream;
       } catch {
-        throw new Error('Microphone access denied. Allow mic access (and make sure you are on HTTPS) to talk with the team.');
+        throw new Error('Microphone access denied. Allow mic access (and make sure you are on HTTPS).');
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      // 2. Audio input context (16kHz for STT)
+      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      await inputCtx.resume();
+      inputCtxRef.current = inputCtx;
+
+      // 3. Gemini 2.5 Flash chat session
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
       const fullSystem = caseContext
         ? `${systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${caseContext}`
         : systemInstruction;
 
-      const sessionPromise = ai.live.connect({
-        model: NATIVE_AUDIO_MODEL,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
-          systemInstruction: fullSystem,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-        },
-        callbacks: {
-          onopen: () => {
-            setStatus('live');
-
-            // Make the agent SPEAK FIRST — this is what makes it feel like a
-            // real person greeting you, not a chatbot waiting for input.
-            sessionPromise.then(session =>
-              session.sendClientContent({
-                turns: [{ role: 'user', parts: [{ text: optsRef.current.openingDirective }] }],
-                turnComplete: true,
-              })
-            );
-
-            // Stream mic audio up.
-            const source = inputCtx.createMediaStreamSource(micStream);
-            const processor = inputCtx.createScriptProcessor(4096, 1, 1);
-            processorRef.current = processor;
-            processor.onaudioprocess = (e) => {
-              const data = e.inputBuffer.getChannelData(0);
-              let sum = 0;
-              for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-              setInputLevel(Math.min(100, Math.sqrt(sum / data.length) * 200));
-              const blob = createBlob(data);
-              sessionPromise.then(s => s.sendRealtimeInput({ media: blob }));
-            };
-            source.connect(processor);
-            processor.connect(inputCtx.destination);
-          },
-          onmessage: async (msg: LiveServerMessage) => {
-            const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audioData) {
-              if (outputCtx.state === 'suspended') await outputCtx.resume();
-              setAgentSpeaking(true);
-              setActiveSpeaker('agent');
-              nextStartRef.current = Math.max(nextStartRef.current, outputCtx.currentTime);
-              const audioBuffer = await decodeAudioData(decode(audioData), outputCtx, 24000, 1);
-              const src = outputCtx.createBufferSource();
-              src.buffer = audioBuffer;
-              src.connect(outputNode);
-              src.addEventListener('ended', () => {
-                sourcesRef.current.delete(src);
-                // When the queue drains, the agent has stopped talking.
-                clearTimeout(speakingTimer.current);
-                speakingTimer.current = setTimeout(() => {
-                  if (sourcesRef.current.size === 0) setAgentSpeaking(false);
-                }, 150);
-              });
-              src.start(nextStartRef.current);
-              nextStartRef.current += audioBuffer.duration;
-              sourcesRef.current.add(src);
-            }
-
-            if (msg.serverContent?.inputTranscription?.text) {
-              inputBuf.current += msg.serverContent.inputTranscription.text;
-              setActiveSpeaker('you');
-              setLiveCaption({ speaker: 'you', text: inputBuf.current });
-            }
-            if (msg.serverContent?.outputTranscription?.text) {
-              outputBuf.current += msg.serverContent.outputTranscription.text;
-              setLiveCaption({ speaker: 'agent', text: outputBuf.current });
-            }
-
-            if (msg.serverContent?.turnComplete) {
-              if (inputBuf.current.trim()) {
-                const text = inputBuf.current.trim();
-                setTranscript(prev => [...prev, { speaker: 'you', text, timestamp: Date.now() }]);
-                inputBuf.current = '';
-              }
-              if (outputBuf.current.trim()) {
-                const text = outputBuf.current.trim();
-                setTranscript(prev => [...prev, { speaker: 'agent', text, timestamp: Date.now() }]);
-                outputBuf.current = '';
-              }
-              clearTimeout(captionTimer.current);
-              captionTimer.current = setTimeout(() => setLiveCaption(null), 2500);
-            }
-          },
-          onclose: () => stop(),
-          onerror: (e: any) => {
-            console.error('Voice session error:', e);
-            setError('The voice line dropped. Please try again.');
-            setStatus('error');
-            stop();
-          },
-        },
+      const chat = ai.chats.create({
+        model: GEMINI_TEXT_MODEL,
+        config: { systemInstruction: fullSystem },
+        history: [],
       });
-      sessionRef.current = sessionPromise;
+      chatRef.current = chat;
+
+      // 4. Deepgram PCM player (24kHz output)
+      const player = createPCMPlayer((speaking) => {
+        setAgentSpeaking(speaking);
+        if (!speaking) setActiveSpeaker(null);
+      });
+      playerRef.current = player;
+
+      // 5. Deepgram STT WebSocket
+      let finalSentence = '';
+      const stt = openSTTSocket(
+        (event: DeepgramTranscriptEvent) => {
+          if (event.type === 'interim') {
+            interimBuf.current = event.text;
+            setActiveSpeaker('you');
+            setLiveCaption({ speaker: 'you', text: event.text });
+          } else {
+            // Final transcript — send to Gemini
+            finalSentence = event.text;
+            interimBuf.current = '';
+            if (finalSentence.trim() && isListeningRef.current && !agentBusy.current) {
+              agentRespond(finalSentence.trim());
+            }
+          }
+        },
+        (err) => {
+          setError(err);
+          setStatus('error');
+          stop();
+        }
+      );
+      sttRef.current = stt;
+
+      // 6. Wire mic → ScriptProcessor → Deepgram STT
+      const source = inputCtx.createMediaStreamSource(micStream);
+      const processor = inputCtx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      processor.onaudioprocess = (e) => {
+        const float32 = e.inputBuffer.getChannelData(0);
+
+        // Input level for visualizer
+        let sum = 0;
+        for (let i = 0; i < float32.length; i++) sum += float32[i] * float32[i];
+        setInputLevel(Math.min(100, Math.sqrt(sum / float32.length) * 200));
+
+        // Convert float32 → int16 for Deepgram
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+        }
+        stt.sendAudio(int16.buffer);
+      };
+
+      source.connect(processor);
+      processor.connect(inputCtx.destination);
+
+      isListeningRef.current = true;
+      setStatus('live');
+
+      // 7. Agent speaks first (opening directive)
+      await agentRespond(openingDirective);
+
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not connect the voice line.';
       setError(message);
       setStatus('error');
       stop();
     }
-  }, [voiceName, systemInstruction, caseContext, stop]);
+  }, [voiceName, systemInstruction, caseContext, openingDirective, agentRespond, stop]);
 
-  // Clean up on unmount.
   useEffect(() => () => stop(), [stop]);
 
   return {
