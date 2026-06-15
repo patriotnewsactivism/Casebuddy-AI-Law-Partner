@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield
+  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -37,6 +37,7 @@ import IntakePage from './components/IntakePage';
 import WarRoom from './components/WarRoom';
 import CopilotSidebar from './components/CopilotSidebar';
 import FoiaCenter from './components/FoiaCenter';
+import FirmReception from './components/FirmReception';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
@@ -54,6 +55,7 @@ const NAV_GROUPS = [
   {
     label: 'Legal Team',
     items: [
+      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
     ]
   },
@@ -316,6 +318,7 @@ const App = () => {
           <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
           <Route path="/app/war-room" element={<Layout><WarRoom /></Layout>} />
           <Route path="/app/foia" element={<Layout><FoiaCenter /></Layout>} />
+          <Route path="/app/firm" element={<Layout><FirmReception /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

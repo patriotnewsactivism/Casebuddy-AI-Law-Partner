@@ -3,7 +3,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2 } from 'lucide-react';
+import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall } from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 
@@ -182,6 +182,27 @@ const Dashboard = () => {
         <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif">Welcome back, Counselor</h1>
         <p className="text-slate-400 mt-1 sm:mt-2 text-sm sm:text-base">Here is the status of your active litigation.</p>
       </div>
+
+      {/* Voice CTA — talk to the firm out loud */}
+      <Link
+        to="/app/firm"
+        className="group block rounded-2xl border border-gold-500/30 bg-gradient-to-r from-gold-500/10 via-amber-500/5 to-transparent p-4 sm:p-5 hover:border-gold-500/60 transition-all"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-gold-400 shrink-0 group-hover:scale-105 transition-transform">
+            <PhoneCall size={24} className="animate-pulse" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-white text-sm sm:text-base">Talk to your firm out loud</p>
+            <p className="text-slate-400 text-xs sm:text-sm mt-0.5">
+              Call any of your 8 team members — each has their own voice. They greet you, ask the questions, and walk you through it.
+            </p>
+          </div>
+          <span className="shrink-0 inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-gold-500 text-slate-950 text-xs sm:text-sm font-bold group-hover:scale-105 transition-transform">
+            Open the line <ArrowRight size={14} />
+          </span>
+        </div>
+      </Link>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
