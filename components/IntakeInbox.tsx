@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
-  Inbox, Copy, Check, ExternalLink, ChevronDown, Scale, Phone, AlertTriangle,
-  CircleDot, ThumbsUp, ThumbsDown, ArrowRightCircle, RefreshCw, Share2,
+  Inbox, Copy, Check, ExternalLink, ChevronDown, Scale, Phone,
+  CircleDot, ThumbsUp, ThumbsDown, ArrowRightCircle, RefreshCw, Share2, Rocket,
 } from 'lucide-react';
-import { IntakeCase, IntakeStatus } from '../types';
+import { AppContext } from '../App';
+import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
 import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
 import { getSpecialistById } from '../agents/personas';
 
@@ -80,7 +82,11 @@ const ShareLink: React.FC = () => {
   );
 };
 
-const IntakeCard: React.FC<{ row: IntakeCase; onStatus: (id: string, s: IntakeStatus) => void }> = ({ row, onStatus }) => {
+const IntakeCard: React.FC<{
+  row: IntakeCase;
+  onStatus: (id: string, s: IntakeStatus) => void;
+  onOpenCase: (row: IntakeCase) => void;
+}> = ({ row, onStatus, onOpenCase }) => {
   const [open, setOpen] = useState(false);
   const badge = dispositionBadge[row.disposition] ?? dispositionBadge.review;
   const specialist = getSpecialistById(row.recommended_agent_id);
@@ -171,6 +177,14 @@ const IntakeCard: React.FC<{ row: IntakeCase; onStatus: (id: string, s: IntakeSt
             <ActionBtn active={row.status === 'accepted' || row.status === 'routed'} onClick={() => onStatus(row.id, 'accepted')} icon={ThumbsUp} label="Accept" tone="green" />
             <ActionBtn active={row.status === 'routed'} onClick={() => onStatus(row.id, 'routed')} icon={ArrowRightCircle} label="Route to dept" tone="gold" />
             <ActionBtn active={row.status === 'denied'} onClick={() => onStatus(row.id, 'denied')} icon={ThumbsDown} label="Decline" tone="slate" />
+            {row.disposition !== 'denied' && (
+              <button
+                onClick={() => onOpenCase(row)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border bg-violet-500/15 text-violet-200 border-violet-500/40 hover:bg-violet-500/25 transition-colors ml-auto"
+              >
+                <Rocket size={13} /> Open case &amp; deploy firm
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -201,9 +215,33 @@ const ActionBtn: React.FC<{ active: boolean; onClick: () => void; icon: any; lab
 type Filter = 'all' | 'accepted' | 'review' | 'denied';
 
 const IntakeInbox: React.FC = () => {
+  const { addCase, setActiveCase } = useContext(AppContext);
+  const navigate = useNavigate();
   const [rows, setRows] = useState<IntakeCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
+
+  // Turn an accepted intake into a real case file and hand it to Firm Command,
+  // where the whole firm can be deployed to work it autonomously.
+  const openCase = (row: IntakeCase) => {
+    const newCase: Case = {
+      id: `case_${row.id}`,
+      title: `${row.matter_type} — ${row.full_name}`,
+      client: row.full_name,
+      status: CaseStatus.PRE_TRIAL,
+      opposingCounsel: row.intake?.opposingParties || '',
+      judge: '',
+      nextCourtDate: row.intake?.deadlines || '',
+      summary: row.summary || row.intake?.summary || '',
+      winProbability: row.score,
+    };
+    addCase(newCase);
+    setActiveCase(newCase);
+    updateIntakeStatus(row.id, 'routed');
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: 'routed' } : r)));
+    toast.success(`Case opened for ${row.full_name} — deploy the firm to work it`);
+    navigate('/app/firm-command');
+  };
 
   const load = async () => {
     setLoading(true);
@@ -286,7 +324,7 @@ const IntakeInbox: React.FC = () => {
       ) : (
         <div className="space-y-3">
           {filtered.map(row => (
-            <IntakeCard key={row.id} row={row} onStatus={onStatus} />
+            <IntakeCard key={row.id} row={row} onStatus={onStatus} onOpenCase={openCase} />
           ))}
         </div>
       )}

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox
+  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -40,6 +40,7 @@ import FoiaCenter from './components/FoiaCenter';
 import FirmReception from './components/FirmReception';
 import IntakeInbox from './components/IntakeInbox';
 import PublicIntake from './components/PublicIntake';
+import CaseOrchestrator from './components/CaseOrchestrator';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
@@ -50,6 +51,7 @@ const NAV_GROUPS = [
     items: [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
+      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
       { path: '/app/war-room', icon: Shield, label: 'War Room' },
@@ -303,6 +305,7 @@ const App = () => {
 
           <Route path="/app" element={<Layout><Dashboard /></Layout>} />
           <Route path="/app/intake-inbox" element={<Layout><IntakeInbox /></Layout>} />
+          <Route path="/app/firm-command" element={<Layout><CaseOrchestrator /></Layout>} />
           <Route path="/app/cases" element={<Layout><CaseManager /></Layout>} />
           <Route path="/app/practice" element={<Layout><ArgumentPractice /></Layout>} />
           <Route path="/app/witness-lab" element={<Layout><WitnessLab /></Layout>} />
