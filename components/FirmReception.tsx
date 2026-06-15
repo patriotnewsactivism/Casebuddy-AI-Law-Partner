@@ -54,7 +54,7 @@ const FirmReception: React.FC = () => {
               {profile && (
                 <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-gold-500/60" />
-                  Voice: {profile.voiceName}
+                  {profile.voiceLabel}
                 </p>
               )}
             </button>

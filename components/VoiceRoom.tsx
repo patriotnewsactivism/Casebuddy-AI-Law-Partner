@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useRef } from 'react';
 import { Phone, PhoneOff, ArrowLeft, Mic, Volume2, AlertCircle } from 'lucide-react';
 import { OperationalAgent } from '../agents/personas';
 import { getVoiceProfile } from '../agents/voiceProfiles';
-import { useVoiceAgent } from '../hooks/useVoiceAgent';
+import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { AppContext } from '../App';
 
 interface VoiceRoomProps {
@@ -27,12 +27,11 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ agent, onBack }) => {
   const { activeCase } = useContext(AppContext);
   const profile = getVoiceProfile(agent.id);
 
-  const voice = useVoiceAgent({
-    voiceName: profile?.voiceName ?? 'Aoede',
+  const voice = useDeepgramVoiceAgent({
+    voiceModel: profile?.auraVoice ?? 'aura-2-thalia-en',
     systemInstruction: profile?.systemInstruction ?? `You are ${agent.name}, ${agent.title}.`,
-    openingDirective:
-      profile?.openingDirective ??
-      `Greet the attorney in your own voice and ask how you can help. Do not wait for them to speak first.`,
+    greeting:
+      profile?.greeting ?? `Hi, this is ${agent.name}. How can I help you today?`,
     caseContext: buildCaseContext(activeCase),
   });
 
