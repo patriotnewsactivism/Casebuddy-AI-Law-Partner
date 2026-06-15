@@ -10,7 +10,7 @@ import {
   FilePlus2,
 } from 'lucide-react';
 import { AppContext } from '../App';
-import { askCopilot } from '../services/geminiService';
+import { askCopilotStream } from '../services/geminiService';
 import { Case } from '../types';
 
 interface CopilotMessage {
@@ -84,6 +84,7 @@ const CopilotSidebar: React.FC = () => {
   const [messages, setMessages] = useState<CopilotMessage[]>(loadStoredMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -119,41 +120,29 @@ const CopilotSidebar: React.FC = () => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
-    const userMsg: CopilotMessage = {
-      role: 'user',
-      text: trimmed,
-      timestamp: Date.now(),
-    };
-
-    // Build history from existing messages (exclude the just-added user msg)
+    const userMsg: CopilotMessage = { role: 'user', text: trimmed, timestamp: Date.now() };
     const history = messages.map(m => ({ role: m.role, text: m.text }));
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    setStreamingText('');
 
     try {
-      const reply = await askCopilot(
-        trimmed,
-        history,
-        buildCaseContext(activeCase)
-      );
+      let fullText = '';
+      for await (const chunk of askCopilotStream(trimmed, history, buildCaseContext(activeCase))) {
+        fullText += chunk;
+        setStreamingText(fullText);
+      }
+      setMessages(prev => [...prev, { role: 'model', text: fullText, timestamp: Date.now() }]);
+    } catch {
       setMessages(prev => [
         ...prev,
-        { role: 'model', text: reply, timestamp: Date.now() },
-      ]);
-    } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'model',
-          text:
-            "I couldn't reach the AI service just now. Please check your connection or API key and try again.",
-          timestamp: Date.now(),
-        },
+        { role: 'model', text: "I couldn't reach the AI service just now. Please check your connection or API key and try again.", timestamp: Date.now() },
       ]);
     } finally {
       setLoading(false);
+      setStreamingText('');
     }
   };
 
@@ -289,14 +278,21 @@ const CopilotSidebar: React.FC = () => {
             ))
           )}
 
-          {/* Typing indicator */}
+          {/* Streaming / typing indicator */}
           {loading && (
             <div className="flex justify-start">
-              <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-bl-sm bg-gold-500/10 border border-gold-500/30">
-                <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce" />
-              </div>
+              {streamingText ? (
+                <div className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-gold-500/10 text-slate-100 border border-gold-500/30 text-sm whitespace-pre-wrap break-words">
+                  {streamingText}
+                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-gold-400 animate-pulse align-middle" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-bl-sm bg-gold-500/10 border border-gold-500/30">
+                  <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-2 h-2 rounded-full bg-gold-500 animate-bounce" />
+                </div>
+              )}
             </div>
           )}
         </div>

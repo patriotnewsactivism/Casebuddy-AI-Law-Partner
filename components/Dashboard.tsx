@@ -3,8 +3,9 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList } from 'lucide-react';
+import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2 } from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 
 interface Lead {
   id: string;
@@ -52,6 +53,74 @@ const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
     <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
   </Link>
 );
+
+const RelevantCases = ({ activeCase }: { activeCase: any }) => {
+  const [results, setResults] = useState<CourtCase[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    if (!activeCase) { setResults([]); setSearched(false); return; }
+    const query = [activeCase.title, activeCase.summary].filter(Boolean).join(' ').slice(0, 120);
+    setLoading(true);
+    setSearched(false);
+    searchCourtListenerCases(query)
+      .then(r => { setResults(r); setSearched(true); })
+      .catch(() => { setResults([]); setSearched(true); })
+      .finally(() => setLoading(false));
+  }, [activeCase?.id]);
+
+  if (!activeCase) return null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold text-white flex items-center gap-2">
+          <BookOpen size={16} className="text-gold-400" />
+          Relevant Case Law
+        </h3>
+        <span className="text-xs text-slate-500">via CourtListener</span>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-slate-400 text-sm py-4 justify-center">
+          <Loader2 size={16} className="animate-spin" />
+          Searching precedents...
+        </div>
+      )}
+
+      {!loading && searched && results.length === 0 && (
+        <p className="text-slate-500 text-sm text-center py-4">No matching cases found.</p>
+      )}
+
+      {!loading && results.length > 0 && (
+        <div className="space-y-3">
+          {results.map((r, i) => (
+            <div key={i} className="border border-slate-700 rounded-lg p-3 hover:border-gold-500/40 transition-colors">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium text-slate-100 leading-snug line-clamp-2">{r.caseName}</p>
+                {r.absoluteUrl && (
+                  <a href={r.absoluteUrl} target="_blank" rel="noopener noreferrer"
+                    className="shrink-0 text-gold-400 hover:text-gold-300 transition-colors mt-0.5">
+                    <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                {r.court && <span className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded-full">{r.court}</span>}
+                {r.dateFiled && <span className="text-xs text-slate-500">{r.dateFiled.slice(0, 4)}</span>}
+              </div>
+              {r.snippet && (
+                <p className="text-xs text-slate-500 mt-1.5 line-clamp-2"
+                  dangerouslySetInnerHTML={{ __html: r.snippet }} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Dashboard = () => {
   const { cases, activeCase } = useContext(AppContext);
@@ -286,6 +355,9 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Relevant Case Law */}
+      <RelevantCases activeCase={activeCase} />
 
       {/* Leads Pipeline */}
       {leads.length > 0 && (
