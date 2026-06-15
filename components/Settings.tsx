@@ -1,8 +1,9 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { AppContext } from '../App';
-import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy } from 'lucide-react';
 import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
+import { getFirmId, setFirmId, syncLabel } from '../services/caseStore';
 
 const FIRM_BRANDING_KEY = 'casebuddy_firm_branding';
 const FIRM_LOGO_KEY = 'casebuddy_firm_logo';
@@ -35,7 +36,7 @@ const loadFirmLogo = (): string | null => {
 };
 
 const Settings = () => {
-  const { cases, theme, setTheme } = useContext(AppContext);
+  const { cases, theme, setTheme, syncStatus } = useContext(AppContext);
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -48,6 +49,10 @@ const Settings = () => {
   const [whiteLabel, setWhiteLabel] = useState(false);
   const [firmLogo, setFirmLogo] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const [firmId, setFirmIdState] = useState(() => getFirmId());
+  const [firmIdInput, setFirmIdInput] = useState(() => getFirmId());
+  const [firmIdCopied, setFirmIdCopied] = useState(false);
 
   const currentApiKey = process.env.API_KEY || '';
   const isApiKeyConfigured = currentApiKey && currentApiKey !== '';
@@ -229,6 +234,77 @@ const Settings = () => {
                   <li>Restart the development server</li>
                 </ol>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Cloud Sync */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Cloud className="text-gold-500" size={24} />
+          <h2 className="text-xl font-semibold text-white">Cloud Sync</h2>
+        </div>
+
+        <div className="space-y-4">
+          {/* Sync status */}
+          <div className={`flex items-center gap-3 p-3 rounded-lg ${
+            syncStatus === 'synced' ? 'bg-green-900/20 border border-green-700' :
+            syncStatus === 'error' ? 'bg-amber-900/20 border border-amber-700' :
+            'bg-slate-900/50 border border-slate-700'
+          }`}>
+            {syncStatus === 'synced' ? <Cloud size={18} className="text-green-400" /> : <CloudOff size={18} className="text-slate-500" />}
+            <div>
+              <p className={`font-medium text-sm ${syncStatus === 'synced' ? 'text-green-400' : syncStatus === 'error' ? 'text-amber-400' : 'text-slate-400'}`}>
+                {syncLabel(syncStatus)}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {syncStatus === 'synced'
+                  ? 'Cases sync automatically across all your devices.'
+                  : syncStatus === 'error'
+                  ? 'Supabase unavailable — working from local storage.'
+                  : 'Cases are stored locally on this device only.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Firm ID */}
+          <div>
+            <p className="text-sm font-medium text-white mb-1">Firm ID</p>
+            <p className="text-xs text-slate-400 mb-2">
+              Your Firm ID is the shared key that links all devices in your firm. Copy it and enter it on any other device to sync cases across the firm.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={firmIdInput}
+                onChange={e => setFirmIdInput(e.target.value)}
+                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-gold-500"
+              />
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(firmId).catch(() => {});
+                  setFirmIdCopied(true);
+                  setTimeout(() => setFirmIdCopied(false), 2000);
+                }}
+                className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center gap-1.5 transition-colors shrink-0"
+              >
+                <Copy size={14} />
+                {firmIdCopied ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={() => {
+                  if (firmIdInput.trim().length > 8) {
+                    setFirmId(firmIdInput.trim());
+                    setFirmIdState(firmIdInput.trim());
+                    setSaveMessage('Firm ID updated — cases will sync to the new firm on next load.');
+                    setTimeout(() => setSaveMessage(null), 4000);
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold text-sm transition-colors shrink-0"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>

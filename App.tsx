@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network
+  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
+  Cloud, CloudOff, Loader2
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -45,6 +46,7 @@ import UserGuide from './components/UserGuide';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
+import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, SyncStatus, syncLabel } from './services/caseStore';
 
 const NAV_GROUPS = [
   {
@@ -102,6 +104,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const { syncStatus } = React.useContext(AppContext);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -166,6 +169,13 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         </nav>
 
         <div className="border-t border-slate-800 shrink-0">
+          {/* Cloud sync badge */}
+          <div className="flex items-center gap-2 px-5 py-2 text-xs">
+            {syncStatus === 'synced' && <><Cloud size={13} className="text-green-400" /><span className="text-green-400">Synced · all devices</span></>}
+            {syncStatus === 'syncing' && <><Loader2 size={13} className="text-slate-400 animate-spin" /><span className="text-slate-500">Syncing...</span></>}
+            {syncStatus === 'error' && <><CloudOff size={13} className="text-amber-400" /><span className="text-amber-400">Cloud unavailable</span></>}
+            {syncStatus === 'local-only' && <><CloudOff size={13} className="text-slate-600" /><span className="text-slate-600">Local only</span></>}
+          </div>
           <Link to="/pricing" onClick={() => setIsOpen(false)}
             className="flex items-center gap-3 px-5 py-2.5 text-sm text-slate-400 hover:text-white transition-all">
             <DollarSign size={17} />
@@ -239,6 +249,7 @@ export const AppContext = React.createContext<{
   addCase: (c: Case) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
+  syncStatus: SyncStatus;
 }>({
   cases: [],
   activeCase: null,
@@ -246,6 +257,7 @@ export const AppContext = React.createContext<{
   addCase: () => {},
   theme: 'dark',
   setTheme: () => {},
+  syncStatus: 'local-only',
 });
 
 const ONBOARDING_KEY = 'casebuddy_onboarding_done';
@@ -263,6 +275,7 @@ const App = () => {
   });
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
 
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);
@@ -278,11 +291,40 @@ const App = () => {
     const updated = [...cases, newCase];
     setCases(updated);
     saveCases(updated);
+    upsertCaseToCloud(newCase);
     if (!activeCase) {
       setActiveCase(newCase);
     }
   };
 
+  // Initial cloud sync
+  useEffect(() => {
+    setSyncStatus('syncing');
+    loadCasesWithSync((cloudCases, status) => {
+      setSyncStatus(status);
+      if (cloudCases.length > 0) {
+        setCases(cloudCases);
+        // Restore active case from merged set
+        const savedId = loadActiveCaseId();
+        if (savedId) {
+          const found = cloudCases.find(c => c.id === savedId);
+          if (found) setActiveCaseState(found);
+        }
+      }
+    });
+  }, []);
+
+  // Realtime updates from other devices
+  useEffect(() => {
+    const unsub = subscribeCases(updated => {
+      setCases(updated);
+      saveCases(updated);
+      setSyncStatus('synced');
+    });
+    return unsub;
+  }, []);
+
+  // Keep localStorage in sync with in-memory state
   useEffect(() => {
     saveCases(cases);
   }, [cases]);
@@ -293,7 +335,7 @@ const App = () => {
   };
 
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus }}>
       <BrowserRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
