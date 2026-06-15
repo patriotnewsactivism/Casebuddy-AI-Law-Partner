@@ -8,7 +8,7 @@ import { fetchIntakes, subscribeIntakes } from '../services/intakeStore';
 // Compact dashboard surface for the voice-intake pipeline: live count of new
 // leads, the most recent few, and one-tap access to the shareable link.
 
-const intakeUrl = () => `${window.location.origin}${window.location.pathname}#/intake`;
+const intakeUrl = () => `${window.location.origin}/intake`;
 
 const scoreColor = (s: number) =>
   s >= 65 ? 'text-green-400 border-green-500/40' : s >= 45 ? 'text-amber-400 border-amber-500/40' : 'text-rose-400 border-rose-500/40';

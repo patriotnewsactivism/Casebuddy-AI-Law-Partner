@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
@@ -292,7 +292,7 @@ const App = () => {
 
   return (
     <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme }}>
-      <HashRouter>
+      <BrowserRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
         <Routes>
@@ -330,7 +330,7 @@ const App = () => {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </HashRouter>
+      </BrowserRouter>
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
   );

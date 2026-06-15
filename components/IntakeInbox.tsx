@@ -10,7 +10,7 @@ import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
 import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
 import { getSpecialistById } from '../agents/personas';
 
-const intakeUrl = () => `${window.location.origin}${window.location.pathname}#/intake`;
+const intakeUrl = () => `${window.location.origin}/intake`;
 
 const scoreColor = (s: number) =>
   s >= 65 ? 'text-green-400 border-green-500/40 bg-green-500/10'
@@ -239,8 +239,8 @@ const IntakeInbox: React.FC = () => {
     setActiveCase(newCase);
     updateIntakeStatus(row.id, 'routed');
     setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: 'routed' } : r)));
-    toast.success(`Case opened for ${row.full_name} — deploy the firm to work it`);
-    navigate('/app/firm-command');
+    toast.success(`Case opened for ${row.full_name} — deploying the firm…`);
+    navigate('/app/firm-command', { state: { autoDeploy: true, caseId: newCase.id } });
   };
 
   const load = async () => {

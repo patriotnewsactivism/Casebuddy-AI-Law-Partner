@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Network, Rocket, Loader2, Check, X, Circle, ChevronDown, Sparkles, Clock, FileText, RefreshCw,
@@ -73,7 +73,10 @@ const StatusIcon: React.FC<{ status: WorkProduct['status'] }> = ({ status }) => 
 
 const CaseOrchestrator: React.FC = () => {
   const { cases, activeCase } = useContext(AppContext);
-  const [selectedId, setSelectedId] = useState<string>(activeCase?.id ?? cases[0]?.id ?? '');
+  const location = useLocation();
+  const navState = (location.state as { autoDeploy?: boolean; caseId?: string } | null) ?? null;
+  const autoFired = useRef(false);
+  const [selectedId, setSelectedId] = useState<string>(navState?.caseId ?? activeCase?.id ?? cases[0]?.id ?? '');
   const selected = cases.find(c => c.id === selectedId) ?? activeCase ?? cases[0] ?? null;
 
   const [products, setProducts] = useState<WorkProduct[]>([]);
@@ -108,6 +111,17 @@ const CaseOrchestrator: React.FC = () => {
       setRunning(false);
     }
   };
+
+  // Auto-deploy when handed off from the Intake Inbox ("Open case & deploy firm").
+  useEffect(() => {
+    if (navState?.autoDeploy && selected && !autoFired.current && !running && products.length === 0) {
+      autoFired.current = true;
+      // Clear the history state so a refresh doesn't re-trigger a deployment.
+      window.history.replaceState({}, '');
+      deploy();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navState?.autoDeploy, selected?.id, running, products.length]);
 
   const done = products.filter(p => p.status === 'done').length;
   const progress = products.length ? Math.round((done / products.length) * 100) : 0;

@@ -18,6 +18,21 @@ export default defineConfig(({ mode }) => {
         'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || env.SUPABASE_URL),
         'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY),
       },
+      build: {
+        rollupOptions: {
+          output: {
+            // Split heavy vendors into their own chunks so the initial load is
+            // smaller and long-term caching is better.
+            manualChunks: {
+              react: ['react', 'react-dom', 'react-router-dom'],
+              genai: ['@google/genai'],
+              charts: ['recharts'],
+              supabase: ['@supabase/supabase-js'],
+              motion: ['framer-motion'],
+            },
+          },
+        },
+      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
