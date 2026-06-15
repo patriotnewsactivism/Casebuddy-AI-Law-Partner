@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall } from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
+import IntakeWidget from './IntakeWidget';
 
 interface Lead {
   id: string;
@@ -203,6 +204,9 @@ const Dashboard = () => {
           </span>
         </div>
       </Link>
+
+      {/* Voice intake pipeline */}
+      <IntakeWidget />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">

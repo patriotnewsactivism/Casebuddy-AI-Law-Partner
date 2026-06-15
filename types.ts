@@ -39,6 +39,58 @@ export interface Case {
   winProbability: number;
 }
 
+// ── Intake pipeline ──────────────────────────────────────────────────────────
+// A prospect completes a voice intake with Maya; the conversation is distilled
+// into a structured IntakeData record, scored, and routed to a department.
+
+export interface IntakeData {
+  fullName: string;
+  contact: string;          // phone or email, however they gave it
+  matterType: string;       // e.g. "Personal Injury", "Family Law"
+  jurisdiction: string;     // state / court, if known
+  summary: string;          // plain-language description of what happened
+  incidentDate: string;     // when it happened (free text ok)
+  opposingParties: string;  // who they're up against
+  deadlines: string;        // any known deadlines / court dates
+  injuriesOrDamages: string;
+  desiredOutcome: string;
+  priorCounsel: string;     // have they spoken to other lawyers?
+}
+
+export type IntakeDisposition = 'accepted' | 'review' | 'denied';
+
+export interface IntakeScore {
+  score: number;                 // 0-100 case-strength / fit score
+  disposition: IntakeDisposition;
+  recommendedDepartment: string; // human label, e.g. "Personal Injury"
+  recommendedAgentId: string;    // specialist id, e.g. "personal-injury"
+  factors: { label: string; impact: 'positive' | 'negative' | 'neutral'; note: string }[];
+  reasoning: string;             // short internal rationale
+  clientMessage: string;         // friendly message shown to the prospect
+  urgency: 'low' | 'medium' | 'high';
+}
+
+export type IntakeStatus = 'new' | 'accepted' | 'denied' | 'routed';
+
+export interface IntakeCase {
+  id: string;
+  created_at: string;
+  full_name: string;
+  contact: string;
+  matter_type: string;
+  jurisdiction: string;
+  summary: string;
+  score: number;
+  disposition: IntakeDisposition;
+  status: IntakeStatus;
+  recommended_department: string;
+  recommended_agent_id: string;
+  urgency: 'low' | 'medium' | 'high';
+  intake: IntakeData;
+  score_detail: IntakeScore;
+  transcript: { speaker: string; text: string }[];
+}
+
 export interface Document {
   id: string;
   name: string;
