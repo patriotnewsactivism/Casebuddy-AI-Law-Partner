@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import {
   Scale, Mic, Users, BrainCircuit, TrendingUp, CheckCircle, Zap, Shield,
   Star, ArrowRight, Menu, X, FileAudio, Gavel, UserCheck, ClipboardList,
-  FileText, Mail, Archive, BookOpen, ChevronRight
+  FileText, Mail, Archive, BookOpen, ChevronRight, PhoneCall, Network,
+  Inbox, BarChart3
 } from 'lucide-react';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 
@@ -92,6 +93,54 @@ const STATS = [
   { value: '24/7', label: 'AI Availability', suffix: '' },
 ];
 
+const PIPELINE_STEPS = [
+  {
+    step: '01',
+    icon: PhoneCall,
+    color: 'text-violet-400',
+    bg: 'bg-violet-500/10',
+    border: 'border-violet-500/20',
+    title: 'Client clicks your intake link',
+    body: 'Share one link — in your email signature, on your website, via text. No login, no forms. The client taps the link on any device.',
+  },
+  {
+    step: '02',
+    icon: Mic,
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/10',
+    border: 'border-blue-500/20',
+    title: 'Maya greets them by voice',
+    body: 'Your AI intake specialist welcomes the prospect, conducts a professional intake interview, and gathers everything needed to evaluate the case.',
+  },
+  {
+    step: '03',
+    icon: BarChart3,
+    color: 'text-gold-400',
+    bg: 'bg-gold-500/10',
+    border: 'border-gold-500/20',
+    title: 'AI scores and routes the case',
+    body: 'Gemini analyzes the transcript, scores the case 0–100, decides Accept / Review / Deny, and routes it to the right specialist department automatically.',
+  },
+  {
+    step: '04',
+    icon: Inbox,
+    color: 'text-green-400',
+    bg: 'bg-green-500/10',
+    border: 'border-green-500/20',
+    title: 'Lead arrives in your Inbox — live',
+    body: 'You see the score, transcript, and routing recommendation in real time. On any device. Accept the lead with one tap.',
+  },
+  {
+    step: '05',
+    icon: Network,
+    color: 'text-orange-400',
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/20',
+    title: 'All 8 agents deploy automatically',
+    body: 'Accept a lead and CaseBuddy creates the case file and fires all 8 AI agents in parallel. In minutes you have legal research, a motion strategy, a jury analysis, a draft document set, and a client letter — ready to go.',
+  },
+];
+
 const TESTIMONIALS = [
   {
     name: 'Sarah Mitchell',
@@ -155,9 +204,9 @@ const LandingPage = () => {
           </Link>
 
           <div className="hidden md:flex items-center gap-6">
+            <NavLink href="#pipeline">How It Works</NavLink>
             <NavLink href="#features">Features</NavLink>
             <NavLink href="#agents">AI Team</NavLink>
-            <NavLink href="#lawyers">Lawyers</NavLink>
             <NavLink href="#testimonials">Reviews</NavLink>
             <Link to="/pricing" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Pricing</Link>
           </div>
@@ -204,30 +253,30 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 py-24 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 glass-gold rounded-full text-gold-400 text-xs font-semibold mb-8 animate-fade-in">
             <Zap size={13} />
-            The AI Law Firm for Winning Attorneys
+            The AI Law Firm That Never Stops Working
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-7xl font-bold font-serif leading-[1.1] mb-6 animate-slide-up">
-            Your Complete{' '}
-            <span className="text-gradient-gold">AI Legal Team</span>
-            {' '}Is Ready
+            A Client Calls.{' '}
+            <span className="text-gradient-gold">8 AI Agents</span>
+            {' '}Are Already Working the Case.
           </h1>
 
           <p className="text-base sm:text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            8 specialized AI agents + 12 practice-area lawyers. Trial simulation, witness prep, jury analysis, strategy, drafting — all in one platform. Built for attorneys who win.
+            CaseBuddy turns a voice intake call into a scored lead, a case file, a motion strategy, a jury analysis, and a client letter — without you lifting a finger. Then it keeps going: 12 specialist AI lawyers, live trial simulation, witness prep, verdict prediction, and 15+ more tools. All on one platform. Built for attorneys who win.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <Link to="/app" className="btn-gold text-base px-8 py-3.5 glow-gold">
-              Start Free Trial <ArrowRight size={18} />
+              Start Free Trial — 14 Days Free <ArrowRight size={18} />
             </Link>
-            <a href="#features" className="btn-ghost text-base px-8 py-3.5">
-              See All Features
+            <a href="#pipeline" className="btn-ghost text-base px-8 py-3.5">
+              See How It Works
             </a>
           </div>
 
           <div className="flex flex-wrap justify-center gap-3 sm:gap-6 text-xs sm:text-sm text-slate-500 animate-fade-in" style={{ animationDelay: '0.3s' }}>
-            {['No credit card required', '14-day free trial', 'Cancel anytime', 'No API costs included'].map(t => (
+            {['No credit card required', '$99/mo Pro Se · $199/mo Attorney · $499/mo Firm', 'Cancel anytime'].map(t => (
               <span key={t} className="flex items-center gap-1.5">
                 <CheckCircle size={14} className="text-green-500" />
                 {t}
@@ -252,6 +301,53 @@ const LandingPage = () => {
         </div>
       </section>
       <div className="section-divider" />
+
+      {/* ── Pipeline ─────────────────────────────────────────────────────── */}
+      <section id="pipeline" className="py-12 sm:py-24 relative overflow-hidden">
+        <div className="orb orb-gold w-80 h-80 left-0 bottom-10 opacity-10 pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8 sm:mb-14">
+            <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">The Intake Pipeline</p>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">From First Call to Full Case — Automatically</h2>
+            <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
+              Most firms spend 3–5 hours per intake — vetting, screening, creating the file, briefing the team. CaseBuddy compresses that into minutes with zero manual effort.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-5 gap-4 mb-12">
+            {PIPELINE_STEPS.map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <div key={i} className={`relative flex flex-col items-start p-5 rounded-2xl border ${s.border} ${s.bg}`}>
+                  <span className="text-xs font-black text-slate-600 mb-3">{s.step}</span>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${s.bg} border ${s.border}`}>
+                    <Icon size={20} className={s.color} />
+                  </div>
+                  <p className={`font-bold text-sm mb-2 ${s.color}`}>{s.title}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">{s.body}</p>
+                  {i < PIPELINE_STEPS.length - 1 && (
+                    <div className="hidden md:block absolute -right-3 top-1/2 -translate-y-1/2 z-10">
+                      <ChevronRight size={18} className="text-slate-600" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="glass-gold rounded-2xl p-6 sm:p-8 text-center">
+            <p className="text-2xl font-bold font-serif text-white mb-2">
+              The intake link that never sleeps.
+            </p>
+            <p className="text-slate-400 mb-6 max-w-xl mx-auto text-sm sm:text-base">
+              Put your CaseBuddy intake link in your email signature today. Every prospect who clicks it gets Maya's professional voice intake — scored, routed, and waiting in your inbox by the time you check it.
+            </p>
+            <Link to="/app" className="btn-gold inline-flex">
+              Get Your Intake Link <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* ── Meet the AI Team ─────────────────────────────────────────────── */}
       <section id="agents" className="py-12 sm:py-24 relative overflow-hidden">
@@ -379,6 +475,49 @@ const LandingPage = () => {
         </div>
       </section>
 
+      {/* ── Pricing Preview ───────────────────────────────────────────────── */}
+      <section className="py-12 sm:py-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Pricing</p>
+            <h2 className="text-3xl sm:text-4xl font-bold font-serif mb-3">One Billable Hour Pays for the Month</h2>
+            <p className="text-slate-400 max-w-xl mx-auto text-sm sm:text-base">Every plan includes a 14-day free trial. No credit card required.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { name: 'Pro Se', price: '$99', desc: 'Self-represented individuals', color: 'text-blue-400', border: 'border-slate-700', items: ['All 15+ AI tools', '25 active cases', 'Document analysis', 'Email support'] },
+              { name: 'Attorney', price: '$199', desc: 'Licensed solo attorneys', color: 'text-gold-400', border: 'border-gold-500/50', badge: 'Best Value', items: ['Everything in Pro Se', 'Voice intake pipeline', 'Firm Command (8 agents)', '12 AI lawyers on call', 'Priority support'] },
+              { name: 'Law Firm', price: '$499', desc: '3+ attorney firms', color: 'text-violet-400', border: 'border-violet-500/40', items: ['Everything in Attorney', '3 seats included', '$199/mo per extra seat', 'Cloud sync', 'White-label mode'] },
+            ].map(plan => (
+              <div key={plan.name} className={`relative bg-slate-800/60 border-2 ${plan.border} rounded-2xl p-6 flex flex-col ${plan.badge ? 'ring-1 ring-gold-500/30' : ''}`}>
+                {plan.badge && <div className="absolute -top-3 left-1/2 -translate-x-1/2"><span className="bg-gold-500 text-slate-950 text-xs font-bold px-3 py-0.5 rounded-full">{plan.badge}</span></div>}
+                <p className="font-bold text-white mb-1">{plan.name}</p>
+                <p className="text-xs text-slate-500 mb-3">{plan.desc}</p>
+                <div className="flex items-baseline gap-1 mb-4">
+                  <span className={`text-3xl font-bold ${plan.color}`}>{plan.price}</span>
+                  <span className="text-slate-500 text-sm">/mo</span>
+                </div>
+                <ul className="space-y-1.5 flex-1 mb-5">
+                  {plan.items.map(f => (
+                    <li key={f} className="flex items-center gap-2 text-xs text-slate-300">
+                      <CheckCircle size={12} className="text-green-400 shrink-0" />{f}
+                    </li>
+                  ))}
+                </ul>
+                <Link to="/app" className={`text-center py-2.5 rounded-xl font-bold text-sm transition-colors ${plan.badge ? 'bg-gold-500 hover:bg-gold-400 text-slate-950' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>
+                  Start Free Trial
+                </Link>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-6">
+            <Link to="/pricing" className="text-gold-400 hover:text-gold-300 text-sm font-semibold">
+              See full pricing details & add-ons →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ──────────────────────────────────────────────────────────── */}
       <section className="py-12 sm:py-24 relative overflow-hidden">
         <div className="orb orb-gold w-[500px] h-[500px] -top-20 left-1/2 -translate-x-1/2 opacity-20" />
@@ -387,16 +526,22 @@ const LandingPage = () => {
             <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gold-500/10 border border-gold-500/20 mb-5 sm:mb-6 glow-gold-sm">
               <Scale size={26} className="text-gold-400" />
             </div>
-            <h2 className="text-2xl sm:text-4xl font-bold font-serif mb-3 sm:mb-4">Ready to Win More Cases?</h2>
-            <p className="text-slate-400 mb-6 sm:mb-8 text-base sm:text-lg">Join attorneys already using AI to prepare smarter, argue better, and win more.</p>
+            <h2 className="text-2xl sm:text-4xl font-bold font-serif mb-3 sm:mb-4">
+              Your competitors are already using AI.<br />
+              <span className="text-gradient-gold">Are you?</span>
+            </h2>
+            <p className="text-slate-400 mb-6 sm:mb-8 text-base sm:text-lg">
+              The attorneys winning today aren't working harder — they're working with better tools. CaseBuddy gives every solo practitioner and small firm the same AI firepower that BigLaw pays seven figures for.
+            </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/app" className="btn-gold text-base px-8 py-3.5 glow-gold">
-                Start Free Trial <ArrowRight size={18} />
+                Start Your Free Trial <ArrowRight size={18} />
               </Link>
               <Link to="/pricing" className="btn-ghost text-base px-8 py-3.5">
                 View Pricing
               </Link>
             </div>
+            <p className="mt-5 text-xs text-slate-600">14-day free trial · No credit card required · Cancel anytime</p>
           </div>
         </div>
       </section>
@@ -414,6 +559,7 @@ const LandingPage = () => {
 
             <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-500">
               <Link to="/pricing" className="hover:text-white transition-colors">Pricing</Link>
+              <Link to="/app/guide" className="hover:text-white transition-colors">User Guide</Link>
               <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy</Link>
               <Link to="/tos" className="hover:text-white transition-colors">Terms</Link>
               <a href="mailto:support@casebuddy.live" className="hover:text-white transition-colors">Support</a>

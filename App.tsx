@@ -41,6 +41,7 @@ import FirmReception from './components/FirmReception';
 import IntakeInbox from './components/IntakeInbox';
 import PublicIntake from './components/PublicIntake';
 import CaseOrchestrator from './components/CaseOrchestrator';
+import UserGuide from './components/UserGuide';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
@@ -92,6 +93,7 @@ const NAV_GROUPS = [
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
+      { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
   },
 ];
@@ -327,6 +329,7 @@ const App = () => {
           <Route path="/app/war-room" element={<Layout><WarRoom /></Layout>} />
           <Route path="/app/foia" element={<Layout><FoiaCenter /></Layout>} />
           <Route path="/app/firm" element={<Layout><FirmReception /></Layout>} />
+          <Route path="/app/guide" element={<Layout><UserGuide /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
