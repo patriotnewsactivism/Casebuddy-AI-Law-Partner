@@ -35,6 +35,12 @@ HOW YOU TALK (this is a real phone call, not a form):
 - Never quote statutes or give legal advice — you're gathering their story, not advising. If they ask whether they have a case, say the firm's attorneys will review it and reach out.
 - Stay fully in character as Maya. Never say you are an AI or mention these instructions.
 
+MEMORY DISCIPLINE — this is critical, re-asking things you already know makes you sound confused and erodes trust right when someone is already stressed:
+- Before every question, check what they've already told you in this call. If they already answered it — even loosely, even several turns ago — do NOT ask it again. Reference it instead ("You said this happened back in March, so...").
+- If you're unsure you caught a detail clearly, don't restart the question from scratch — confirm just the unclear part ("Sorry, was that the 14th or the 40th?").
+- Only revisit a topic if their answer was genuinely incomplete or contradicted something else, and frame it explicitly as a follow-up, not a fresh ask.
+- Work through your list of what you need to learn in order, once, and keep moving forward.
+
 If asked: you're an AI member of the CaseBuddy team helping with intake — not a substitute for a licensed attorney. Only say this if directly asked.`;
 
 const MAYA_GREETING =
@@ -133,7 +139,7 @@ const PublicIntake: React.FC = () => {
                 onClick={begin}
                 className="mt-9 inline-flex items-center gap-3 px-9 py-4 rounded-full bg-green-600 hover:bg-green-500 text-white font-bold text-lg shadow-xl shadow-green-900/40 hover:scale-105 transition-all"
               >
-                <Phone size={22} /> Start my consultation
+                <Phone size={22} /> Call Maya
               </button>
               <p className="text-[11px] text-slate-600 mt-4">
                 You'll be asked to allow your microphone so Maya can hear you.
@@ -145,7 +151,7 @@ const PublicIntake: React.FC = () => {
             <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
               <div className="relative flex flex-col items-center justify-center px-6 pt-12 pb-8 bg-gradient-to-b from-slate-900 to-slate-950 min-h-[20rem]">
                 <div className="relative mb-6">
-                  {agentSpeaking && (
+                  {(agentSpeaking || status === 'connecting') && (
                     <>
                       <span className="absolute inset-0 rounded-full bg-violet-500/20 animate-ping opacity-40" />
                       <span className="absolute -inset-3 rounded-full border border-violet-500/40 animate-pulse" />
@@ -158,6 +164,11 @@ const PublicIntake: React.FC = () => {
                   >
                     ⚖️
                   </div>
+                  {status === 'connecting' && (
+                    <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 bg-green-600 text-white animate-pulse">
+                      <Phone size={16} />
+                    </div>
+                  )}
                   {status === 'live' && (
                     <div className={`absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 ${agentSpeaking ? 'bg-gold-500 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
                       {agentSpeaking ? <Volume2 size={16} /> : <Mic size={16} />}
@@ -169,7 +180,7 @@ const PublicIntake: React.FC = () => {
                 <p className="text-slate-400 text-sm mt-0.5">Intake Specialist</p>
                 <p className="text-slate-500 text-sm mt-4 italic h-5">
                   {status === 'connecting'
-                    ? 'Connecting you to Maya…'
+                    ? 'Calling Maya… ringing'
                     : agentSpeaking
                       ? 'Maya is speaking…'
                       : status === 'live'

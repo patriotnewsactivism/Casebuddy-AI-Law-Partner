@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { playRingback, Ringback } from '../utils/phoneSound';
 
 // Live voice via the Deepgram Voice Agent API:
 //   Deepgram Nova (ears) -> Gemini 2.5 Flash (brain, your key) -> Aura-2 (mouth)
@@ -7,6 +8,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
+// Minimum time the line "rings" before the agent picks up — even on a fast
+// connection, so it reads like a real phone call rather than an instant answer.
+const RING_MIN_MS = 2200;
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
@@ -64,9 +68,17 @@ export function useDeepgramVoiceAgent(
   const nextStartRef = useRef(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const captionTimer = useRef<any>(null);
+  const ringRef = useRef<Ringback | null>(null);
+  const pickupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const optsRef = useRef(options);
   optsRef.current = options;
+
+  const clearRing = useCallback(() => {
+    if (pickupTimerRef.current) { clearTimeout(pickupTimerRef.current); pickupTimerRef.current = null; }
+    ringRef.current?.stop();
+    ringRef.current = null;
+  }, []);
 
   const clearPlayback = useCallback(() => {
     sourcesRef.current.forEach(s => { try { s.stop(); } catch { /* noop */ } });
@@ -76,6 +88,7 @@ export function useDeepgramVoiceAgent(
   }, []);
 
   const stop = useCallback(() => {
+    clearRing();
     try { processorRef.current?.disconnect(); } catch { /* noop */ }
     processorRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -97,7 +110,7 @@ export function useDeepgramVoiceAgent(
     setLiveCaption(null);
     setInputLevel(0);
     setAgentSpeaking(false);
-  }, []);
+  }, [clearRing]);
 
   const playAudioChunk = useCallback(async (buffer: ArrayBuffer) => {
     const outputCtx = outputCtxRef.current;
@@ -179,6 +192,13 @@ export function useDeepgramVoiceAgent(
     setStatus('connecting');
     setTranscript([]);
 
+    // Starting the ring here — inside the click gesture — also unlocks audio
+    // output on iOS Safari before any of the setup below.
+    clearRing();
+    const ringback = playRingback();
+    ringRef.current = ringback;
+    const ringStartedAt = Date.now();
+
     try {
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_RATE });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_RATE });
@@ -210,7 +230,16 @@ export function useDeepgramVoiceAgent(
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
 
-      ws.onopen = () => {
+      // "Picks up" the line: stop the ring, hand the agent its configuration
+      // (which makes it speak the greeting), and open the mic. Held until the
+      // socket is actually open AND the minimum ring time has elapsed, so a
+      // fast connection still feels like a real call instead of an instant answer.
+      const pickUp = () => {
+        if (pickupTimerRef.current) { clearTimeout(pickupTimerRef.current); pickupTimerRef.current = null; }
+        ringback.stop();
+        if (ringRef.current === ringback) ringRef.current = null;
+        if (ws.readyState !== WebSocket.OPEN) return;
+
         const settings = {
           type: 'Settings',
           audio: {
@@ -255,6 +284,12 @@ export function useDeepgramVoiceAgent(
         processor.connect(inputCtx.destination);
       };
 
+      ws.onopen = () => {
+        const remaining = Math.max(0, RING_MIN_MS - (Date.now() - ringStartedAt));
+        if (remaining === 0) pickUp();
+        else pickupTimerRef.current = setTimeout(pickUp, remaining);
+      };
+
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           playAudioChunk(event.data);
@@ -264,20 +299,23 @@ export function useDeepgramVoiceAgent(
       };
 
       ws.onerror = () => {
+        clearRing();
         setError('The voice line hit an error. Please try again.');
         setStatus('error');
       };
       ws.onclose = () => {
+        clearRing();
         if (status !== 'error') stop();
       };
     } catch (e) {
+      clearRing();
       const message = e instanceof Error ? e.message : 'Could not connect the voice line.';
       setError(message);
       setStatus('error');
       stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleServerMessage, playAudioChunk, stop]);
+  }, [clearRing, handleServerMessage, playAudioChunk, stop]);
 
   useEffect(() => () => stop(), [stop]);
 
