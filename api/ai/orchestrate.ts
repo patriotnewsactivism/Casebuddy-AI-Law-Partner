@@ -1,14 +1,16 @@
 /**
  * Vercel Edge Function — Server-side Firm Command orchestration.
  *
- * Runs the full agent pipeline (Maya → parallel team → Sierra) on the server
- * so agents keep working even if the client disconnects. All results are
- * persisted in Supabase; the client watches via Supabase Realtime.
+ * Returns 200 immediately, then runs the full agent pipeline
+ * (Maya → parallel team → Sierra) in the background via waitUntil.
+ * All results are persisted in Supabase; the client watches via Realtime.
  *
  * POST /api/ai/orchestrate
  * Headers: { Authorization: Bearer <supabase_jwt> }
  * Body: { runId, caseContext, specialist? }
  */
+
+import { waitUntil } from '@vercel/functions';
 
 export const config = { runtime: 'edge' };
 
@@ -153,102 +155,105 @@ export default async function handler(req: Request): Promise<Response> {
   if (!runId || !caseContext)
     return json({ error: 'Missing runId or caseContext.' }, 400);
 
-  // ── shortcuts ──
-  const patch = (path: string, data: Record<string, unknown>) =>
-    sbPatch(supabaseUrl, anonKey, jwt, path, data);
+  // ── Run the pipeline in the background ──
+  // Return 200 immediately; the client watches Supabase Realtime for updates.
+  const pipeline = async () => {
+    const patch = (path: string, data: Record<string, unknown>) =>
+      sbPatch(supabaseUrl, anonKey, jwt, path, data);
 
-  const updateWp = (taskId: string, data: Record<string, unknown>) =>
-    patch(`work_products?run_id=eq.${runId}&task_id=eq.${taskId}`, data);
+    const updateWp = (taskId: string, data: Record<string, unknown>) =>
+      patch(`work_products?run_id=eq.${runId}&task_id=eq.${taskId}`, data);
 
-  const ERR_MSG = 'This step hit an error. You can re-deploy the firm to retry.';
+    const ERR_MSG = 'This step hit an error. You can re-deploy the firm to retry.';
 
-  const runAgent = async (taskId: string, prompt: string): Promise<string> => {
-    await updateWp(taskId, { status: 'working', started_at: Date.now() });
+    const runAgent = async (taskId: string, prompt: string): Promise<string> => {
+      await updateWp(taskId, { status: 'working', started_at: Date.now() });
+      try {
+        const content = await gemini(geminiKey, prompt);
+        await updateWp(taskId, {
+          status: 'done',
+          content,
+          completed_at: Date.now(),
+        });
+        return content;
+      } catch {
+        await updateWp(taskId, {
+          status: 'error',
+          content: ERR_MSG,
+          completed_at: Date.now(),
+        }).catch(() => {});
+        return ERR_MSG;
+      }
+    };
+
     try {
-      const content = await gemini(geminiKey, prompt);
-      await updateWp(taskId, {
+      // Mark run as running
+      await patch(`firm_runs?id=eq.${runId}`, { status: 'running' });
+
+      // Phase 1 — Maya
+      const maya = await runAgent('maya-summary', P.maya(caseContext));
+
+      // Phase 2 — parallel agents
+      const specPrompt = specialist
+        ? P.specialist(caseContext, maya, specialist)
+        : P.lex(caseContext, maya);
+
+      const parallelIds = [
+        'lex-research',
+        'sol-deadlines',
+        'doc-draft',
+        'jules-jury',
+        'rex-strategy',
+      ] as const;
+      const parallelPrompts = [
+        P.lex(caseContext, maya),
+        P.sol(caseContext, maya),
+        P.doc(caseContext, maya),
+        P.jules(caseContext, maya),
+        P.rex(caseContext, maya),
+      ];
+
+      const results = await Promise.allSettled([
+        ...parallelIds.map((id, i) => runAgent(id, parallelPrompts[i])),
+        runAgent('specialist-plan', specPrompt),
+      ]);
+
+      // Phase 3 — Sierra synthesizes
+      const names = ['Lex', 'Sol', 'Doc', 'Jules', 'Rex', specialist?.name || 'Specialist'];
+      const titles = [
+        'Legal Research Memo',
+        'Deadlines & SOL',
+        'First Draft on the Page',
+        'Jury & Venue Read',
+        'Trial Strategy Outline',
+        `${specialist?.practiceArea || 'Specialist'} Action Plan`,
+      ];
+      const teamWork = [
+        `### Maya — Case Summary & Issue Spotting\n${maya}`,
+        ...results.map((r, i) => {
+          const content = r.status === 'fulfilled' ? r.value : ERR_MSG;
+          return `### ${names[i]} — ${titles[i]}\n${content}`;
+        }),
+      ].join('\n\n');
+
+      await runAgent('sierra-update', P.sierra(caseContext, teamWork));
+
+      // Done
+      await patch(`firm_runs?id=eq.${runId}`, {
         status: 'done',
-        content,
-        completed_at: Date.now(),
+        completed_at: new Date().toISOString(),
       });
-      return content;
     } catch {
-      await updateWp(taskId, {
-        status: 'error',
-        content: ERR_MSG,
-        completed_at: Date.now(),
-      }).catch(() => {});
-      return ERR_MSG;
+      try {
+        await patch(`firm_runs?id=eq.${runId}`, { status: 'error' });
+      } catch {
+        /* best effort */
+      }
     }
   };
 
-  // ── pipeline ──
-  try {
-    // Mark run as running
-    await patch(`firm_runs?id=eq.${runId}`, { status: 'running' });
+  // Fire-and-forget: waitUntil keeps the function alive after response is sent
+  waitUntil(pipeline());
 
-    // Phase 1 — Maya
-    const maya = await runAgent('maya-summary', P.maya(caseContext));
-
-    // Phase 2 — parallel agents
-    const specPrompt = specialist
-      ? P.specialist(caseContext, maya, specialist)
-      : P.lex(caseContext, maya);
-
-    const parallelIds = [
-      'lex-research',
-      'sol-deadlines',
-      'doc-draft',
-      'jules-jury',
-      'rex-strategy',
-    ] as const;
-    const parallelPrompts = [
-      P.lex(caseContext, maya),
-      P.sol(caseContext, maya),
-      P.doc(caseContext, maya),
-      P.jules(caseContext, maya),
-      P.rex(caseContext, maya),
-    ];
-
-    const results = await Promise.allSettled([
-      ...parallelIds.map((id, i) => runAgent(id, parallelPrompts[i])),
-      runAgent('specialist-plan', specPrompt),
-    ]);
-
-    // Phase 3 — Sierra synthesizes
-    const names = ['Lex', 'Sol', 'Doc', 'Jules', 'Rex', specialist?.name || 'Specialist'];
-    const titles = [
-      'Legal Research Memo',
-      'Deadlines & SOL',
-      'First Draft on the Page',
-      'Jury & Venue Read',
-      'Trial Strategy Outline',
-      `${specialist?.practiceArea || 'Specialist'} Action Plan`,
-    ];
-    const teamWork = [
-      `### Maya — Case Summary & Issue Spotting\n${maya}`,
-      ...results.map((r, i) => {
-        const content = r.status === 'fulfilled' ? r.value : ERR_MSG;
-        return `### ${names[i]} — ${titles[i]}\n${content}`;
-      }),
-    ].join('\n\n');
-
-    await runAgent('sierra-update', P.sierra(caseContext, teamWork));
-
-    // Done
-    await patch(`firm_runs?id=eq.${runId}`, {
-      status: 'done',
-      completed_at: new Date().toISOString(),
-    });
-
-    return json({ ok: true, runId });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Unknown error';
-    try {
-      await patch(`firm_runs?id=eq.${runId}`, { status: 'error' });
-    } catch {
-      /* best effort */
-    }
-    return json({ error: msg }, 500);
-  }
+  return json({ ok: true, runId });
 }
