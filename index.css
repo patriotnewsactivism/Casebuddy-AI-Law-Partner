@@ -1,5 +1,9 @@
 /* CaseBuddy — Premium Design System */
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ─── Base ─────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
