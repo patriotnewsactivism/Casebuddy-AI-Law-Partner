@@ -2,11 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import type { User } from '@supabase/supabase-js';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
   Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2
+  Cloud, CloudOff, Loader2, LogOut
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import Dashboard from './components/Dashboard';
@@ -43,10 +44,15 @@ import IntakeInbox from './components/IntakeInbox';
 import PublicIntake from './components/PublicIntake';
 import CaseOrchestrator from './components/CaseOrchestrator';
 import UserGuide from './components/UserGuide';
+import Login from './components/Login';
+import ResetPassword from './components/ResetPassword';
+import RequireAuth from './components/RequireAuth';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
 import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { useAuthSession, AuthStatus } from './hooks/useAuthSession';
+import { signOut as signOutUser } from './services/authStore';
 
 const NAV_GROUPS = [
   {
@@ -199,6 +205,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
 const Layout = ({ children }: { children?: React.ReactNode }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const { user, signOut } = React.useContext(AppContext);
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100">
@@ -209,14 +216,25 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
           <button className="md:hidden text-slate-400" onClick={() => setIsSidebarOpen(true)}>
             <Menu size={22} />
           </button>
-          <div className="flex items-center gap-4 ml-auto">
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-sm font-semibold text-white">Attorney J. Doe</span>
-              <span className="text-xs text-slate-400">Senior Litigator</span>
-            </div>
-            <div className="h-9 w-9 rounded-full bg-slate-700 border border-slate-600 overflow-hidden">
-              <img src="https://picsum.photos/id/1005/100/100" alt="Profile" className="h-full w-full object-cover"/>
-            </div>
+          <div className="flex items-center gap-3 ml-auto">
+            {user && (
+              <>
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="text-sm font-semibold text-white">{user.email}</span>
+                  <span className="text-xs text-slate-400">Signed in</span>
+                </div>
+                <div className="h-9 w-9 rounded-full bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-gold-400 font-bold text-sm shrink-0">
+                  {user.email?.[0]?.toUpperCase() ?? '?'}
+                </div>
+                <button
+                  onClick={signOut}
+                  title="Sign out"
+                  className="text-slate-400 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <LogOut size={18} />
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -242,6 +260,12 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   );
 };
 
+const ProtectedLayout = ({ children }: { children?: React.ReactNode }) => (
+  <RequireAuth>
+    <Layout>{children}</Layout>
+  </RequireAuth>
+);
+
 export const AppContext = React.createContext<{
   cases: Case[];
   activeCase: Case | null;
@@ -250,6 +274,9 @@ export const AppContext = React.createContext<{
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
   syncStatus: SyncStatus;
+  user: User | null;
+  authStatus: AuthStatus;
+  signOut: () => Promise<void>;
 }>({
   cases: [],
   activeCase: null,
@@ -258,6 +285,9 @@ export const AppContext = React.createContext<{
   theme: 'dark',
   setTheme: () => {},
   syncStatus: 'local-only',
+  user: null,
+  authStatus: 'loading',
+  signOut: async () => {},
 });
 
 const ONBOARDING_KEY = 'casebuddy_onboarding_done';
@@ -276,6 +306,7 @@ const App = () => {
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
+  const { session, user, status: authStatus } = useAuthSession();
 
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);
@@ -297,8 +328,13 @@ const App = () => {
     }
   };
 
-  // Initial cloud sync
+  // Initial cloud sync — only once signed in; RLS requires an authenticated
+  // session for the `cases` table, so there's nothing to fetch for guests.
   useEffect(() => {
+    if (!session) {
+      setSyncStatus('local-only');
+      return;
+    }
     setSyncStatus('syncing');
     loadCasesWithSync((cloudCases, status) => {
       setSyncStatus(status);
@@ -312,37 +348,42 @@ const App = () => {
         }
       }
     });
-  }, []);
+  }, [session]);
 
   // Realtime updates from other devices
   useEffect(() => {
+    if (!session) return;
     const unsub = subscribeCases(updated => {
       setCases(updated);
       saveCases(updated);
       setSyncStatus('synced');
     });
     return unsub;
-  }, []);
+  }, [session]);
 
   // Keep localStorage + Supabase in sync on every cases change.
   // hasMounted guard prevents re-uploading the cloud data we just fetched.
   const hasMounted = React.useRef(false);
   useEffect(() => {
     saveCases(cases);
-    if (hasMounted.current) {
+    if (hasMounted.current && session) {
       syncLocalCasesToCloud(cases);
     } else {
       hasMounted.current = true;
     }
-  }, [cases]);
+  }, [cases, session]);
 
   const handleCloseOnboarding = () => {
     localStorage.setItem(ONBOARDING_KEY, '1');
     setShowOnboarding(false);
   };
 
+  const handleSignOut = async () => {
+    await signOutUser();
+  };
+
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus, user, authStatus, signOut: handleSignOut }}>
       <BrowserRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
@@ -353,32 +394,34 @@ const App = () => {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/start" element={<IntakePage />} />
           <Route path="/intake" element={<PublicIntake />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route path="/app" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/app/intake-inbox" element={<Layout><IntakeInbox /></Layout>} />
-          <Route path="/app/firm-command" element={<Layout><CaseOrchestrator /></Layout>} />
-          <Route path="/app/cases" element={<Layout><CaseManager /></Layout>} />
-          <Route path="/app/practice" element={<Layout><ArgumentPractice /></Layout>} />
-          <Route path="/app/witness-lab" element={<Layout><WitnessLab /></Layout>} />
-          <Route path="/app/witnesses" element={<Layout><WitnessPrep /></Layout>} />
-          <Route path="/app/strategy" element={<Layout><StrategyRoom /></Layout>} />
-          <Route path="/app/transcriber" element={<Layout><Transcriber /></Layout>} />
-          <Route path="/app/docs" element={<Layout><DraftingAssistant /></Layout>} />
-          <Route path="/app/settings" element={<Layout><SettingsPage /></Layout>} />
-          <Route path="/app/deposition" element={<Layout><DepositionPrep /></Layout>} />
-          <Route path="/app/evidence" element={<Layout><EvidenceVault /></Layout>} />
-          <Route path="/app/jury" element={<Layout><JuryAnalyzer /></Layout>} />
-          <Route path="/app/jury-sim" element={<Layout><JurySimulator /></Layout>} />
-          <Route path="/app/statements" element={<Layout><StatementBuilder /></Layout>} />
-          <Route path="/app/verdict" element={<Layout><VerdictPredictor /></Layout>} />
-          <Route path="/app/client-update" element={<Layout><ClientUpdate /></Layout>} />
-          <Route path="/app/legal-team" element={<Layout><LegalTeam /></Layout>} />
-          <Route path="/app/integrations" element={<Layout><Integrations /></Layout>} />
-          <Route path="/app/deadlines" element={<Layout><DeadlineTracker /></Layout>} />
-          <Route path="/app/war-room" element={<Layout><WarRoom /></Layout>} />
-          <Route path="/app/foia" element={<Layout><FoiaCenter /></Layout>} />
-          <Route path="/app/firm" element={<Layout><FirmReception /></Layout>} />
-          <Route path="/app/guide" element={<Layout><UserGuide /></Layout>} />
+          <Route path="/app" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
+          <Route path="/app/intake-inbox" element={<ProtectedLayout><IntakeInbox /></ProtectedLayout>} />
+          <Route path="/app/firm-command" element={<ProtectedLayout><CaseOrchestrator /></ProtectedLayout>} />
+          <Route path="/app/cases" element={<ProtectedLayout><CaseManager /></ProtectedLayout>} />
+          <Route path="/app/practice" element={<ProtectedLayout><ArgumentPractice /></ProtectedLayout>} />
+          <Route path="/app/witness-lab" element={<ProtectedLayout><WitnessLab /></ProtectedLayout>} />
+          <Route path="/app/witnesses" element={<ProtectedLayout><WitnessPrep /></ProtectedLayout>} />
+          <Route path="/app/strategy" element={<ProtectedLayout><StrategyRoom /></ProtectedLayout>} />
+          <Route path="/app/transcriber" element={<ProtectedLayout><Transcriber /></ProtectedLayout>} />
+          <Route path="/app/docs" element={<ProtectedLayout><DraftingAssistant /></ProtectedLayout>} />
+          <Route path="/app/settings" element={<ProtectedLayout><SettingsPage /></ProtectedLayout>} />
+          <Route path="/app/deposition" element={<ProtectedLayout><DepositionPrep /></ProtectedLayout>} />
+          <Route path="/app/evidence" element={<ProtectedLayout><EvidenceVault /></ProtectedLayout>} />
+          <Route path="/app/jury" element={<ProtectedLayout><JuryAnalyzer /></ProtectedLayout>} />
+          <Route path="/app/jury-sim" element={<ProtectedLayout><JurySimulator /></ProtectedLayout>} />
+          <Route path="/app/statements" element={<ProtectedLayout><StatementBuilder /></ProtectedLayout>} />
+          <Route path="/app/verdict" element={<ProtectedLayout><VerdictPredictor /></ProtectedLayout>} />
+          <Route path="/app/client-update" element={<ProtectedLayout><ClientUpdate /></ProtectedLayout>} />
+          <Route path="/app/legal-team" element={<ProtectedLayout><LegalTeam /></ProtectedLayout>} />
+          <Route path="/app/integrations" element={<ProtectedLayout><Integrations /></ProtectedLayout>} />
+          <Route path="/app/deadlines" element={<ProtectedLayout><DeadlineTracker /></ProtectedLayout>} />
+          <Route path="/app/war-room" element={<ProtectedLayout><WarRoom /></ProtectedLayout>} />
+          <Route path="/app/foia" element={<ProtectedLayout><FoiaCenter /></ProtectedLayout>} />
+          <Route path="/app/firm" element={<ProtectedLayout><FirmReception /></ProtectedLayout>} />
+          <Route path="/app/guide" element={<ProtectedLayout><UserGuide /></ProtectedLayout>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

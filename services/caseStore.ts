@@ -12,6 +12,7 @@
  * share the firm_id (e.g. via the Settings page) to share cases.
  */
 
+import { User } from '@supabase/supabase-js';
 import { Case } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { saveCases, loadCases } from '../utils/storage';
@@ -32,6 +33,29 @@ export const getFirmId = (): string => {
 
 export const setFirmId = (id: string) => {
   localStorage.setItem(FIRM_ID_KEY, id.trim());
+};
+
+/**
+ * Bridges the local firm_id into the signed-in user's account metadata so it
+ * appears as a JWT claim (auth.jwt() -> 'user_metadata' ->> 'firm_id'), which
+ * is what the Postgres RLS policies on `cases` check against. Without this,
+ * an authenticated user has no provable link to a firm_id at all.
+ */
+export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
+  if (!user) return;
+  const metaFirmId = user.user_metadata?.firm_id as string | undefined;
+  if (metaFirmId) {
+    setFirmId(metaFirmId);
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.auth.updateUser({ data: { firm_id: getFirmId() } });
+  if (!error) {
+    // JWT claims are baked in at sign-in; refresh so the new firm_id is usable immediately.
+    await sb.auth.refreshSession();
+  }
 };
 
 // ─── sync status ─────────────────────────────────────────────────────────────
