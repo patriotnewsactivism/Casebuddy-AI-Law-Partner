@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -9,48 +9,60 @@ import {
   Cloud, CloudOff, Loader2, LogOut
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
-import Dashboard from './components/Dashboard';
-import CaseManager from './components/CaseManager';
-import WitnessLab from './components/WitnessLab';
-import StrategyRoom from './components/StrategyRoom';
-import ArgumentPractice from './components/ArgumentPractice';
-import LandingPage from './components/LandingPage';
-import PrivacyPolicy from './components/PrivacyPolicy';
-import TermsOfService from './components/TermsOfService';
-import Transcriber from './components/Transcriber';
-import DraftingAssistant from './components/DraftingAssistant';
-import SettingsPage from './components/Settings';
-import DepositionPrep from './components/DepositionPrep';
-import EvidenceVault from './components/EvidenceVault';
-import JuryAnalyzer from './components/JuryAnalyzer';
-import StatementBuilder from './components/StatementBuilder';
-import VerdictPredictor from './components/VerdictPredictor';
-import ClientUpdate from './components/ClientUpdate';
-import LegalTeam from './components/LegalTeam';
-import WitnessPrep from './components/WitnessPrep';
-import JurySimulator from './components/JurySimulator';
-import Pricing from './components/Pricing';
-import OnboardingModal from './components/OnboardingModal';
-import Integrations from './components/Integrations';
-import DeadlineTracker from './components/DeadlineTracker';
-import ActiveCaseBar from './components/ActiveCaseBar';
-import IntakePage from './components/IntakePage';
-import WarRoom from './components/WarRoom';
-import CopilotSidebar from './components/CopilotSidebar';
-import FoiaCenter from './components/FoiaCenter';
-import FirmReception from './components/FirmReception';
-import IntakeInbox from './components/IntakeInbox';
-import PublicIntake from './components/PublicIntake';
-import CaseOrchestrator from './components/CaseOrchestrator';
-import UserGuide from './components/UserGuide';
-import AuthPage from './components/AuthPage';
+
+// ─── Eagerly loaded (needed on every page or at auth boundary) ────────────
 import ErrorBoundary from './components/ErrorBoundary';
+import ActiveCaseBar from './components/ActiveCaseBar';
+import CopilotSidebar from './components/CopilotSidebar';
+
+// ─── Lazy-loaded pages ────────────────────────────────────────────────────
+const Dashboard        = React.lazy(() => import('./components/Dashboard'));
+const CaseManager      = React.lazy(() => import('./components/CaseManager'));
+const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
+const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
+const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
+const LandingPage      = React.lazy(() => import('./components/LandingPage'));
+const PrivacyPolicy    = React.lazy(() => import('./components/PrivacyPolicy'));
+const TermsOfService   = React.lazy(() => import('./components/TermsOfService'));
+const Transcriber      = React.lazy(() => import('./components/Transcriber'));
+const DraftingAssistant= React.lazy(() => import('./components/DraftingAssistant'));
+const SettingsPage     = React.lazy(() => import('./components/Settings'));
+const DepositionPrep   = React.lazy(() => import('./components/DepositionPrep'));
+const EvidenceVault    = React.lazy(() => import('./components/EvidenceVault'));
+const JuryAnalyzer     = React.lazy(() => import('./components/JuryAnalyzer'));
+const StatementBuilder = React.lazy(() => import('./components/StatementBuilder'));
+const VerdictPredictor = React.lazy(() => import('./components/VerdictPredictor'));
+const ClientUpdate     = React.lazy(() => import('./components/ClientUpdate'));
+const LegalTeam        = React.lazy(() => import('./components/LegalTeam'));
+const WitnessPrep      = React.lazy(() => import('./components/WitnessPrep'));
+const JurySimulator    = React.lazy(() => import('./components/JurySimulator'));
+const Pricing          = React.lazy(() => import('./components/Pricing'));
+const OnboardingModal  = React.lazy(() => import('./components/OnboardingModal'));
+const Integrations     = React.lazy(() => import('./components/Integrations'));
+const DeadlineTracker  = React.lazy(() => import('./components/DeadlineTracker'));
+const IntakePage       = React.lazy(() => import('./components/IntakePage'));
+const WarRoom          = React.lazy(() => import('./components/WarRoom'));
+const FoiaCenter       = React.lazy(() => import('./components/FoiaCenter'));
+const FirmReception    = React.lazy(() => import('./components/FirmReception'));
+const IntakeInbox      = React.lazy(() => import('./components/IntakeInbox'));
+const PublicIntake     = React.lazy(() => import('./components/PublicIntake'));
+const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'));
+const UserGuide        = React.lazy(() => import('./components/UserGuide'));
+const AuthPage         = React.lazy(() => import('./components/AuthPage'));
+
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, adoptFirmIdFromUser, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut } from './services/authService';
 import type { User } from '@supabase/supabase-js';
+
+// ─── Page-level loading spinner ──────────────────────────────────────────
+const PageSpinner = () => (
+  <div className="flex items-center justify-center py-32">
+    <Loader2 size={28} className="text-gold-500 animate-spin" />
+  </div>
+);
 
 const NAV_GROUPS = [
   {
@@ -253,7 +265,9 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
               className="flex-1 p-4 sm:p-6 md:p-8"
             >
               <ErrorBoundary label={location.pathname.split('/').pop() || 'Page'}>
-                {children}
+                <Suspense fallback={<PageSpinner />}>
+                  {children}
+                </Suspense>
               </ErrorBoundary>
             </motion.div>
           </AnimatePresence>
@@ -265,7 +279,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   );
 };
 
-// ─── Auth Gate: redirects unauthenticated users to /login ────────────────────
+// ─── Auth Gate: redirects unauthenticated users to /login ────────────────
 
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
   const { user, authLoading } = React.useContext(AppContext);
@@ -285,7 +299,7 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// ─── Context ─────────────────────────────────────────────────────────────────
+// ─── Context ─────────────────────────────────────────────────────────────
 
 export const AppContext = React.createContext<{
   cases: Case[];
@@ -333,7 +347,6 @@ const App = () => {
     const unsub = onAuthStateChange((u, _session) => {
       setUser(u);
       setAuthLoading(false);
-      if (u) adoptFirmIdFromUser(u);
     });
     return unsub;
   }, []);
@@ -403,47 +416,53 @@ const App = () => {
   return (
     <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus, user, authLoading }}>
       <BrowserRouter>
-        {showOnboarding && user && <OnboardingModal onClose={handleCloseOnboarding} />}
+        {showOnboarding && user && (
+          <Suspense fallback={null}>
+            <OnboardingModal onClose={handleCloseOnboarding} />
+          </Suspense>
+        )}
 
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthPage />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/tos" element={<TermsOfService />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/start" element={<IntakePage />} />
-          <Route path="/intake" element={<PublicIntake />} />
+        <Suspense fallback={<div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 size={32} className="text-gold-500 animate-spin" /></div>}>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/tos" element={<TermsOfService />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/start" element={<IntakePage />} />
+            <Route path="/intake" element={<PublicIntake />} />
 
-          {/* Protected routes — require authentication */}
-          <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
-          <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
-          <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
-          <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
-          <Route path="/app/practice" element={<AuthGate><Layout><ArgumentPractice /></Layout></AuthGate>} />
-          <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
-          <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
-          <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
-          <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
-          <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
-          <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
-          <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
-          <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
-          <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
-          <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
-          <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
-          <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
-          <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
-          <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
-          <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
-          <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
-          <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
-          <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
-          <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
-          <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
+            {/* Protected routes — require authentication */}
+            <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
+            <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
+            <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
+            <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
+            <Route path="/app/practice" element={<AuthGate><Layout><ArgumentPractice /></Layout></AuthGate>} />
+            <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
+            <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
+            <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
+            <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
+            <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
+            <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
+            <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
+            <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
+            <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
+            <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
+            <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
+            <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
+            <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
+            <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
+            <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
+            <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
+            <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
+            <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
+            <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
+            <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
