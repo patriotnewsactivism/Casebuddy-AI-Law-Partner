@@ -9,7 +9,20 @@ const getApiKey = () => {
 };
 
 const createAI = () => new GoogleGenAI({ apiKey: getApiKey() });
-const ai = createAI();
+
+// Lazy-init: create a fresh GoogleGenAI instance on each call so that if
+// the user updates their API key in Settings mid-session, the next call
+// picks it up. The old module-scope `const ai = createAI()` would cache
+// the key from page load and never refresh.
+const getAI = () => createAI();
+
+// Legacy alias — existing call sites use `ai.models.generateContent(…)`.
+// This proxy delegates to a fresh instance each time.
+const ai = new Proxy({} as GoogleGenAI, {
+  get(_target, prop) {
+    return (getAI() as any)[prop];
+  },
+});
 
 export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {

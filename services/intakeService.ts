@@ -6,7 +6,12 @@ import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
 const getApiKey = () =>
   import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
 
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+// Lazy proxy so a fresh API key is used on every call (not stale from page load).
+const ai = new Proxy({} as InstanceType<typeof GoogleGenAI>, {
+  get(_target, prop) {
+    return (new GoogleGenAI({ apiKey: getApiKey() }) as any)[prop];
+  },
+});
 
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
 // manual review; anything under REVIEW is politely declined.

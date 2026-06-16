@@ -10,8 +10,10 @@ import VoiceMicButton from './VoiceMicButton';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+const getApiKey = () =>
+  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
+const createAI = () => new GoogleGenAI({ apiKey: getApiKey() });
+
 
 type DocumentTemplate =
   | 'motion-to-dismiss'
@@ -159,10 +161,12 @@ const DraftingAssistant = () => {
       return;
     }
 
-    if (!apiKey || apiKey === '') {
-      setError('API key not configured. Please set GEMINI_API_KEY in .env.local');
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      setError('API key not configured. Please set GEMINI_API_KEY in .env.local or add it in Settings.');
       return;
     }
+    const ai = createAI();
 
     setIsGenerating(true);
     setError('');
