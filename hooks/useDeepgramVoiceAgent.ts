@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getSession } from '../services/authService';
 
 // Live voice via the Deepgram Voice Agent API:
-//   Deepgram Nova (ears) -> Gemini 2.5 Flash (brain, your key) -> Aura-2 (mouth)
+//   Deepgram Nova (ears) -> Gemini 2.5 Pro (brain) -> Aura-2 (mouth)
 // Single WebSocket at wss://agent.deepgram.com/v1/agent/converse.
+//
+// API keys are fetched at runtime from /api/ai/voice-keys (behind auth)
+// so they never appear in the JS bundle.
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
@@ -39,10 +43,36 @@ export interface UseDeepgramVoiceAgentResult {
   stop: () => void;
 }
 
-const getDeepgramKey = () =>
-  import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '';
-const getGeminiKey = () =>
-  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
+/**
+ * Fetch API keys from the server at runtime (never baked into the bundle).
+ * Falls back to env vars for local development only.
+ */
+const fetchVoiceKeys = async (): Promise<{ deepgramKey: string; geminiKey: string }> => {
+  // Try server endpoint first (production path)
+  try {
+    const session = await getSession();
+    if (session?.access_token) {
+      const resp = await fetch('/api/ai/voice-keys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.deepgramKey && data.geminiKey) return data;
+      }
+    }
+  } catch {
+    // Fall through to env var fallback
+  }
+
+  // Local dev fallback — reads from import.meta.env (only available in dev builds)
+  const deepgramKey = import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '';
+  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
+  return { deepgramKey, geminiKey };
+};
 
 export function useDeepgramVoiceAgent(
   options: UseDeepgramVoiceAgentOptions
@@ -131,7 +161,6 @@ export function useDeepgramVoiceAgent(
   const handleServerMessage = useCallback((data: any) => {
     const type = data.type;
     if (type === 'UserStartedSpeaking') {
-      // Barge-in: stop the agent immediately so you can interrupt.
       clearPlayback();
       setActiveSpeaker('you');
       return;
@@ -162,22 +191,33 @@ export function useDeepgramVoiceAgent(
   }, [clearPlayback]);
 
   const start = useCallback(async () => {
-    const dgKey = getDeepgramKey();
-    const geminiKey = getGeminiKey();
-    if (!dgKey) {
-      setError('Deepgram key not found. Set VITE_DEEPGRAM_API_KEY to enable live voice.');
-      setStatus('error');
-      return;
-    }
-    if (!geminiKey) {
-      setError('Gemini key not found. Set VITE_GEMINI_API_KEY to power the conversation.');
+    setError(null);
+    setStatus('connecting');
+    setTranscript([]);
+
+    // Fetch keys from server (never baked into bundle)
+    let dgKey: string;
+    let geminiKey: string;
+    try {
+      const keys = await fetchVoiceKeys();
+      dgKey = keys.deepgramKey;
+      geminiKey = keys.geminiKey;
+    } catch {
+      setError('Could not retrieve voice credentials. Please sign in and try again.');
       setStatus('error');
       return;
     }
 
-    setError(null);
-    setStatus('connecting');
-    setTranscript([]);
+    if (!dgKey) {
+      setError('Deepgram key not available. Check your configuration.');
+      setStatus('error');
+      return;
+    }
+    if (!geminiKey) {
+      setError('Gemini key not available. Check your configuration.');
+      setStatus('error');
+      return;
+    }
 
     try {
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_RATE });
@@ -200,7 +240,6 @@ export function useDeepgramVoiceAgent(
         throw new Error('Microphone access denied. Allow mic access (and use HTTPS) to talk with the team.');
       }
 
-      // Browser-safe auth: pass the key via the Sec-WebSocket-Protocol subprotocols.
       const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey]);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
@@ -219,11 +258,15 @@ export function useDeepgramVoiceAgent(
           },
           agent: {
             language: 'en',
-            listen: { provider: { type: 'deepgram', model: 'nova-3' } },
+            listen: {
+              provider: { type: 'deepgram', model: 'nova-3' },
+              endpointing: 300,
+              utterance_end_ms: 1000,
+            },
             think: {
               provider: { type: 'google' },
               endpoint: {
-                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse',
                 headers: { 'x-goog-api-key': geminiKey },
               },
               prompt,
@@ -235,7 +278,6 @@ export function useDeepgramVoiceAgent(
         ws.send(JSON.stringify(settings));
         setStatus('live');
 
-        // Stream mic audio up as raw linear16 PCM frames.
         const source = inputCtx.createMediaStreamSource(micStream);
         const processor = inputCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
