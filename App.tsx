@@ -54,7 +54,7 @@ import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
 import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
-import { onAuthStateChange, signOut } from './services/authService';
+import { onAuthStateChange, signOut, getSession } from './services/authService';
 import type { User } from '@supabase/supabase-js';
 
 // ─── Page-level loading spinner ──────────────────────────────────────────
@@ -350,6 +350,32 @@ const App = () => {
     });
     return unsub;
   }, []);
+
+  // ─── Fetch server-side API keys once authenticated ─────────────────────────
+  // The Gemini key lives server-side (GEMINI_API_KEY). Services fall back to
+  // window.__GEMINI_API_KEY, so we fetch it via the voice-keys endpoint and
+  // cache it on window so all services pick it up without any VITE_ env var.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const session = await getSession();
+        if (!session?.access_token) return;
+        const resp = await fetch('/api/ai/voice-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.geminiKey) (window as any).__GEMINI_API_KEY = data.geminiKey;
+          if (data.deepgramKey) (window as any).__DEEPGRAM_API_KEY = data.deepgramKey;
+        }
+      } catch { /* silent — services fall back to VITE_ env vars */ }
+    })();
+  }, [user]);
 
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);

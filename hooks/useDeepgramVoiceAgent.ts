@@ -260,8 +260,6 @@ export function useDeepgramVoiceAgent(
             language: 'en',
             listen: {
               provider: { type: 'deepgram', model: 'nova-3' },
-              endpointing: 300,
-              utterance_end_ms: 1000,
             },
             think: {
               provider: { type: 'google' },
