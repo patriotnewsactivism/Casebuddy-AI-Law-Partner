@@ -185,6 +185,7 @@ export function useDeepgramVoiceAgent(
       return;
     }
     if (type === 'Error') {
+      console.error('[VoiceAgent] Error event:', JSON.stringify(data));
       setError(data.description || data.message || 'Voice agent error.');
       setStatus('error');
     }
@@ -262,9 +263,9 @@ export function useDeepgramVoiceAgent(
               provider: { type: 'deepgram', model: 'nova-3' },
             },
             think: {
-              provider: { type: 'google' },
+              provider: { type: 'open_ai', model: 'gemini-2.5-flash', temperature: 0.6 },
               endpoint: {
-                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+                url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
                 headers: { 'x-goog-api-key': geminiKey },
               },
               prompt,
