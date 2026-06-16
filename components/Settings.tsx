@@ -1,9 +1,10 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { AppContext } from '../App';
-import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy, Lock, LogOut, Loader2 } from 'lucide-react';
 import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
 import { getFirmId, setFirmId, syncLabel } from '../services/caseStore';
+import { updatePassword, signOut as signOutUser } from '../services/authService';
 
 const FIRM_BRANDING_KEY = 'casebuddy_firm_branding';
 const FIRM_LOGO_KEY = 'casebuddy_firm_logo';
@@ -36,12 +37,20 @@ const loadFirmLogo = (): string | null => {
 };
 
 const Settings = () => {
-  const { cases, theme, setTheme, syncStatus } = useContext(AppContext);
+  const { cases, theme, setTheme, syncStatus, user } = useContext(AppContext);
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   const [storageInfo, setStorageInfo] = useState({ used: 0, available: 0, percentage: 0 });
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Account & Security state
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   // Firm Branding state
   const [firmName, setFirmName] = useState('CaseBuddy');
@@ -177,6 +186,40 @@ const Settings = () => {
     setFirmLogo(null);
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    setPasswordBusy(true);
+    try {
+      const result = await updatePassword(newPassword);
+      if (!result.success) {
+        setPasswordError(result.error ?? 'Could not update your password.');
+      } else {
+        setPasswordSuccess(true);
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await signOutUser();
+  };
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-start justify-between">
@@ -191,6 +234,81 @@ const Settings = () => {
           </div>
         )}
       </div>
+
+      {/* Account & Security */}
+      {user && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Lock className="text-gold-500" size={24} />
+            <h2 className="text-xl font-semibold text-white">Account & Security</h2>
+          </div>
+
+          <div className="space-y-5">
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+              <div>
+                <p className="text-slate-300 font-medium text-sm">Signed in as</p>
+                <p className="text-xs text-slate-400 mt-0.5">{user.email}</p>
+              </div>
+              <button
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-900/20 hover:bg-red-900/30 disabled:opacity-60 border border-red-700 rounded-lg text-red-400 transition-colors"
+              >
+                {signingOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
+                Sign out
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              <p className="text-sm font-medium text-white">Change password</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="New password"
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
+                />
+              </div>
+
+              {passwordError && (
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-950/40 border border-red-500/30 rounded-lg text-sm text-red-200">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                  <span>{passwordError}</span>
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-green-950/40 border border-green-500/30 rounded-lg text-sm text-green-200">
+                  <CheckCircle size={15} className="shrink-0 mt-0.5" />
+                  <span>Password updated.</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={passwordBusy}
+                className="flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-60 text-slate-950 font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+              >
+                {passwordBusy && <Loader2 size={14} className="animate-spin" />}
+                Update password
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* API Configuration */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
@@ -600,13 +718,13 @@ const Settings = () => {
 
         <div className="space-y-3 text-sm text-slate-300">
           <p>
-            <strong className="text-white">Data Storage:</strong> All case data is stored locally in your browser's memory. No data is sent to any server except Google's Gemini API.
+            <strong className="text-white">Authentication:</strong> The /app workspace requires a signed-in account. Your case data is scoped to your firm and protected by Postgres Row Level Security — only authenticated members of your firm can read or write it.
+          </p>
+          <p>
+            <strong className="text-white">Data Storage:</strong> Case data is saved locally on this device and synced to a secure Supabase database so it's available across all your devices.
           </p>
           <p>
             <strong className="text-white">API Usage:</strong> Your prompts and case information are sent to Google's Gemini API for processing. Review <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">Google's Privacy Policy</a>.
-          </p>
-          <p>
-            <strong className="text-white">Persistence:</strong> Case data is lost on page refresh unless you export it. No backend database is implemented.
           </p>
         </div>
       </div>

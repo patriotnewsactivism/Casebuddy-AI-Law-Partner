@@ -89,6 +89,21 @@ export const resetPassword = async (email: string): Promise<AuthResult> => {
   return { success: true };
 };
 
+// ─── Update Password ──────────────────────────────────────────────────────────
+// Used both for a voluntary password change in Settings and for the recovery
+// flow: resetPassword() above sends users to /app/settings with a temporary
+// recovery session already exchanged (detectSessionInUrl: true), where they
+// land on this same form to set their new password.
+
+export const updatePassword = async (newPassword: string): Promise<AuthResult> => {
+  const sb = getSupabase();
+  if (!sb) return { success: false, error: 'Database not configured.' };
+
+  const { error } = await sb.auth.updateUser({ password: newPassword });
+  if (error) return { success: false, error: friendlyError(error) };
+  return { success: true };
+};
+
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 export const getSession = async (): Promise<Session | null> => {

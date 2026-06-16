@@ -48,7 +48,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, adoptFirmIdFromUser, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut } from './services/authService';
 import type { User } from '@supabase/supabase-js';
 
@@ -333,6 +333,7 @@ const App = () => {
     const unsub = onAuthStateChange((u, _session) => {
       setUser(u);
       setAuthLoading(false);
+      if (u) adoptFirmIdFromUser(u);
     });
     return unsub;
   }, []);

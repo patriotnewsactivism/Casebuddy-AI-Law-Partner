@@ -12,6 +12,7 @@
  * share the firm_id (e.g. via the Settings page) to share cases.
  */
 
+import type { User } from '@supabase/supabase-js';
 import { Case } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { saveCases, loadCases } from '../utils/storage';
@@ -32,6 +33,29 @@ export const getFirmId = (): string => {
 
 export const setFirmId = (id: string) => {
   localStorage.setItem(FIRM_ID_KEY, id.trim());
+};
+
+/**
+ * Bridges the localStorage firm_id into the signed-in user's Supabase
+ * user_metadata so it's available as a JWT claim for Postgres RLS policies
+ * (see supabase/migrations/0003_auth_hardening.sql). Without this, an
+ * authenticated user has no firm_id claim and firm-scoped RLS would match
+ * nothing.
+ */
+export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
+  if (!user) return;
+  const metaFirmId = user.user_metadata?.firm_id as string | undefined;
+  if (metaFirmId) {
+    setFirmId(metaFirmId);
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.auth.updateUser({ data: { firm_id: getFirmId() } });
+  if (!error) {
+    await sb.auth.refreshSession();
+  }
 };
 
 // ─── sync status ─────────────────────────────────────────────────────────────
