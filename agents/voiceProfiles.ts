@@ -1,6 +1,6 @@
 // Voice personas for the live Deepgram Voice Agent engine.
 //
-// Architecture: Deepgram listens (Nova STT) -> Gemini 2.5 Flash thinks
+// Architecture: Deepgram listens (Nova STT) -> Gemini 2.5 Pro thinks
 // (these personalities) -> Deepgram Aura-2 speaks. Each persona gets a
 // DISTINCT, realistic Aura-2 voice so the firm sounds like a real team.
 //

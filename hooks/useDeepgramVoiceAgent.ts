@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { playRingback, Ringback } from '../utils/phoneSound';
 
 // Live voice via the Deepgram Voice Agent API:
-//   Deepgram Nova (ears) -> Gemini 2.5 Flash (brain, your key) -> Aura-2 (mouth)
+//   Deepgram Nova (ears) -> Gemini 2.5 Pro (brain, your key) -> Aura-2 (mouth)
 // Single WebSocket at wss://agent.deepgram.com/v1/agent/converse.
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
@@ -252,7 +252,7 @@ export function useDeepgramVoiceAgent(
             think: {
               provider: { type: 'google' },
               endpoint: {
-                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse',
                 headers: { 'x-goog-api-key': geminiKey },
               },
               prompt,
