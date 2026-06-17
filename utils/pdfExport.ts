@@ -33,7 +33,7 @@ const loadFirmLogo = (): string | null => {
 
 const loadAttorneyInfo = (): { displayName: string; title: string } => {
   try {
-    const raw = localStorage.getItem('lexsim_preferences');
+    const raw = localStorage.getItem('casebuddy_preferences') || localStorage.getItem('lexsim_preferences');
     const prefs = raw ? JSON.parse(raw) : {};
     return {
       displayName: prefs.displayName || 'Attorney',
