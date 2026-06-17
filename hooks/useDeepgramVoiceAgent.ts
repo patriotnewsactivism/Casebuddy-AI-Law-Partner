@@ -69,8 +69,8 @@ const fetchVoiceKeys = async (): Promise<{ deepgramKey: string; geminiKey: strin
   }
 
   // Local dev fallback — reads from import.meta.env (only available in dev builds)
-  const deepgramKey = import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '';
-  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
+  const deepgramKey = (import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '').trim();
+  const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '').trim();
   return { deepgramKey, geminiKey };
 };
 
@@ -201,8 +201,8 @@ export function useDeepgramVoiceAgent(
     let geminiKey: string;
     try {
       const keys = await fetchVoiceKeys();
-      dgKey = keys.deepgramKey;
-      geminiKey = keys.geminiKey;
+      dgKey = keys.deepgramKey.trim();
+      geminiKey = keys.geminiKey.trim();
     } catch {
       setError('Could not retrieve voice credentials. Please sign in and try again.');
       setStatus('error');
@@ -241,7 +241,7 @@ export function useDeepgramVoiceAgent(
         throw new Error('Microphone access denied. Allow mic access (and use HTTPS) to talk with the team.');
       }
 
-      const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey]);
+      const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey.trim()]);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
