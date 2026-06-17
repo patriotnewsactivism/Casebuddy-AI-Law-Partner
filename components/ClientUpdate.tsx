@@ -2,7 +2,8 @@ import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateClientUpdate } from '../services/geminiService';
 import { sendCaseUpdateEmail } from '../services/integrationService';
-import { Mail, Loader, Copy, Download, RefreshCw, Check, Send } from 'lucide-react';
+import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer } from 'lucide-react';
+import { printAsPdf } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -98,6 +99,11 @@ const ClientUpdate = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const printLetterAsPdf = () => {
+    if (!letter) return;
+    printAsPdf();
   };
 
   const sendEmail = async () => {
@@ -219,6 +225,10 @@ const ClientUpdate = () => {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${copied ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
                   >
                     {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+                  </button>
+                  <button onClick={printLetterAsPdf}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">
+                    <Printer size={14} /> PDF
                   </button>
                   <button onClick={downloadLetter}
                     className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold rounded-lg text-sm"
