@@ -67,15 +67,16 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
   );
 };
 
-const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }: {
+interface ChatPanelProps {
   specialist: LegalSpecialist;
   session: ConsultationSession;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<void> | void;
   onReset: () => void;
   loading: boolean;
   onBack?: () => void;
   activeCase?: { title: string } | null;
-}) => {
+}
+const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -236,12 +237,13 @@ const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack, acti
   );
 };
 
-const SpecialistCard = ({ specialist, isActive, onClick, hasHistory }: {
+interface SpecialistCardProps {
   specialist: LegalSpecialist;
   isActive: boolean;
   onClick: () => void;
   hasHistory: boolean;
-}) => (
+}
+const SpecialistCard: React.FC<SpecialistCardProps> = ({ specialist, isActive, onClick, hasHistory }) => (
   <button onClick={onClick}
     className={`w-full text-left p-4 rounded-xl border transition-all duration-150 group ${
       isActive
