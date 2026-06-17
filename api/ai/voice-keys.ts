@@ -51,12 +51,13 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // Return the keys — these never appear in the JS bundle
-  const deepgramKey = process.env.DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_API_KEY || '';
-  const geminiKey = process.env.GEMINI_API_KEY || '';
+  const deepgramKey = process.env.DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_KEY || '';
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY || '';
+  const deepseekKey = process.env.DEEPSEEK_API_KEY || '';
 
-  if (!deepgramKey || !geminiKey) {
-    return json({ error: 'Voice API keys not configured on server.' }, 503);
+  if (!deepgramKey && !geminiKey && !deepseekKey) {
+    return json({ error: 'No AI API keys configured on server.' }, 503);
   }
 
-  return json({ deepgramKey, geminiKey });
+  return json({ deepgramKey, geminiKey, deepseekKey });
 }
