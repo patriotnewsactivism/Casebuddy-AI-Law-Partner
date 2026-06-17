@@ -16,7 +16,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   tools: 'Tools',
 };
 
-const IntegrationCard = ({ integration }: { integration: IntegrationStatus }) => (
+const IntegrationCard: React.FC<{ integration: IntegrationStatus }> = ({ integration }) => (
   <div className={`bg-slate-800 border rounded-xl p-5 transition-all ${
     integration.configured ? 'border-green-500/40' : 'border-slate-700'
   }`}>
