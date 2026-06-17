@@ -36,6 +36,74 @@ const loadFirmLogo = (): string | null => {
   }
 };
 
+// ── Agent Activity Logs panel ────────────────────────────────────────────────
+const AgentLogsPanel: React.FC = () => {
+  const [logs, setLogs] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  const loadLogs = async () => {
+    setLoading(true);
+    try {
+      const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
+      if (!isSupabaseConfigured) { setLoading(false); return; }
+      const sb = getSupabase();
+      if (!sb) { setLoading(false); return; }
+      const { data } = await sb
+        .from('agent_cron_logs')
+        .select('*')
+        .order('ran_at', { ascending: false })
+        .limit(10);
+      setLogs(data || []);
+    } catch { /* table may not exist yet */ }
+    setLoading(false);
+  };
+
+  React.useEffect(() => { loadLogs(); }, []);
+
+  if (logs.length === 0 && !loading) return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <Cloud className="text-gold-500" size={20} />
+        <h2 className="text-lg font-semibold text-white">Agent Activity Logs</h2>
+      </div>
+      <p className="text-sm text-slate-400">No background agent runs yet. Logs appear here once the cron infrastructure is active.</p>
+    </div>
+  );
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Cloud className="text-gold-500" size={20} />
+          <h2 className="text-lg font-semibold text-white">Agent Activity Logs</h2>
+        </div>
+        <button onClick={loadLogs} disabled={loading}
+          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors">
+          <Loader2 size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+      <div className="space-y-2">
+        {logs.map((log: any) => (
+          <div key={log.id} className="bg-slate-900 rounded-lg p-3 text-xs">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-semibold text-gold-400">{log.job}</span>
+              <span className="text-slate-500">{new Date(log.ran_at).toLocaleString()}</span>
+            </div>
+            <div className="flex gap-3 text-slate-400 mb-1">
+              <span>📁 {log.cases_loaded ?? 0} cases</span>
+              <span>⏰ {log.deadlines_checked ?? 0} deadlines</span>
+              <span>📨 {log.alerts_sent ?? 0} alerts</span>
+            </div>
+            {log.log && <pre className="text-slate-500 whitespace-pre-wrap text-xs leading-relaxed">{log.log.slice(0, 300)}</pre>}
+            {log.error && <p className="text-red-400 mt-1">❌ {log.error}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
 const Settings = () => {
   const { cases, theme, setTheme, syncStatus, user } = useContext(AppContext);
   const [displayName, setDisplayName] = useState('');
@@ -753,6 +821,9 @@ const Settings = () => {
           </button>
         </div>
       </div>
+
+      {/* Agent Activity Logs */}
+      <AgentLogsPanel />
 
       {/* About */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
