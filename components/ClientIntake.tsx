@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, CheckCircle, AlertTriangle, Loader, Download, Copy, ChevronRight, ChevronLeft } from 'lucide-react';
+import { deepseekChat } from '../services/deepseek';
 
 interface IntakeForm {
   // Personal Info
@@ -84,7 +85,6 @@ const ClientIntake: React.FC = () => {
   const generateEngagementLetter = async () => {
     setGeneratingLetter(true);
     try {
-      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
       const prompt = `Draft a professional attorney-client engagement letter for the following new client intake:
 
 Client: ${form.firstName} ${form.lastName}
@@ -99,16 +99,13 @@ Jurisdiction: ${form.jurisdiction}
 
 Include: scope of representation, fee agreement, billing procedures, client obligations, file retention policy, termination clause, and signature blocks. Use professional legal letterhead format with [ATTORNEY NAME] and [FIRM NAME] placeholders.`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 3000 },
-        }),
+      const text = await deepseekChat({
+        systemInstruction: 'You are a legal document expert. Draft only the letter text.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 3000,
       });
-      const data = await res.json();
-      setEngagementLetter(data.candidates?.[0]?.content?.parts?.[0]?.text || 'Error generating letter.');
+      setEngagementLetter(text || 'Error generating letter.');
     } catch {
       setEngagementLetter('Error generating engagement letter. Please check your API configuration.');
     } finally {

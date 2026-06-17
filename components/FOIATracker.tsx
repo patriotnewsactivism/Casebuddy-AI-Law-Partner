@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Loader, Copy, Download, Trash2, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { deepseekChat } from '../services/deepseek';
 
 interface FOIARequest {
   id: string;
@@ -96,7 +97,6 @@ const FOIATracker: React.FC = () => {
     if (!form.agency || !form.recordsDescription) return;
     setGenerating(true);
     try {
-      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
 
       const prompt = `Draft a professional, legally precise Freedom of Information Act (FOIA) / public records request letter.
 
@@ -124,16 +124,12 @@ Requirements:
 
 Draft the complete letter now:`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 3000 },
-        }),
+      const text = await deepseekChat({
+        systemInstruction: 'You are a FOIA/public-records expert drafting requests. Return only the letter text, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 3000,
       });
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Error generating request.';
 
       const today = new Date().toISOString().split('T')[0];
       const deadline = getResponseDeadline(today, form.agencyType);
@@ -169,7 +165,6 @@ Draft the complete letter now:`;
   const generateFollowUp = async (request: FOIARequest) => {
     setGeneratingFollowUp(request.id);
     try {
-      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
       const daysOver = Math.abs(getDaysRemaining(request.responseDeadline));
 
       const prompt = `Draft a firm follow-up letter for an unanswered FOIA request.
@@ -190,16 +185,12 @@ Draft a firm, professional follow-up that:
 - If this is follow-up #2+, escalate language and mention potential litigation under ${request.agencyType === 'federal' ? '5 U.S.C. § 552(a)(4)(B)' : 'state public records law'}
 - Keep it professional but assertive`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 2000 },
-        }),
+      const text = await deepseekChat({
+        systemInstruction: 'You are a FOIA/public-records expert. Return only the letter text, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 2000,
       });
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Error.';
 
       const updated = requests.map(r => r.id === request.id ? { ...r, followUpCount: r.followUpCount + 1 } : r);
       save(updated);

@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { TrendingUp, Loader, AlertTriangle, CheckCircle, Target, Shield, Zap, ChevronDown } from 'lucide-react';
+import { deepseekChat } from '../services/deepseek';
 
 interface AnalysisResult {
   winProbability: number;
@@ -56,7 +57,6 @@ const CaseStrengthAnalyzer: React.FC = () => {
     setRawText('');
 
     try {
-      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
 
       const caseContext = selectedCase ? `
 Case Title: ${selectedCase.title}
@@ -94,17 +94,13 @@ Provide a thorough case evaluation in this EXACT JSON format (no markdown, pure 
 
 Be direct, honest, and analytical. Do not sugarcoat weaknesses.`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 3000 },
-        }),
+      const text = await deepseekChat({
+        systemInstruction: 'You are a senior litigation analyst. Return ONLY valid JSON, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 3000,
+        jsonMode: true,
       });
-
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       setRawText(text);
 
       // Parse JSON from response

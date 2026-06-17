@@ -1,14 +1,16 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { DocumentType, StrategyInsight, CoachingAnalysis, TrialPhase, SimulationMode } from "../types";
 import { retryWithBackoff, withTimeout } from "../utils/errorHandler";
+import { deepseekChat, parseDeepSeekJson } from "./deepseek";
 
+// ── Gemini client – kept only for multimodal (audio/image/file) + live ──
 const getApiKey = () => {
   const key = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
   return key;
 };
-
 const createAI = () => new GoogleGenAI({ apiKey: getApiKey() });
+<<<<<<< Updated upstream
 
 // Lazy-init: create a fresh GoogleGenAI instance on each call so that if
 // the user updates their API key in Settings mid-session, the next call
@@ -23,6 +25,31 @@ const ai = new Proxy({} as GoogleGenAI, {
     return (getAI() as any)[prop];
   },
 });
+=======
+const ai = createAI();
+const DS_MODEL = 'deepseek-chat';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Build a JSON schema instruction string for the system prompt. */
+const jsonInst = (fields: string) =>
+  `Return ONLY valid JSON. No markdown, no explanation.\nExpected structure:\n${fields}`;
+
+/** Ask DeepSeek for structured JSON, parse with fallback. */
+async function dsJson<T>(system: string, user: string, temp = 0.3, timeoutMs = 30000): Promise<T> {
+  const text = await deepseekChat({
+    systemInstruction: `${system}\n\n${jsonInst(typeof ({} as T))}`,
+    messages: [{ role: 'user', content: user }],
+    temperature: temp,
+    maxTokens: 3000,
+    jsonMode: true,
+    timeoutMs,
+  });
+  return JSON.parse(text) as T;
+}
+
+// ── Multimodal helpers (Gemini only) ─────────────────────────────────────────
+>>>>>>> Stashed changes
 
 export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
@@ -42,56 +69,53 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
   });
 };
 
+// ── Document analysis ───────────────────────────────────────────────────────
+
 export const analyzeDocument = async (text: string, imagePart?: any) => {
-  return retryWithBackoff(async () => {
-    const model = 'gemini-2.5-flash';
-    const prompt = `Analyze the following legal document content.
-    Extract:
-    1. A concise summary (max 3 sentences).
-    2. Key legal entities (people, organizations, statutes).
-    3. A list of potential risks or contradictions found in the text.
+  // Image → keep Gemini
+  if (imagePart) {
+    return retryWithBackoff(async () => {
+      const prompt = `Analyze the following legal document content.
+Extract:
+1. A concise summary (max 3 sentences).
+2. Key legal entities (people, organizations, statutes).
+3. A list of potential risks or contradictions found in the text.
 
-    Return the response in JSON format.
-    `;
+Return the response in JSON format.`;
 
-    const parts = [];
-    if (imagePart) parts.push(imagePart);
-    parts.push({ text: prompt + "\n\nDocument Content:\n" + text });
+      const parts = [imagePart, { text: prompt + "\n\nDocument Content:\n" + text }];
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: { parts },
+          config: { responseMimeType: "application/json" },
+        }),
+        30000
+      );
+      return JSON.parse(response.text || '{}');
+    }, 3);
+  }
 
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: model,
-        contents: { parts },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING },
-              entities: { type: Type.ARRAY, items: { type: Type.STRING } },
-              risks: { type: Type.ARRAY, items: { type: Type.STRING } }
-            }
-          }
-        }
-      }),
-      30000
-    );
-
-    return JSON.parse(response.text || '{}');
-  }, 3);
+  // Text → DeepSeek
+  return dsJson<{ summary: string; entities: string[]; risks: string[] }>(
+    'You are a legal document analyst. Extract a concise summary (max 3 sentences), key legal entities (people, organizations, statutes), and a list of potential risks or contradictions.',
+    `Document Content:\n${text}\n\nReturn a JSON object with fields: summary (string), entities (string array), risks (string array).`
+  );
 };
 
+// ── Witness simulation ──────────────────────────────────────────────────────
+
 export const generateWitnessResponse = async (
-  history: { role: string, parts: { text: string }[] }[],
+  history: { role: string; parts: { text: string }[] }[],
   witnessName: string,
   personality: string,
   caseContext: string
-) => {
+): Promise<string> => {
   try {
     let guide = "Answer questions directly and honestly. Provide relevant details you know. Stay calm and professional.";
-    if (personality && personality.toLowerCase().includes('hostile')) {
+    if (personality?.toLowerCase().includes('hostile')) {
       guide = "Be evasive and defensive. Give short clipped responses. Say 'I don\\'t recall' frequently. Show frustration.";
-    } else if (personality && personality.toLowerCase().includes('nervous')) {
+    } else if (personality?.toLowerCase().includes('nervous')) {
       guide = "Stutter and use filler words like 'um' and 'uh'. Show uncertainty. Ramble. Contradict yourself slightly.";
     }
 
@@ -109,35 +133,28 @@ CRITICAL RULES:
 7. Use natural speech patterns with imperfections.
 8. Maintain consistency with previous answers given in this examination.`;
 
-    const chat = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      config: {
-        systemInstruction,
-        temperature: 0.95,
-      },
-      history: history.map(h => ({
-        role: h.role === 'user' ? 'user' : 'model',
-        parts: h.parts
-      }))
+    const messages = history
+      .filter(h => h.role !== 'system')
+      .map(h => ({
+        role: h.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: h.parts.map(p => p.text).join('\n'),
+      }));
+
+    const text = await deepseekChat({
+      systemInstruction,
+      messages,
+      temperature: 0.95,
+      maxTokens: 300,
+      timeoutMs: 20000,
     });
-
-    const lastMessage = history[history.length - 1].parts[0].text;
-    const response = await withTimeout(
-      chat.sendMessage({ message: lastMessage }),
-      20000
-    );
-
-    if (!response.text) {
-      throw new Error('Empty response from witness');
-    }
-
-    return response.text;
-
+    return text;
   } catch (error) {
     console.error('Witness response error:', error);
     throw new Error(`Witness simulation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
+
+// ── Coaching ────────────────────────────────────────────────────────────────
 
 export const generateWitnessCoaching = async (
   userQuestion: string,
@@ -147,52 +164,17 @@ export const generateWitnessCoaching = async (
   caseContext: string
 ): Promise<{ suggestion: string; followUp: string; fallback: string }> => {
   try {
-    const tactics = personality && personality.toLowerCase().includes('hostile') 
+    const tactics = personality?.toLowerCase().includes('hostile')
       ? "For hostile witnesses, pin them down with specific facts. Stay cold and methodical. Trap contradictions."
-      : personality && personality.toLowerCase().includes('nervous')
-      ? "For nervous witnesses, their anxiety helps you. Follow up on inconsistencies. Give them time to ramble."
-      : "For cooperative witnesses, build rapport. Get them to elaborate on helpful details. Use their words.";
+      : personality?.toLowerCase().includes('nervous')
+        ? "For nervous witnesses, their anxiety helps you. Follow up on inconsistencies. Give them time to ramble."
+        : "For cooperative witnesses, build rapport. Get them to elaborate on helpful details. Use their words.";
 
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are a trial coaching expert. Analyze this cross-examination moment.
-
-Case: ${caseContext}
-Witness: ${witnessName} (${personality})
-Tactics: ${tactics}
-
-Attorney asked: "${userQuestion}"
-Witness answered: "${witnessResponse}"
-
-Provide JSON response with:
-1. "suggestion": Tactical advice on responding to this answer (2-3 sentences)
-2. "followUp": Next specific question to ask (1-2 sentences)
-3. "fallback": Alternative question if witness evades (1-2 sentences)
-
-Return ONLY valid JSON, no markdown.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              suggestion: { type: Type.STRING },
-              followUp: { type: Type.STRING },
-              fallback: { type: Type.STRING }
-            },
-            required: ['suggestion', 'followUp', 'fallback']
-          }
-        }
-      }),
-      15000
+    return await dsJson(
+      'You are a trial coaching expert. Respond with a JSON object containing "suggestion", "followUp", and "fallback" strings.',
+      `Case: ${caseContext}\nWitness: ${witnessName} (${personality})\nTactics: ${tactics}\n\nAttorney asked: "${userQuestion}"\nWitness answered: "${witnessResponse}"\n\nProvide tactical advice: suggestion (2-3 sentences), followUp (next question, 1-2 sentences), fallback (alternative if witness evades, 1-2 sentences).`,
+      0.7, 15000
     );
-
-    const parsed = JSON.parse(response.text || '{}');
-    return {
-      suggestion: parsed.suggestion || "Analyze what the witness revealed and what they evaded.",
-      followUp: parsed.followUp || "Ask a more specific follow-up question.",
-      fallback: parsed.fallback || "Try approaching from a different angle if they won't answer."
-    };
   } catch (error) {
     console.error('Coaching generation error:', error);
     return {
@@ -203,48 +185,26 @@ Return ONLY valid JSON, no markdown.`,
   }
 };
 
+// ── Strategy ────────────────────────────────────────────────────────────────
+
 export const predictStrategy = async (caseSummary: string, opponentProfile: string): Promise<StrategyInsight[]> => {
   try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Analyze this legal case and provide strategic insights.
-
-Case: ${caseSummary}
-Opponent: ${opponentProfile}
-
-Provide 3 strategic insights (Risks, Opportunities, or Predictions) in JSON format.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                confidence: { type: Type.NUMBER },
-                type: { type: Type.STRING, enum: ['risk', 'opportunity', 'prediction'] }
-              }
-            }
-          }
-        }
-      }),
-      30000
+    const result = await dsJson<StrategyInsight[]>(
+      'You are a legal strategy analyst. Return a JSON array of 3 objects with fields: title (string), description (string), confidence (number 0-100), type ("risk"|"opportunity"|"prediction").',
+      `Case: ${caseSummary}\nOpponent: ${opponentProfile}\n\nProvide 3 strategic insights.`,
+      0.7, 30000
     );
-
-    return JSON.parse(response.text || '[]');
+    return Array.isArray(result) ? result : [];
   } catch (error) {
     console.error('Strategy prediction error:', error);
     return [];
   }
 };
 
+// ── Trial sim system instruction (pure string builder, no API call) ─────────
+
 export const getTrialSimSystemInstruction = (
-  phase: TrialPhase,
-  mode: string,
-  opponentName: string,
-  caseSummary: string
+  phase: TrialPhase, mode: string, opponentName: string, caseSummary: string
 ): string => {
   const phaseDescriptions: Record<TrialPhase, string> = {
     'pre-trial-motions': 'You are opposing counsel in pre-trial motions. Argue procedural positions.',
@@ -256,79 +216,19 @@ export const getTrialSimSystemInstruction = (
     'closing-argument': 'You are opposing counsel. Summarize your case persuasively.',
     'sentencing': 'You are the prosecutor. Argue for appropriate sentence.'
   };
-
   const modeInstructions: Record<string, string> = {
     'learn': 'Provide helpful coaching. Be educational. Go slowly.',
     'practice': 'Be realistic. Give balanced opposition.',
     'trial': 'Be aggressive. Challenging. No hand-holding.'
   };
-
   return `You are ${opponentName}, opposing counsel in a trial simulation.
-
 Phase: ${phaseDescriptions[phase]}
 Mode: ${modeInstructions[mode] || 'Be realistic'}
 Case: ${caseSummary}
-
 Respond naturally. Use tools to provide coaching tips and objections.`;
 };
 
-export const generateTrialCoaching = async (
-  phase: TrialPhase,
-  userStatement: string,
-  opponentResponse: string
-): Promise<CoachingAnalysis> => {
-  try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are a trial coaching expert analyzing an attorney's trial performance.
-
-Phase: ${phase}
-Attorney said: "${userStatement}"
-Opponent responded: "${opponentResponse}"
-
-Provide detailed coaching feedback in JSON.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              critique: { type: Type.STRING },
-              suggestion: { type: Type.STRING },
-              sampleResponse: { type: Type.STRING },
-              teleprompterScript: { type: Type.STRING },
-              fallaciesIdentified: { type: Type.ARRAY, items: { type: Type.STRING } },
-              rhetoricalEffectiveness: { type: Type.NUMBER },
-              rhetoricalFeedback: { type: Type.STRING }
-            }
-          }
-        }
-      }),
-      20000
-    );
-
-    const data = JSON.parse(response.text || '{}');
-    return {
-      critique: data.critique || '',
-      suggestion: data.suggestion || '',
-      sampleResponse: data.sampleResponse || '',
-      teleprompterScript: data.teleprompterScript || '',
-      fallaciesIdentified: data.fallaciesIdentified || [],
-      rhetoricalEffectiveness: data.rhetoricalEffectiveness || 50,
-      rhetoricalFeedback: data.rhetoricalFeedback || ''
-    };
-  } catch (error) {
-    return {
-      critique: '',
-      suggestion: 'Strong argument. Consider emphasizing your strongest points.',
-      sampleResponse: '',
-      teleprompterScript: '',
-      fallaciesIdentified: [],
-      rhetoricalEffectiveness: 70,
-      rhetoricalFeedback: 'Clear and persuasive.'
-    };
-  }
-};
+// ── Transcript / OCR / Evidence analysis (Gemini multimodal) ────────────────
 
 export const transcribeAudio = async (audioFile: File): Promise<string> => {
   try {
@@ -337,13 +237,12 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
       ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: {
-          parts: [
-            part,
-            { text: `Transcribe this audio recording accurately and completely. 
+          parts: [part, {
+            text: `Transcribe this audio recording accurately and completely.
 If multiple speakers are present, label them as [Speaker 1], [Speaker 2], etc.
 Include natural pauses as "..." and note any inaudible portions as [inaudible].
-Return only the transcription text, no commentary.` }
-          ]
+Return only the transcription text, no commentary.`
+          }]
         }
       }),
       60000
@@ -361,13 +260,12 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
       ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: {
-          parts: [
-            part,
-            { text: `Extract and transcribe ALL text visible in this document or image.
+          parts: [part, {
+            text: `Extract and transcribe ALL text visible in this document or image.
 Preserve the layout and structure where possible (headers, paragraphs, tables, bullet points).
 If this is a legal document, preserve case numbers, dates, signatures, and all formal elements.
-Return only the extracted text, faithfully representing the source.` }
-          ]
+Return only the extracted text, faithfully representing the source.`
+          }]
         }
       }),
       45000
@@ -378,257 +276,103 @@ Return only the extracted text, faithfully representing the source.` }
   }
 };
 
-export const generateDepositionQuestions = async (
-  deponentName: string,
-  deponentRole: string,
-  caseContext: string,
-  strategy: string
-): Promise<{ topic: string; questions: string[]; purpose: string }[]> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are a seasoned trial attorney preparing for a deposition.
-
-Deponent: ${deponentName} (${deponentRole})
-Case: ${caseContext}
-Strategy: ${strategy}
-
-Generate a comprehensive deposition question outline organized by topic. Include foundational/background questions, fact questions, credibility questions, and closing/commitment questions. Each topic should have 4-8 specific questions.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              topic: { type: Type.STRING },
-              purpose: { type: Type.STRING },
-              questions: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ['topic', 'purpose', 'questions']
-          }
-        }
-      }
-    }),
-    30000
-  );
-  return JSON.parse(response.text || '[]');
-};
-
-export const analyzeJuror = async (
-  jurorInfo: string,
-  caseContext: string,
-  caseType: string
-): Promise<{
-  biasScore: number;
-  biasFactors: string[];
-  favorableFactors: string[];
-  recommendedQuestions: string[];
-  recommendation: 'accept' | 'challenge-for-cause' | 'peremptory-strike';
-  reasoning: string;
-}> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are a jury consultant analyzing a potential juror for defense/plaintiff counsel.
-
-Case Type: ${caseType}
-Case Context: ${caseContext}
-Juror Profile: ${jurorInfo}
-
-Analyze this juror for potential bias, favorable/unfavorable factors, and provide a strike recommendation. Bias score: 0 = strongly favorable, 100 = strongly unfavorable/biased against client.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            biasScore: { type: Type.NUMBER },
-            biasFactors: { type: Type.ARRAY, items: { type: Type.STRING } },
-            favorableFactors: { type: Type.ARRAY, items: { type: Type.STRING } },
-            recommendedQuestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-            recommendation: { type: Type.STRING, enum: ['accept', 'challenge-for-cause', 'peremptory-strike'] },
-            reasoning: { type: Type.STRING }
-          },
-          required: ['biasScore', 'biasFactors', 'favorableFactors', 'recommendedQuestions', 'recommendation', 'reasoning']
-        }
-      }
-    }),
-    20000
-  );
-  return JSON.parse(response.text || '{}');
-};
-
-export const generateStatement = async (
-  type: 'opening' | 'closing',
-  caseContext: string,
-  theory: string,
-  keyEvidence: string,
-  tone: string
-): Promise<{ introduction: string; body: string[]; conclusion: string; fullText: string; talkingPoints: string[] }> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are an elite trial attorney crafting a powerful ${type} statement.
-
-Case: ${caseContext}
-Theory of the Case: ${theory}
-Key Evidence/Facts: ${keyEvidence}
-Tone: ${tone}
-
-Write a compelling, jury-friendly ${type} statement. Structure it with a strong hook introduction, organized body paragraphs, and a memorable conclusion. Also provide a bulleted list of key talking points.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            introduction: { type: Type.STRING },
-            body: { type: Type.ARRAY, items: { type: Type.STRING } },
-            conclusion: { type: Type.STRING },
-            fullText: { type: Type.STRING },
-            talkingPoints: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ['introduction', 'body', 'conclusion', 'fullText', 'talkingPoints']
-        }
-      }
-    }),
-    30000
-  );
-  return JSON.parse(response.text || '{}');
-};
-
-export const predictVerdictAndSettlement = async (
-  caseContext: string,
-  caseType: string,
-  evidenceStrength: number,
-  jurisdiction: string,
-  additionalFactors: string
-): Promise<{
-  winProbability: number;
-  verdictLikely: string;
-  damagesLow: string;
-  damagesMid: string;
-  damagesHigh: string;
-  settlementFloor: string;
-  settlementSweet: string;
-  settlementCeiling: string;
-  keyRisks: string[];
-  keyStrengths: string[];
-  recommendation: string;
-  timelineEstimate: string;
-}> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are a senior litigation analyst providing a case outcome prediction.
-
-Case Type: ${caseType}
-Jurisdiction: ${jurisdiction}
-Evidence Strength (0-100): ${evidenceStrength}
-Case Summary: ${caseContext}
-Additional Factors: ${additionalFactors}
-
-Provide a detailed outcome analysis including win probability, verdict prediction, damages range (if applicable), settlement recommendations, and strategic recommendation. Be realistic and data-driven.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            winProbability: { type: Type.NUMBER },
-            verdictLikely: { type: Type.STRING },
-            damagesLow: { type: Type.STRING },
-            damagesMid: { type: Type.STRING },
-            damagesHigh: { type: Type.STRING },
-            settlementFloor: { type: Type.STRING },
-            settlementSweet: { type: Type.STRING },
-            settlementCeiling: { type: Type.STRING },
-            keyRisks: { type: Type.ARRAY, items: { type: Type.STRING } },
-            keyStrengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-            recommendation: { type: Type.STRING },
-            timelineEstimate: { type: Type.STRING }
-          },
-          required: ['winProbability', 'verdictLikely', 'keyRisks', 'keyStrengths', 'recommendation', 'settlementFloor', 'settlementSweet', 'settlementCeiling']
-        }
-      }
-    }),
-    25000
-  );
-  return JSON.parse(response.text || '{}');
-};
-
-export const generateClientUpdate = async (
-  caseContext: string,
-  updateType: string,
-  recentDevelopments: string,
-  clientName: string
-): Promise<{ subject: string; salutation: string; body: string; closing: string; fullLetter: string }> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are a senior attorney writing a professional client update letter.
-
-Client: ${clientName}
-Update Type: ${updateType}
-Case: ${caseContext}
-Recent Developments: ${recentDevelopments}
-
-Write a professional, clear, and reassuring client letter. Use plain language (avoid excessive legal jargon). Be direct about the situation. Include specific next steps. Maintain attorney-client privilege tone.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            subject: { type: Type.STRING },
-            salutation: { type: Type.STRING },
-            body: { type: Type.STRING },
-            closing: { type: Type.STRING },
-            fullLetter: { type: Type.STRING }
-          },
-          required: ['subject', 'salutation', 'body', 'closing', 'fullLetter']
-        }
-      }
-    }),
-    20000
-  );
-  return JSON.parse(response.text || '{}');
-};
+// ── Evidence analysis (file → Gemini, text → DeepSeek) ──────────────────────
 
 export const analyzeEvidence = async (
-  file: File,
-  caseContext: string
+  file: File, caseContext: string
 ): Promise<{ summary: string; relevance: number; keyFacts: string[]; concerns: string[]; tags: string[] }> => {
   const part = await fileToGenerativePart(file);
   const response = await withTimeout(
     ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {
-        parts: [
-          part,
-          { text: `Analyze this evidence file in the context of the following case:
-
+        parts: [part, {
+          text: `Analyze this evidence file in the context of the following case:
 Case Context: ${caseContext}
-
-Extract key facts, assess its relevance (0-100), identify any concerns or weaknesses with this evidence, and suggest tags for organization. Be concise but thorough.` }
-        ]
+Extract key facts, assess its relevance (0-100), identify any concerns or weaknesses with this evidence, and suggest tags for organization. Be concise but thorough.`
+        }]
       },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            relevance: { type: Type.NUMBER },
-            keyFacts: { type: Type.ARRAY, items: { type: Type.STRING } },
-            concerns: { type: Type.ARRAY, items: { type: Type.STRING } },
-            tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ['summary', 'relevance', 'keyFacts', 'concerns', 'tags']
-        }
-      }
+      config: { responseMimeType: 'application/json' }
     }),
     30000
   );
   return JSON.parse(response.text || '{}');
 };
+
+// ── Pure text functions → DeepSeek ──────────────────────────────────────────
+
+export const generateTrialCoaching = async (
+  phase: TrialPhase, userStatement: string, opponentResponse: string
+): Promise<CoachingAnalysis> => {
+  try {
+    return await dsJson<CoachingAnalysis>(
+      'You are a trial coaching expert. Return a JSON object with fields: critique, suggestion, sampleResponse, teleprompterScript, fallaciesIdentified (string array), rhetoricalEffectiveness (number 0-100), rhetoricalFeedback.',
+      `Phase: ${phase}\nAttorney said: "${userStatement}"\nOpponent responded: "${opponentResponse}"\nProvide detailed coaching feedback.`,
+      0.5, 20000
+    );
+  } catch {
+    return { critique: '', suggestion: 'Strong argument. Consider emphasizing your strongest points.', sampleResponse: '', teleprompterScript: '', fallaciesIdentified: [], rhetoricalEffectiveness: 70, rhetoricalFeedback: 'Clear and persuasive.' };
+  }
+};
+
+export const generateDepositionQuestions = async (
+  deponentName: string, deponentRole: string, caseContext: string, strategy: string
+): Promise<{ topic: string; questions: string[]; purpose: string }[]> => {
+  return dsJson(
+    'You are a senior trial attorney preparing for a deposition. Return a JSON array of objects with fields: topic, purpose, questions (string array, 4-8 each). Include foundational, fact, credibility, and closing/commitment topics.',
+    `Deponent: ${deponentName} (${deponentRole})\nCase: ${caseContext}\nStrategy: ${strategy}`,
+    0.4, 30000
+  );
+};
+
+export const analyzeJuror = async (
+  jurorInfo: string, caseContext: string, caseType: string
+): Promise<{
+  biasScore: number; biasFactors: string[]; favorableFactors: string[];
+  recommendedQuestions: string[]; recommendation: 'accept' | 'challenge-for-cause' | 'peremptory-strike'; reasoning: string;
+}> => {
+  return dsJson(
+    'You are a jury consultant. Return JSON with fields: biasScore (0-100, 0=favorable 100=biased against client), biasFactors (string array), favorableFactors (string array), recommendedQuestions (string array), recommendation ("accept"|"challenge-for-cause"|"peremptory-strike"), reasoning.',
+    `Case Type: ${caseType}\nCase: ${caseContext}\nJuror: ${jurorInfo}`,
+    0.3, 20000
+  );
+};
+
+export const generateStatement = async (
+  type: 'opening' | 'closing', caseContext: string, theory: string, keyEvidence: string, tone: string
+): Promise<{ introduction: string; body: string[]; conclusion: string; fullText: string; talkingPoints: string[] }> => {
+  return dsJson(
+    'You are an elite trial attorney. Return JSON with: introduction, body (string array of paragraphs), conclusion, fullText, talkingPoints (string array). Make it compelling and jury-friendly.',
+    `Type: ${type}\nCase: ${caseContext}\nTheory: ${theory}\nKey Evidence: ${keyEvidence}\nTone: ${tone}`,
+    0.5, 30000
+  );
+};
+
+export const predictVerdictAndSettlement = async (
+  caseContext: string, caseType: string, evidenceStrength: number, jurisdiction: string, additionalFactors: string
+): Promise<{
+  winProbability: number; verdictLikely: string; damagesLow: string; damagesMid: string; damagesHigh: string;
+  settlementFloor: string; settlementSweet: string; settlementCeiling: string;
+  keyRisks: string[]; keyStrengths: string[]; recommendation: string; timelineEstimate: string;
+}> => {
+  return dsJson(
+    'You are a senior litigation analyst. Return JSON with: winProbability (0-100), verdictLikely, damagesLow, damagesMid, damagesHigh, settlementFloor, settlementSweet, settlementCeiling, keyRisks (string array), keyStrengths (string array), recommendation, timelineEstimate.',
+    `Case Type: ${caseType}\nJurisdiction: ${jurisdiction}\nEvidence Strength: ${evidenceStrength}\nCase: ${caseContext}\nFactors: ${additionalFactors}`,
+    0.3, 25000
+  );
+};
+
+export const generateClientUpdate = async (
+  caseContext: string, updateType: string, recentDevelopments: string, clientName: string
+): Promise<{ subject: string; salutation: string; body: string; closing: string; fullLetter: string }> => {
+  return dsJson(
+    'You are a senior attorney writing a client update letter. Return JSON with: subject, salutation, body, closing, fullLetter. Use plain language, be direct, include specific next steps.',
+    `Client: ${clientName}\nUpdate: ${updateType}\nCase: ${caseContext}\nDevelopments: ${recentDevelopments}`,
+    0.4, 20000
+  );
+};
+
+// ── Specialist consulting (chat with history) ───────────────────────────────
 
 export const consultSpecialist = async (
   specialistSystemInstruction: string,
@@ -639,230 +383,78 @@ export const consultSpecialist = async (
   const contextPrefix = caseContext
     ? `\n\nACTIVE CASE CONTEXT (use this to inform your advice):\n${caseContext}\n\n`
     : '';
-
   const fullInstruction = specialistSystemInstruction + contextPrefix;
 
-  const chat = ai.chats.create({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction: fullInstruction,
-      temperature: 0.85,
-    },
-    history: history.map(h => ({
-      role: h.role,
-      parts: h.parts,
-    })),
+  const messages = history.map(h => ({
+    role: h.role === 'user' ? 'user' as const : 'assistant' as const,
+    content: h.parts.map(p => p.text).join('\n'),
+  }));
+  messages.push({ role: 'user' as const, content: newMessage });
+
+  return deepseekChat({
+    systemInstruction: fullInstruction,
+    messages,
+    temperature: 0.85,
+    maxTokens: 2048,
+    timeoutMs: 30000,
   });
-
-  const response = await withTimeout(
-    chat.sendMessage({ message: newMessage }),
-    30000
-  );
-
-  if (!response.text) throw new Error('No response from specialist');
-  return response.text;
 };
 
+// ── Witness prep ────────────────────────────────────────────────────────────
+
 export const generateWitnessPrepPackage = async (
-  witnessName: string,
-  witnessRole: string,
-  witnessRelationship: string,
-  caseContext: string,
-  strategy: string
+  witnessName: string, witnessRole: string, witnessRelationship: string,
+  caseContext: string, strategy: string
 ): Promise<{
   directExam: { topic: string; questions: string[] }[];
   crossExam: { topic: string; questions: string[] }[];
   impeachmentStrategy: string;
-  credibilityAssessment: {
-    strengths: string[];
-    vulnerabilities: string[];
-    dangerZones: string[];
-    openingGambit: string;
-    closingQuestion: string;
-  };
+  credibilityAssessment: { strengths: string[]; vulnerabilities: string[]; dangerZones: string[]; openingGambit: string; closingQuestion: string };
   overallAssessment: string;
 }> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are a senior trial attorney preparing a complete witness prep package.
-
-Witness: ${witnessName}
-Role: ${witnessRole}
-Relationship to Case: ${witnessRelationship}
-Case Context: ${caseContext}
-Strategy: ${strategy}
-
-Generate a comprehensive witness preparation package including direct examination questions (organized by topic), cross-examination questions (organized by topic), impeachment strategy, and a credibility assessment.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            directExam: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  topic: { type: Type.STRING },
-                  questions: { type: Type.ARRAY, items: { type: Type.STRING } }
-                },
-                required: ['topic', 'questions']
-              }
-            },
-            crossExam: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  topic: { type: Type.STRING },
-                  questions: { type: Type.ARRAY, items: { type: Type.STRING } }
-                },
-                required: ['topic', 'questions']
-              }
-            },
-            impeachmentStrategy: { type: Type.STRING },
-            credibilityAssessment: {
-              type: Type.OBJECT,
-              properties: {
-                strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-                vulnerabilities: { type: Type.ARRAY, items: { type: Type.STRING } },
-                dangerZones: { type: Type.ARRAY, items: { type: Type.STRING } },
-                openingGambit: { type: Type.STRING },
-                closingQuestion: { type: Type.STRING }
-              },
-              required: ['strengths', 'vulnerabilities', 'dangerZones', 'openingGambit', 'closingQuestion']
-            },
-            overallAssessment: { type: Type.STRING }
-          },
-          required: ['directExam', 'crossExam', 'impeachmentStrategy', 'credibilityAssessment', 'overallAssessment']
-        }
-      }
-    }),
-    45000
+  return dsJson(
+    'You are a senior trial attorney preparing a witness prep package. Return JSON with: directExam (array of {topic, questions[]}), crossExam (same), impeachmentStrategy (string), credibilityAssessment ({strengths[], vulnerabilities[], dangerZones[], openingGambit, closingQuestion}), overallAssessment.',
+    `Witness: ${witnessName} (${witnessRole}, ${witnessRelationship})\nCase: ${caseContext}\nStrategy: ${strategy}`,
+    0.4, 45000
   );
-  return JSON.parse(response.text || '{}');
 };
+
+// ── Jury simulation ─────────────────────────────────────────────────────────
 
 export const simulateJurorReaction = async (
   jurors: { id: number; name: string; background: string; personality: string }[],
-  argumentText: string,
-  argumentType: 'opening' | 'evidence' | 'closing' | 'rebuttal',
-  caseContext: string
+  argumentText: string, argumentType: 'opening' | 'evidence' | 'closing' | 'rebuttal', caseContext: string
 ): Promise<{
   jurorReactions: { id: number; reaction: string; persuasionDelta: number; internalThought: string }[];
   overallImpact: string;
 }> => {
   const jurorsDesc = jurors.map(j => `Juror ${j.id} (${j.name}): ${j.background}. Personality: ${j.personality}`).join('\n');
-
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are simulating a jury's reaction to a legal argument.
-
-Case: ${caseContext}
-Argument Type: ${argumentType}
-Argument: "${argumentText}"
-
-Jury panel:
-${jurorsDesc}
-
-For each juror, provide their reaction, how much their persuasion level changed (-20 to +20), and their internal thought. Also give an overall impact assessment.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            jurorReactions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.NUMBER },
-                  reaction: { type: Type.STRING },
-                  persuasionDelta: { type: Type.NUMBER },
-                  internalThought: { type: Type.STRING }
-                },
-                required: ['id', 'reaction', 'persuasionDelta', 'internalThought']
-              }
-            },
-            overallImpact: { type: Type.STRING }
-          },
-          required: ['jurorReactions', 'overallImpact']
-        }
-      }
-    }),
-    30000
+  return dsJson(
+    'You are simulating a jury reaction. Return JSON with: jurorReactions (array of {id, reaction, persuasionDelta (-20 to +20), internalThought}), overallImpact.',
+    `Case: ${caseContext}\nArgument: "${argumentText}" (${argumentType})\n\nJury:\n${jurorsDesc}`,
+    0.7, 30000
   );
-  return JSON.parse(response.text || '{}');
 };
 
 export const runJuryDeliberation = async (
   jurors: { id: number; name: string; background: string; personality: string; persuasionLevel: number }[],
-  caseContext: string,
-  evidenceSummary: string
+  caseContext: string, evidenceSummary: string
 ): Promise<{
   deliberationExchanges: { jurorId: number; jurorName: string; statement: string }[];
   finalVote: { guilty: number; notGuilty: number; undecided: number };
-  verdict: string;
-  verdictConfidence: number;
-  keyFactors: string[];
+  verdict: string; verdictConfidence: number; keyFactors: string[];
 }> => {
   const jurorsDesc = jurors.map(j =>
-    `Juror ${j.id} (${j.name}): ${j.background}. Personality: ${j.personality}. Current persuasion level: ${j.persuasionLevel}/100`
+    `Juror ${j.id} (${j.name}): ${j.background}. Personality: ${j.personality}. Persuasion: ${j.persuasionLevel}/100`
   ).join('\n');
-
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are simulating a realistic jury deliberation.
-
-Case: ${caseContext}
-Evidence Summary: ${evidenceSummary}
-
-Jury panel entering deliberations:
-${jurorsDesc}
-
-Simulate 8-12 exchanges of realistic jury deliberation dialogue. Then provide the final vote, verdict, and key factors that drove the decision.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            deliberationExchanges: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  jurorId: { type: Type.NUMBER },
-                  jurorName: { type: Type.STRING },
-                  statement: { type: Type.STRING }
-                },
-                required: ['jurorId', 'jurorName', 'statement']
-              }
-            },
-            finalVote: {
-              type: Type.OBJECT,
-              properties: {
-                guilty: { type: Type.NUMBER },
-                notGuilty: { type: Type.NUMBER },
-                undecided: { type: Type.NUMBER }
-              },
-              required: ['guilty', 'notGuilty', 'undecided']
-            },
-            verdict: { type: Type.STRING },
-            verdictConfidence: { type: Type.NUMBER },
-            keyFactors: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ['deliberationExchanges', 'finalVote', 'verdict', 'verdictConfidence', 'keyFactors']
-        }
-      }
-    }),
-    45000
+  return dsJson(
+    'You are simulating a realistic jury deliberation. Return JSON with: deliberationExchanges (8-12 entries of {jurorId, jurorName, statement}), finalVote ({guilty, notGuilty, undecided}), verdict ("guilty"|"not guilty"|"hung"), verdictConfidence (0-100), keyFactors (string array).',
+    `Case: ${caseContext}\nEvidence: ${evidenceSummary}\n\nJury:\n${jurorsDesc}`,
+    0.7, 45000
   );
-  return JSON.parse(response.text || '{}');
 };
 
+<<<<<<< Updated upstream
 export const askCopilot = async (
   question: string,
   history: { role: 'user' | 'model'; text: string }[],
@@ -923,43 +515,19 @@ export async function* askCopilotStream(
     if (chunk.text) yield chunk.text;
   }
 }
+=======
+// ── Transcript analysis (text only → DeepSeek) ─────────────────────────────
+>>>>>>> Stashed changes
 
 export const analyzeTranscription = async (
-  transcriptText: string,
-  caseContext: string,
-  fileName: string
+  transcriptText: string, caseContext: string, fileName: string
 ): Promise<{ summary: string; keyPoints: string[]; legalIssues: string[]; speakers: string[]; actionItems: string[] }> => {
   try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are a legal AI assistant. Analyze this transcript in the context of the given case.
-
-Case Context: ${caseContext}
-Document: ${fileName}
-
-TRANSCRIPT:
-${transcriptText}
-
-Provide a thorough legal analysis as JSON.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING, description: 'Executive summary of the transcript (3-5 sentences)' },
-              keyPoints: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Key facts or statements relevant to the case' },
-              legalIssues: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Legal issues, risks, or concerns identified' },
-              speakers: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Identified speakers if detectable' },
-              actionItems: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Recommended follow-up actions for the attorney' },
-            },
-            required: ['summary', 'keyPoints', 'legalIssues', 'speakers', 'actionItems']
-          }
-        }
-      }),
-      30000
+    return await dsJson(
+      'You are a legal AI assistant. Return JSON with: summary (3-5 sentences), keyPoints (string array), legalIssues (string array), speakers (string array), actionItems (string array).',
+      `Case: ${caseContext}\nDocument: ${fileName}\n\nTranscript:\n${transcriptText}`,
+      0.3, 30000
     );
-    return JSON.parse(response.text || '{}');
   } catch (error) {
     throw new Error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }

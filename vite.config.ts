@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
+<<<<<<< Updated upstream
         // Supabase (public anon key — safe in bundle)
         'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || env.SUPABASE_URL),
         'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY),
@@ -43,6 +44,13 @@ export default defineConfig(({ mode }) => {
             },
           },
         },
+=======
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'import.meta.env.VITE_DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY),
+        'process.env.DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY),
+>>>>>>> Stashed changes
       },
       resolve: {
         alias: {
