@@ -70,24 +70,24 @@ export default async function handler(req: Request): Promise<Response> {
   const eventType: string = body.type ?? ''; // INSERT | UPDATE | DELETE
   const newRecord: any   = body.record ?? {};
   const oldRecord: any   = body.old_record ?? {};
-  const caseData: any    = newRecord.data ?? {};
-  const oldCaseData: any = oldRecord.data ?? {};
+  const caseData: any    = newRecord ?? {};
+  const oldCaseData: any = oldRecord ?? {};
 
   const responses: string[] = [];
 
   /* ── INSERT: new case created ─────────────────────────────────────────── */
-  if (eventType === 'INSERT' && caseData.title) {
+  if (eventType === 'INSERT' && caseData.name) {
     if (GEMINI_KEY && OWNER_EMAIL) {
       const briefing = await gemini(GEMINI_KEY,
         `You are Maya at CaseBuddy AI Law Firm. A new case just came in.
 
-Case: ${caseData.title}
-Client: ${caseData.client}
+Case: ${caseData.name}
+Client: ${caseData.client_name}
 Status: ${caseData.status}
-Summary: ${caseData.summary || 'No summary yet'}
-Opposing Counsel: ${caseData.opposingCounsel || 'Unknown'}
+Summary: ${caseData.case_theory || 'No summary yet'}
+Opposing Counsel: ${caseData.opposing_counsel || 'Unknown'}
 Judge: ${caseData.judge || 'Unknown'}
-Next Court Date: ${caseData.nextCourtDate || 'TBD'}
+Next Court Date: ${caseData.next_court_date || caseData.trial_date || 'TBD'}
 
 Write a brief 3-bullet intake briefing for the firm. Cover:
 1. What this case is about + key issue
@@ -101,8 +101,8 @@ Be direct, specific, 80 words max.`
         `📁 New Case: ${caseData.title}`,
         `<div style="font-family:sans-serif;max-width:600px">
           <h2>📁 New Case Opened</h2>
-          <h3 style="color:#1e293b">${caseData.title}</h3>
-          <p>Client: <strong>${caseData.client}</strong> | Status: ${caseData.status}</p>
+          <h3 style="color:#1e293b">${caseData.name}</h3>
+          <p>Client: <strong>${caseData.client_name}</strong> | Status: ${caseData.status}</p>
           <div style="background:#f8fafc;border-left:4px solid #d4af37;padding:12px;margin:16px 0">
             <p style="margin:0;font-weight:bold">Maya's Intake Briefing:</p>
             <p style="margin:8px 0 0;white-space:pre-wrap">${briefing}</p>
@@ -119,13 +119,13 @@ Be direct, specific, 80 words max.`
 
   /* ── UPDATE: case moved to Trial ─────────────────────────────────────── */
   if (eventType === 'UPDATE' &&
-      caseData.status === 'Trial' && oldCaseData.status !== 'Trial') {
+      caseData.status?.toLowerCase() === 'trial' && oldCaseData.status?.toLowerCase() !== 'trial') {
     if (GEMINI_KEY && OWNER_EMAIL) {
       const checklist = await gemini(GEMINI_KEY,
         `You are Rex, the trial strategist at CaseBuddy AI Law Firm.
-Case "${caseData.title}" just moved to Trial status.
-Client: ${caseData.client} | Judge: ${caseData.judge || 'Unknown'}
-Summary: ${caseData.summary || 'No summary'}
+Case "${caseData.name}" just moved to Trial status.
+Client: ${caseData.client_name} | Judge: ${caseData.judge || 'Unknown'}
+Summary: ${caseData.case_theory || 'No summary'}
 
 Generate a crisp trial prep checklist — 8-10 items the attorney must complete before trial.
 Format as an HTML ordered list. Each item should be specific and actionable. 120 words max.`
@@ -135,8 +135,8 @@ Format as an HTML ordered list. Each item should be specific and actionable. 120
         `⚖️ Trial Mode — ${caseData.title}`,
         `<div style="font-family:sans-serif;max-width:600px">
           <h2 style="color:#dc2626">⚖️ Case Entered Trial Status</h2>
-          <h3>${caseData.title}</h3>
-          <p>Client: <strong>${caseData.client}</strong> | Judge: ${caseData.judge || 'TBD'}</p>
+          <h3>${caseData.name}</h3>
+          <p>Client: <strong>${caseData.client_name}</strong> | Judge: ${caseData.judge || 'TBD'}</p>
           <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px;margin:16px 0">
             <p style="margin:0;font-weight:bold">Rex's Trial Prep Checklist:</p>
             ${checklist}
@@ -155,16 +155,16 @@ Format as an HTML ordered list. Each item should be specific and actionable. 120
   if (eventType === 'UPDATE' &&
       ['Settled', 'Closed'].includes(caseData.status) &&
       !['Settled', 'Closed'].includes(oldCaseData.status)) {
-    const clientEmail = caseData.clientEmail || caseData.contact;
+    const clientEmail = caseData.metadata?.clientEmail || caseData.metadata?.contact;
     if (GEMINI_KEY && clientEmail?.includes('@')) {
       const closingLetter = await gemini(GEMINI_KEY,
-        `You are Sierra at CaseBuddy AI Law Firm. Case "${caseData.title}" was just ${caseData.status.toLowerCase()}.
-Client: ${caseData.client}
+        `You are Sierra at CaseBuddy AI Law Firm. Case "${caseData.name}" was just ${caseData.status?.toLowerCase() ?? 'resolved'}.
+Client: ${caseData.client_name}
 Write a brief, warm closing letter to the client. Thank them for their trust, summarize the resolution, and invite them to refer others or return for future legal needs.
 Format as clean HTML paragraphs. 120 words max. Sign as "Sierra, Client Relations · CaseBuddy AI Law Firm"`
       );
       await sendEmail(SG_KEY, clientEmail,
-        `Your Case Has Been ${caseData.status} — ${caseData.title}`,
+        `Your Case Has Been ${caseData.status} — ${caseData.name}`,
         `<div style="font-family:Georgia,serif;max-width:600px">
           <h2>⚖️ CaseBuddy Law Firm</h2>
           ${closingLetter}
