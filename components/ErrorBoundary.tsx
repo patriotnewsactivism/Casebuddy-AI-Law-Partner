@@ -3,7 +3,6 @@ import { AlertCircle, RotateCcw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
-  /** Shown in the fallback UI. Defaults to "This section". */
   label?: string;
 }
 
@@ -12,23 +11,24 @@ interface State {
   error: Error | null;
 }
 
-/**
- * Catches rendering errors in any child tree and shows a recovery card
- * instead of crashing the whole app.
- */
 class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null };
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+    this.handleRetry = this.handleRetry.bind(this);
+  }
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
     console.error(`[ErrorBoundary] ${this.props.label ?? 'Component'} crashed:`, error, info.componentStack);
   }
 
-  handleRetry = () => this.setState({ hasError: false, error: null });
+  handleRetry() {
+    this.setState({ hasError: false, error: null });
+  }
 
   render() {
     if (this.state.hasError) {
