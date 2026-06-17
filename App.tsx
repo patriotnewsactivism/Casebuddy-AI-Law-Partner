@@ -12,6 +12,7 @@ import { ToastContainer } from 'react-toastify';
 
 // ─── Eagerly loaded (needed on every page or at auth boundary) ────────────
 import ErrorBoundary from './components/ErrorBoundary';
+import FloatingVoiceButton from './components/FloatingVoiceButton';
 import ActiveCaseBar from './components/ActiveCaseBar';
 import CopilotSidebar from './components/CopilotSidebar';
 
@@ -517,6 +518,7 @@ const App = () => {
           </Routes>
         </Suspense>
       </BrowserRouter>
+      <FloatingVoiceButton />
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
   );
