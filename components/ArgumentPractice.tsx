@@ -203,8 +203,8 @@ const TrialSim = () => {
           },
           systemInstruction: systemInstruction,
           tools: [{ functionDeclarations: [coachingTool, objectionTool] }],
-          inputAudioTranscription: { model: "gemini-2.5-flash-native-audio-preview-09-2025" },
-          outputAudioTranscription: { model: "gemini-2.5-flash-native-audio-preview-09-2025" },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
         },
         callbacks: {
           onopen: () => {
