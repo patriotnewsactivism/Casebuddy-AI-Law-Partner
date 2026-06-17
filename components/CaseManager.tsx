@@ -7,6 +7,7 @@ import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
+import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -110,6 +111,17 @@ const CaseManager = () => {
     handleSuccess(`Case "${newCase.title}" created successfully`);
     setShowNewCaseModal(false);
     setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '' });
+    // Case handoff — brief Sol + open War Room
+    setTimeout(() => {
+      toast.info(
+        <span>
+          🤝 <strong>Maya</strong> briefed the team on <em>{newCase.title}</em>.{' '}
+          <a href="/app/deadlines" className="underline text-blue-300">Sol → Deadlines</a>{' · '}
+          <a href="/app/war-room" className="underline text-blue-300">War Room</a>
+        </span>,
+        { autoClose: 7000 }
+      );
+    }, 800);
   };
 
   const handleLoadTemplate = (template: Case) => {
