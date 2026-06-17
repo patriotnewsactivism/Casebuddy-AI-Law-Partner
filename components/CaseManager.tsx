@@ -140,7 +140,7 @@ const CaseManager = () => {
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCase) return;
-    updateCase({ ...editingCase, updatedAt: new Date().toISOString() });
+    updateCase({ ...editingCase });
     handleSuccess('Case updated successfully');
     setShowEditModal(false);
     setEditingCase(null);
