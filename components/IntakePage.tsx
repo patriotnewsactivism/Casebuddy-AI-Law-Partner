@@ -110,7 +110,7 @@ function runConflictCheck(form: IntakeFormData): ConflictResult {
     // 1) Existing cases
     let cases: any[] = [];
     try {
-      const raw = localStorage.getItem('lexsim_cases');
+      const raw = localStorage.getItem('casebuddy_cases') || localStorage.getItem('lexsim_cases');
       cases = raw ? JSON.parse(raw) : [];
     } catch { cases = []; }
     if (!Array.isArray(cases)) cases = [];
