@@ -49,7 +49,12 @@ const StatCard = ({ icon: Icon, title, value, subtext, subColor, valueColor, pul
 
 const AgentTeamCard: React.FC<{ agent: typeof OPERATIONAL_AGENTS[0] }> = ({ agent }) => (
   <Link to={agent.route}
-    className={`group flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
+    className={`group relative flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
+    {/* Always-on availability dot */}
+    <span className="absolute top-2 right-2 flex h-2 w-2">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400" />
+    </span>
     <div className="text-2xl sm:text-3xl">{agent.emoji}</div>
     <p className={`text-xs sm:text-sm font-bold text-center ${agent.colorClass}`}>{agent.name}</p>
     <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
