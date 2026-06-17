@@ -3,7 +3,7 @@ import React, { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { Case, CaseStatus } from '../types';
-import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock } from 'lucide-react';
+import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2 } from 'lucide-react';
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
@@ -14,13 +14,15 @@ import { OPERATIONAL_AGENTS } from '../agents/personas';
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
 const CaseManager = () => {
-  const { cases, activeCase, setActiveCase, addCase } = useContext(AppContext);
+  const { cases, activeCase, setActiveCase, addCase, updateCase, deleteCase } = useContext(AppContext);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [inputText, setInputText] = useState('');
   
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [editingCase, setEditingCase] = useState<Case | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   
   const [newCaseData, setNewCaseData] = useState<Partial<Case>>({
     title: '',
@@ -117,6 +119,27 @@ const CaseManager = () => {
     handleSuccess(`Template "${newCase.title}" loaded successfully`);
     setShowLibraryModal(false);
   };
+
+  const handleEditCase = (c: Case) => {
+    setEditingCase({ ...c });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCase) return;
+    updateCase({ ...editingCase, updatedAt: new Date().toISOString() });
+    handleSuccess('Case updated successfully');
+    setShowEditModal(false);
+    setEditingCase(null);
+  };
+
+  const handleDeleteCase = (id: string) => {
+    if (!window.confirm('Delete this case? This cannot be undone.')) return;
+    deleteCase(id);
+    handleSuccess('Case deleted');
+  };
+
 
   return (
     <div className="space-y-5">
