@@ -1,6 +1,7 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 # SPA Routing: Redirect all requests to index.html so React Router can handle them.
 # This prevents 404 errors on page refresh.
@@ -9,9 +10,17 @@
   to = "/index.html"
   status = 200
 
-# API Redirection: Netlify doesn't natively handle the /api folder like Vercel.
-# If you are using Netlify Functions, move the logic to netlify/functions.
-# For now, we ensure these don't just 404 the whole app.
+# API Redirection: Map /api routes to our Netlify functions.
+[[redirects]]
+  from = "/api/ai/orchestrate"
+  to = "/.netlify/functions/orchestrate"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/voice-keys"
+  to = "/.netlify/functions/voice-keys"
+  status = 200
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
