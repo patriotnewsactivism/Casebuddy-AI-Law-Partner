@@ -125,8 +125,8 @@ export default async function handler(req: Request): Promise<Response> {
   let cases: any[] = [];
   try {
     if (SB_URL && SB_KEY) {
-      const rows = await sbFetch(SB_URL, SB_KEY, 'cases', 'select=data,firm_id');
-      cases = (rows as any[]).map((r: any) => r.data).filter(Boolean);
+      const rows = await sbFetch(SB_URL, SB_KEY, 'cases', 'select=id,name,case_type,client_name,status,next_court_date,next_deadline,opposing_counsel,judge,trial_date,case_theory&order=created_at.desc');
+      cases = (rows as any[]).filter(Boolean);
       log.push(`✅ Loaded ${cases.length} cases from Supabase`);
     } else {
       log.push('⚠️  Supabase not configured — skipping case load');
@@ -183,7 +183,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (GEMINI_KEY && cases.length > 0 && OWNER_EMAIL) {
     try {
       const caseList = cases.slice(0, 10).map((c: any) =>
-        `• ${c.title} (${c.status}) — Client: ${c.client} | Next court date: ${c.nextCourtDate || 'TBD'}`
+        `• ${c.name} (${c.status}) — Client: ${c.client_name} | Next court date: ${c.next_court_date || c.trial_date || 'TBD'}`
       ).join('\n');
 
       firmBriefing = await deepseek(GEMINI_KEY,
