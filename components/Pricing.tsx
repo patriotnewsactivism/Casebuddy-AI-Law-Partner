@@ -94,7 +94,7 @@ const ADD_ONS = [
   { name: 'Court Filing (Tyler Tech)', price: 'By state', description: 'Direct e-filing to participating courts' },
 ];
 
-const PricingCard = ({ plan, featured }: { plan: typeof PLANS[0]; featured?: boolean }) => {
+const PricingCard: React.FC<{ plan: typeof PLANS[0]; featured?: boolean }> = ({ plan, featured }) => {
   const Icon = plan.icon;
   return (
     <div className={`relative bg-slate-800 border-2 ${plan.border} rounded-2xl p-7 flex flex-col ${featured ? 'ring-2 ring-gold-500/30 shadow-2xl shadow-gold-500/10 scale-[1.02]' : ''}`}>
