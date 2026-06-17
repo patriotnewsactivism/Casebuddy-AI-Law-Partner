@@ -219,13 +219,13 @@ export interface JuryVerdict {
 // ── TrialSession (used in SessionHistory) ───────────────────────────────────
 export interface TrialSession {
   id: string;
-  caseId: string;
-  caseTitle: string;
+  caseId?: string;
+  caseTitle?: string;
   phase: string;
   mode: string;
-  date: number;
+  date: number | string;
   duration: number;
-  score: number;
+  score?: number;
   transcript: Message[];
   audioUrl?: string;
   feedback?: string;
@@ -242,9 +242,12 @@ export interface TrialSession {
 export interface WarRoomTask {
   id: string;
   agent: string;
+  category: string;
   title: string;
+  description: string;
   status: 'pending' | 'working' | 'done' | 'error';
-  priority: 'low' | 'medium' | 'high';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  done: boolean;
   content?: string;
 }
 
@@ -254,4 +257,5 @@ export interface WarRoomBriefing {
   topPriority: string;
   keyRisks: string[];
   summary: string;
+  tasks: WarRoomTask[];
 }

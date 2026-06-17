@@ -19,6 +19,33 @@ export default defineConfig(({ mode }) => {
     return {
       server: {
         port: 5000,
+        proxy: {
+          // Fallback for /api routes during local Vite development.
+          // In production (Vercel), these are handled by actual edge functions.
+          '/api/ai/voice-keys': {
+            target: 'http://localhost:5000',
+            bypass: (req, res) => {
+              if (req.method === 'POST') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  deepgramKey: env.VITE_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || '',
+                  geminiKey: env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '',
+                }));
+                return false;
+              }
+            }
+          },
+          '/api/ai/orchestrate': {
+            target: 'http://localhost:5000',
+            bypass: (req, res) => {
+              if (req.method === 'POST') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ runId: 'dev-run-' + Date.now(), status: 'queued' }));
+                return false;
+              }
+            }
+          }
+        }
       },
       plugins: [react()],
       define: {

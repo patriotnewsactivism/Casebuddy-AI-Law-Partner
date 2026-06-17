@@ -87,7 +87,7 @@ export const upsertCaseToCloud = async (c: Case): Promise<boolean> => {
   if (!sb) return false;
 
   const { error } = await sb.from(CASES_TABLE).upsert(
-    { id: c.id, firm_id: getFirmId(), data: c, updated_at: new Date().toISOString() },
+    { id: c.id, firm_id: getFirmId(), data: c },
     { onConflict: 'id' }
   );
   return !error;
@@ -104,7 +104,6 @@ export const syncLocalCasesToCloud = async (cases: Case[]): Promise<boolean> => 
     id: c.id,
     firm_id: getFirmId(),
     data: c,
-    updated_at: new Date().toISOString(),
   }));
 
   const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });

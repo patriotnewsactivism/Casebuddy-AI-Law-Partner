@@ -318,10 +318,10 @@ const Dashboard = () => {
         {/* Left: Case Load chart */}
         <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col">
           <SectionHeader icon={Activity} title="Case Load Distribution" accent="text-blue-400" />
-          <div className="h-64 w-full flex-1">
+          <div className="h-64 w-full flex-1 min-h-[250px]">
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip

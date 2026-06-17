@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { DocumentType, StrategyInsight, CoachingAnalysis, TrialPhase, SimulationMode, WarRoomBriefing, WarRoomTask, Message } from "../types";
 import { retryWithBackoff, withTimeout } from "../utils/errorHandler";
