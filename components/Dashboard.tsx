@@ -381,19 +381,27 @@ const Dashboard = () => {
       {/* Relevant Case Law */}
       <RelevantCases activeCase={activeCase} />
 
-      {/* Legacy Leads Pipeline */}
-      {leads.length > 0 && (
-        <div>
-          <SectionHeader
-            icon={ClipboardList}
-            title="Incoming Leads"
-            accent="text-violet-400"
-            action={
-              <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
-                View All <ArrowRight size={12} className="inline" />
-              </Link>
-            }
-          />
+      {/* Leads Pipeline — always visible */}
+      <div>
+        <SectionHeader
+          icon={ClipboardList}
+          title="Incoming Leads"
+          accent="text-violet-400"
+          action={
+            <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
+              Share Intake Link <ArrowRight size={12} className="inline" />
+            </Link>
+          }
+        />
+        {leads.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
+            <p className="text-slate-400 text-sm mb-2">No leads yet.</p>
+            <p className="text-slate-500 text-xs mb-4">Share your public intake link to start receiving potential clients.</p>
+            <Link to="/intake" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors">
+              <ArrowRight size={14} /> View Public Intake Form
+            </Link>
+          </div>
+        ) : (
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
             {leads.map(lead => (
               <div
@@ -422,8 +430,8 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
