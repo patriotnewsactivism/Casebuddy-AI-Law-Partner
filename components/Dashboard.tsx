@@ -47,7 +47,7 @@ const StatCard = ({ icon: Icon, title, value, subtext, subColor, valueColor, pul
   </div>
 );
 
-const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
+const AgentTeamCard: React.FC<{ agent: typeof OPERATIONAL_AGENTS[0] }> = ({ agent }) => (
   <Link to={agent.route}
     className={`group flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
     <div className="text-2xl sm:text-3xl">{agent.emoji}</div>
