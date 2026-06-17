@@ -61,32 +61,32 @@ export default async function handler(req: Request): Promise<Response> {
   const log: string[] = [];
 
   // Load active cases
-  const casesRes = await fetch(`${SB_URL}/rest/v1/cases?select=data,firm_id`, {
+  const casesRes = await fetch(`${SB_URL}/rest/v1/cases?select=id,name,case_type,client_name,status,next_court_date,trial_date,opposing_counsel,judge,case_theory,metadata`, {
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
   });
   const caseRows: any[] = await casesRes.json();
   const activeCases = caseRows
-    .map((r: any) => r.data)
-    .filter((c: any) => c && ['Active', 'Discovery', 'Pre-Trial', 'Trial'].includes(c.status));
+    .filter((c: any) => c && ['active', 'discovery', 'pre-trial', 'pre_trial', 'trial'].includes(c.status?.toLowerCase()));
 
   log.push(`Loaded ${activeCases.length} active cases`);
 
   let sent = 0;
   for (const c of activeCases) {
     // Only send if we have a client email
-    const clientEmail = c.clientEmail || c.contact;
+    const clientEmail = c.metadata?.clientEmail || c.metadata?.contact || c.metadata?.email;
     if (!clientEmail || !clientEmail.includes('@')) continue;
 
     try {
       const letter = await gemini(GEMINI_KEY,
         `You are Sierra, a warm and professional client relations specialist at CaseBuddy AI Law Firm.
-Write a brief weekly status update email to ${c.client} about their case.
+Write a brief weekly status update email to ${c.client_name} about their case.
 
-Case: ${c.title}
+Case: ${c.name}
+Case Type: ${c.case_type || 'General'}
 Status: ${c.status}
-Summary: ${c.summary || 'No summary available'}
-Next court date: ${c.nextCourtDate || 'TBD'}
-Opposing counsel: ${c.opposingCounsel || 'Unknown'}
+Case Theory: ${c.case_theory || 'No summary available'}
+Next court date: ${c.next_court_date || c.trial_date || 'TBD'}
+Opposing counsel: ${c.opposing_counsel || 'Unknown'}
 
 Guidelines:
 - Warm, professional tone — not cold or robotic
@@ -112,7 +112,7 @@ Guidelines:
         </div>`;
 
       const success = await sendEmail(SG_KEY, clientEmail,
-        `Weekly Update: ${c.title} — ${today}`, emailHtml);
+        `Weekly Update: ${c.name} — ${today}`, emailHtml);
 
       if (success) {
         sent++;
