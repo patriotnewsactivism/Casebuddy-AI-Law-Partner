@@ -1,7 +1,7 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { AppContext } from '../App';
-import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy, Lock, LogOut, Loader2 } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy, Lock, LogOut, Loader2, ExternalLink } from 'lucide-react';
 import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
 import { getFirmId, setFirmId, syncLabel } from '../services/caseStore';
 import { updatePassword, signOut as signOutUser } from '../services/authService';
@@ -729,11 +729,36 @@ const Settings = () => {
         </div>
       </div>
 
+      {/* Billing & Subscription */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Info className="text-gold-500" size={24} />
+          <h2 className="text-xl font-semibold text-white">Billing & Subscription</h2>
+        </div>
+        <p className="text-sm text-slate-400 mb-4">
+          Manage your CaseBuddy plan, invoices, and payment methods.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <a
+            href="/pricing"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl text-sm transition-colors"
+          >
+            View Plans
+          </a>
+          <button
+            onClick={() => window.open('https://billing.stripe.com/p/login/test_placeholder', '_blank')}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-600 text-slate-300 hover:border-gold-500/50 hover:text-white rounded-xl text-sm transition-colors"
+          >
+            Manage Billing Portal
+          </button>
+        </div>
+      </div>
+
       {/* About */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-3">About LexSim</h2>
+        <h2 className="text-lg font-semibold text-white mb-3">About CaseBuddy</h2>
         <p className="text-sm text-slate-300 mb-2">
-          LexSim is an AI-powered legal trial preparation platform built with Google Gemini AI.
+          CaseBuddy is an AI-powered legal trial preparation platform. Powered by Google Gemini, DeepSeek, and Deepgram.
         </p>
         <div className="flex gap-4 text-xs text-slate-400">
           <span>Version 1.0.0</span>
