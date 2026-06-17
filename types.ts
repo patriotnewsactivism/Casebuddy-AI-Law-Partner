@@ -37,6 +37,7 @@ export interface Case {
   nextCourtDate: string;
   summary: string;
   winProbability: number;
+  updatedAt?: string;
 }
 
 // ── Intake pipeline ──────────────────────────────────────────────────────────
@@ -166,6 +167,8 @@ export interface Evidence {
   exhibitNumber?: string;
   source?: string;
   status?: string;
+  tags?: string[];
+  notes?: string;
 }
 
 // ── TimelineEvent (used in EvidenceTimeline) ─────────────────────────────────
@@ -175,7 +178,11 @@ export interface TimelineEvent {
   title: string;
   description: string;
   type?: string;
+  time?: string;
+  importance: 'low' | 'medium' | 'high' | 'critical';
+  tags?: string[];
   linkedEvidence?: string[];
+  linkedWitnesses?: string[];
 }
 
 // ── Juror (used in MockJury) ─────────────────────────────────────────────────
@@ -186,8 +193,10 @@ export interface Juror {
   occupation: string;
   education: string;
   avatar: string;
+  background?: string;
   biases?: string[];
   persuasionLevel?: number;
+  leaningScore?: number;
 }
 
 // ── JuryDeliberation (used in MockJury) ─────────────────────────────────────
@@ -210,19 +219,39 @@ export interface JuryVerdict {
 // ── TrialSession (used in SessionHistory) ───────────────────────────────────
 export interface TrialSession {
   id: string;
+  caseId: string;
   caseTitle: string;
   phase: string;
   mode: string;
   date: number;
   duration: number;
   score: number;
-  transcript?: string;
+  transcript: Message[];
   audioUrl?: string;
+  feedback?: string;
   metrics?: {
     objectionsReceived?: number;
     fallaciesCommitted?: number;
     avgRhetoricalScore?: number;
     wordCount?: number;
+    fillerWordsCount?: number;
   };
 }
 
+// ── War Room ─────────────────────────────────────────────────────────────────
+export interface WarRoomTask {
+  id: string;
+  agent: string;
+  title: string;
+  status: 'pending' | 'working' | 'done' | 'error';
+  priority: 'low' | 'medium' | 'high';
+  content?: string;
+}
+
+export interface WarRoomBriefing {
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  estimatedTrialReadiness: number;
+  topPriority: string;
+  keyRisks: string[];
+  summary: string;
+}

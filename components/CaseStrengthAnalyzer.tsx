@@ -34,7 +34,8 @@ const probColor = (p: number) => {
 };
 
 const CaseStrengthAnalyzer: React.FC = () => {
-  const { cases, activeCaseId } = useContext(AppContext);
+  const { cases, activeCase } = useContext(AppContext);
+  const activeCaseId = activeCase?.id;
   const [selectedCaseId, setSelectedCaseId] = useState(activeCaseId || cases?.[0]?.id || '');
   const [additionalFacts, setAdditionalFacts] = useState('');
   const [practiceArea, setPracticeArea] = useState('Civil Litigation');

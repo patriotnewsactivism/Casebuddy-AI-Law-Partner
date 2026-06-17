@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { DocumentType, StrategyInsight, CoachingAnalysis, TrialPhase, SimulationMode } from "../types";
+import { DocumentType, StrategyInsight, CoachingAnalysis, TrialPhase, SimulationMode, WarRoomBriefing, WarRoomTask, Message } from "../types";
 import { retryWithBackoff, withTimeout } from "../utils/errorHandler";
 import { deepseekChat, parseDeepSeekJson } from "./deepseek";
 
@@ -272,24 +272,6 @@ export const askCopilotStream = copilotStream;
 
 // ── War Room briefing ──────────────────────────────────────────────────────
 
-export interface WarRoomTask {
-  id: string;
-  category: string;
-  title: string;
-  description: string;
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  done: boolean;
-  assignedAgent: string;
-}
-
-export interface WarRoomBriefing {
-  overview: string;
-  keyDeadlines: string[];
-  tasks: WarRoomTask[];
-  risks: string[];
-  opportunities: string[];
-}
-
 export const generateWarRoomBriefing = async (
   caseTitle: string,
   caseSummary: string,
@@ -297,7 +279,7 @@ export const generateWarRoomBriefing = async (
   nextCourtDate: string
 ): Promise<WarRoomBriefing> => {
   return dsJson<WarRoomBriefing>(
-    'You are a senior trial strategist. Return JSON: { overview, keyDeadlines[], tasks: [{ id, category, title, description, priority ("critical"|"high"|"medium"|"low"), done: false, assignedAgent }], risks[], opportunities[] }. Generate 10-15 tasks across categories: pre-trial, discovery, witnesses, jury, evidence, drafting, strategy.',
+    'You are a senior trial strategist. Return JSON: { riskLevel ("low"|"medium"|"high"|"critical"), estimatedTrialReadiness (number 0-100), topPriority, keyRisks[], summary, tasks: [{ id, agent, title, status ("pending"|"working"|"done"|"error"), priority ("low"|"medium"|"high"), category, description, done: false }] }. Generate 10-15 tasks across categories: pre-trial, discovery, witnesses, jury, evidence, drafting, strategy.',
     `Case: ${caseTitle}\nSummary: ${caseSummary}\nStatus: ${caseStatus}\nNext Court Date: ${nextCourtDate}`,
     0.5, 30000
   );

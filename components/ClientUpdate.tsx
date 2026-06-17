@@ -3,7 +3,7 @@ import { AppContext } from '../App';
 import { generateClientUpdate } from '../services/geminiService';
 import { sendCaseUpdateEmail } from '../services/integrationService';
 import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer } from 'lucide-react';
-import { printAsPdf } from '../utils/pdfExport';
+import { printAsPdf, letterToPdfHtml } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -102,8 +102,13 @@ const ClientUpdate = () => {
   };
 
   const printLetterAsPdf = () => {
-    if (!letter) return;
-    printAsPdf();
+    if (!letter || !activeCase) return;
+    const html = letterToPdfHtml({
+      to: clientName,
+      re: activeCase.title,
+      body: letter.fullLetter
+    });
+    printAsPdf(`Letter to ${clientName}`, html);
   };
 
   const sendEmail = async () => {

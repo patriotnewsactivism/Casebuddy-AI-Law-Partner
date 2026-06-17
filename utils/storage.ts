@@ -1,4 +1,4 @@
-import { Case } from '../types';
+import { Case, TrialSession } from '../types';
 
 const STORAGE_KEYS = {
   CASES: 'casebuddy_cases',
@@ -20,19 +20,6 @@ interface UserPreferences {
   theme: 'dark' | 'light';
   displayName: string;
   title: string;
-}
-
-interface TrialSession {
-  id: string;
-  caseId: string;
-  phase: string;
-  mode: string;
-  date: string;
-  duration: number;
-  transcript: Array<{ sender: string; text: string; timestamp: number }>;
-  audioUrl?: string;
-  score?: number;
-  feedback?: any;
 }
 
 // Check if localStorage is available

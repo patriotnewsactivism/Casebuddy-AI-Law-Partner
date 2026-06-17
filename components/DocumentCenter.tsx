@@ -52,8 +52,7 @@ Draft the complete ${docLabel} now:`;
 };
 
 const DocumentCenter: React.FC = () => {
-  const { cases, activeCaseId } = useContext(AppContext);
-  const activeCase = cases?.find((c: any) => c.id === activeCaseId) || cases?.[0];
+  const { cases, activeCase } = useContext(AppContext);
 
   const [selectedDoc, setSelectedDoc] = useState('complaint');
   const [jurisdiction, setJurisdiction] = useState('');

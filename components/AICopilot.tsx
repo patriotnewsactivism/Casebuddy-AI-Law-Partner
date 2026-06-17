@@ -18,8 +18,7 @@ const SYSTEM_PROMPT = `You are a senior AI legal partner at CaseBuddy. You have 
 Be concise, precise, and practical. Always note when the user should consult a licensed attorney for jurisdiction-specific advice.`;
 
 const AICopilot: React.FC = () => {
-  const { cases, activeCaseId } = useContext(AppContext);
-  const activeCase = cases?.find((c: any) => c.id === activeCaseId) || cases?.[0];
+  const { cases, activeCase } = useContext(AppContext);
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
