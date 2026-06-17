@@ -1,21 +1,29 @@
 
 import React, { useContext, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { Case, CaseStatus } from '../types';
-import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library } from 'lucide-react';
+import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2 } from 'lucide-react';
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
+import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
 const CaseManager = () => {
-  const { cases, activeCase, setActiveCase, addCase } = useContext(AppContext);
+  const { cases, activeCase, setActiveCase, addCase, updateCase, deleteCase } = useContext(AppContext);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [inputText, setInputText] = useState('');
   
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [editingCase, setEditingCase] = useState<Case | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   
   const [newCaseData, setNewCaseData] = useState<Partial<Case>>({
     title: '',
@@ -103,6 +111,17 @@ const CaseManager = () => {
     handleSuccess(`Case "${newCase.title}" created successfully`);
     setShowNewCaseModal(false);
     setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '' });
+    // Case handoff — brief Sol + open War Room
+    setTimeout(() => {
+      toast.info(
+        <span>
+          🤝 <strong>Maya</strong> briefed the team on <em>{newCase.title}</em>.{' '}
+          <a href="/app/deadlines" className="underline text-blue-300">Sol → Deadlines</a>{' · '}
+          <a href="/app/war-room" className="underline text-blue-300">War Room</a>
+        </span>,
+        { autoClose: 7000 }
+      );
+    }, 800);
   };
 
   const handleLoadTemplate = (template: Case) => {
@@ -113,8 +132,31 @@ const CaseManager = () => {
     setShowLibraryModal(false);
   };
 
+  const handleEditCase = (c: Case) => {
+    setEditingCase({ ...c });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCase) return;
+    updateCase({ ...editingCase });
+    handleSuccess('Case updated successfully');
+    setShowEditModal(false);
+    setEditingCase(null);
+  };
+
+  const handleDeleteCase = (id: string) => {
+    if (!window.confirm('Delete this case? This cannot be undone.')) return;
+    deleteCase(id);
+    handleSuccess('Case deleted');
+  };
+
+
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-8">
+    <div className="space-y-5">
+      <AgentHeader agent={MAYA} compact />
+      <div className="flex flex-col lg:flex-row gap-8">
       {/* Case List Sidebar */}
       <div className="w-full lg:w-1/3 flex flex-col gap-6">
         <div className="flex items-center justify-between">
@@ -189,6 +231,27 @@ const CaseManager = () => {
               <div>
                 <span className="text-slate-400 block">Summary</span>
                 <span className="text-slate-300 leading-relaxed">{activeCase.summary}</span>
+              </div>
+            </div>
+            {/* Cross-agent quick actions */}
+            <div className="mt-5 pt-4 border-t border-slate-700 space-y-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Send to Agent</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Link to="/app/practice" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/25 text-yellow-400 hover:bg-yellow-500/20 transition-colors text-sm font-medium">
+                  <Gavel size={15} /> 🎯 Trial Simulator with Rex
+                </Link>
+                <Link to="/app/witnesses" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/25 text-yellow-400 hover:bg-yellow-500/20 transition-colors text-sm font-medium">
+                  <Scale size={15} /> 🎯 Witness Prep with Rex
+                </Link>
+                <Link to="/app/jury-sim" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm font-medium">
+                  <Scale size={15} /> 🧠 Jury Simulator with Jules
+                </Link>
+                <Link to="/app/strategy" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-400 hover:bg-blue-500/20 transition-colors text-sm font-medium">
+                  <BrainCircuit size={15} /> 📚 Strategy Room with Lex
+                </Link>
+                <Link to="/app/deadlines" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-400 hover:bg-orange-500/20 transition-colors text-sm font-medium">
+                  <Clock size={15} /> ⏰ Track Deadlines with Sol
+                </Link>
               </div>
             </div>
           </div>
@@ -416,6 +479,7 @@ const CaseManager = () => {
            </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

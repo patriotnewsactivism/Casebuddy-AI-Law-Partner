@@ -1,12 +1,16 @@
-import { Case } from '../types';
+import { Case, TrialSession } from '../types';
 
 const STORAGE_KEYS = {
-  CASES: 'lexsim_cases',
-  ACTIVE_CASE_ID: 'lexsim_active_case_id',
-  THEME: 'lexsim_theme',
-  USER_PREFERENCES: 'lexsim_preferences',
-  TRIAL_SESSIONS: 'lexsim_trial_sessions',
-  VERSION: 'lexsim_version',
+  CASES: 'casebuddy_cases',
+  ACTIVE_CASE_ID: 'casebuddy_active_case_id',
+  THEME: 'casebuddy_theme',
+  USER_PREFERENCES: 'casebuddy_preferences',
+  TRIAL_SESSIONS: 'casebuddy_trial_sessions',
+  VERSION: 'casebuddy_version',
+  // Legacy keys (pre-rename) — kept for migration
+  LEGACY_CASES: 'lexsim_cases',
+  LEGACY_PREFERENCES: 'lexsim_preferences',
+  LEGACY_TRIAL_SESSIONS: 'lexsim_trial_sessions',
 };
 
 const CURRENT_VERSION = '1.0.0';
@@ -16,19 +20,6 @@ interface UserPreferences {
   theme: 'dark' | 'light';
   displayName: string;
   title: string;
-}
-
-interface TrialSession {
-  id: string;
-  caseId: string;
-  phase: string;
-  mode: string;
-  date: string;
-  duration: number;
-  transcript: Array<{ sender: string; text: string; timestamp: number }>;
-  audioUrl?: string;
-  score?: number;
-  feedback?: any;
 }
 
 // Check if localStorage is available

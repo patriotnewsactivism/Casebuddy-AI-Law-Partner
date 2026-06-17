@@ -2,13 +2,25 @@ import React, { useContext, useState, useEffect } from 'react';
 import { AppContext } from '../App';
 import { MOCK_OPPONENT } from '../constants';
 import { predictStrategy } from '../services/geminiService';
+import { searchCaseLaw } from '../services/integrationService';
 import { StrategyInsight } from '../types';
-import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw } from 'lucide-react';
+import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw, Search, ExternalLink, BookOpen, Loader } from 'lucide-react';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const LEX = OPERATIONAL_AGENTS.find(a => a.id === 'lex')!;
 
 const StrategyRoom = () => {
   const { activeCase } = useContext(AppContext);
   const [insights, setInsights] = useState<StrategyInsight[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Case law search state
+  const [caseLawQuery, setCaseLawQuery] = useState('');
+  const [caseLawResults, setCaseLawResults] = useState<any[]>([]);
+  const [caseLawLoading, setCaseLawLoading] = useState(false);
+  const [caseLawError, setCaseLawError] = useState<string | null>(null);
+  const [caseLawNotConfigured, setCaseLawNotConfigured] = useState(false);
 
   // Initial load
   useEffect(() => {
@@ -29,8 +41,30 @@ const StrategyRoom = () => {
     setLoading(false);
   };
 
+  const handleCaseLawSearch = async () => {
+    const q = caseLawQuery.trim();
+    if (!q) return;
+    setCaseLawLoading(true);
+    setCaseLawError(null);
+    setCaseLawNotConfigured(false);
+    setCaseLawResults([]);
+    try {
+      const results = await searchCaseLaw(q);
+      setCaseLawResults(results);
+    } catch (err: any) {
+      if (err?.message?.includes('CourtListener is not configured')) {
+        setCaseLawNotConfigured(true);
+      } else {
+        setCaseLawError(err?.message ?? 'Search failed. Please try again.');
+      }
+    } finally {
+      setCaseLawLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
+      <AgentHeader agent={LEX} compact />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
             <h1 className="text-3xl font-bold font-serif text-white">War Room Strategy</h1>
@@ -155,6 +189,118 @@ const StrategyRoom = () => {
              )
            )}
         </div>
+      </div>
+
+      {/* Case Law Search */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <BookOpen className="text-blue-400" size={20} />
+          Case Law Search
+          <span className="ml-auto text-xs text-slate-500 font-normal">Powered by CourtListener</span>
+        </h3>
+
+        <div className="flex gap-3 mb-5">
+          <div className="flex-1 relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={caseLawQuery}
+              onChange={e => setCaseLawQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCaseLawSearch()}
+              placeholder="Search case law, e.g. 'fourth amendment exclusionary rule'…"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500/60 transition-colors"
+            />
+          </div>
+          <button
+            onClick={handleCaseLawSearch}
+            disabled={caseLawLoading || !caseLawQuery.trim()}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+          >
+            {caseLawLoading
+              ? <><Loader size={15} className="animate-spin" /> Searching…</>
+              : <><Search size={15} /> Search</>}
+          </button>
+        </div>
+
+        {/* Not configured */}
+        {caseLawNotConfigured && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+            <p className="text-amber-300 font-semibold text-sm mb-1">CourtListener not configured</p>
+            <p className="text-amber-200/70 text-xs mb-3">
+              Add your API key to unlock real case law search. CourtListener has a generous free tier.
+            </p>
+            <div className="bg-slate-900 border border-slate-700 rounded p-2 font-mono text-xs text-amber-400">
+              VITE_COURTLISTENER_API_KEY=your_key_here
+            </div>
+            <p className="text-xs text-amber-200/50 mt-2">
+              Add to <code className="bg-amber-500/10 px-1 rounded">.env.local</code> and restart the dev server.{' '}
+              <a href="https://www.courtlistener.com/register/" target="_blank" rel="noopener noreferrer"
+                className="text-amber-300 underline hover:text-amber-200">
+                Get a free key →
+              </a>
+            </p>
+          </div>
+        )}
+
+        {/* Error */}
+        {caseLawError && (
+          <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {caseLawError}
+          </div>
+        )}
+
+        {/* Results */}
+        {caseLawResults.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">{caseLawResults.length} result{caseLawResults.length !== 1 ? 's' : ''} found</p>
+            {caseLawResults.map((result: any, idx: number) => (
+              <div key={idx} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4 hover:border-slate-600 transition-colors">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <h4 className="text-sm font-semibold text-white leading-snug">
+                    {result.caseName ?? result.case_name ?? 'Untitled Case'}
+                  </h4>
+                  {result.absoluteUrl && (
+                    <a href={`https://www.courtlistener.com${result.absoluteUrl}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 shrink-0 transition-colors" title="View on CourtListener">
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-slate-400 mb-2">
+                  {(result.court ?? result.court_id) && (
+                    <span className="bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">
+                      {result.court ?? result.court_id}
+                    </span>
+                  )}
+                  {(result.dateFiled ?? result.date_filed) && (
+                    <span>{result.dateFiled ?? result.date_filed}</span>
+                  )}
+                  {result.citation && (
+                    <span className="text-slate-500 italic">{result.citation}</span>
+                  )}
+                </div>
+                {result.snippet && (
+                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-3"
+                    dangerouslySetInnerHTML={{ __html: result.snippet }} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state after search */}
+        {!caseLawLoading && !caseLawNotConfigured && !caseLawError && caseLawResults.length === 0 && caseLawQuery && (
+          <div className="text-center py-8 text-slate-500 text-sm">
+            No results found for "{caseLawQuery}". Try broader search terms.
+          </div>
+        )}
+
+        {/* Idle state */}
+        {!caseLawLoading && !caseLawNotConfigured && !caseLawError && caseLawResults.length === 0 && !caseLawQuery && (
+          <p className="text-slate-500 text-xs text-center py-4">
+            Search CourtListener's database of millions of federal and state court opinions.
+          </p>
+        )}
       </div>
     </div>
   );

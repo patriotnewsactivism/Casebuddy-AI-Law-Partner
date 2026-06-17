@@ -37,6 +37,59 @@ export interface Case {
   nextCourtDate: string;
   summary: string;
   winProbability: number;
+  updatedAt?: string;
+}
+
+// ── Intake pipeline ──────────────────────────────────────────────────────────
+// A prospect completes a voice intake with Maya; the conversation is distilled
+// into a structured IntakeData record, scored, and routed to a department.
+
+export interface IntakeData {
+  fullName: string;
+  contact: string;          // phone or email, however they gave it
+  matterType: string;       // e.g. "Personal Injury", "Family Law"
+  jurisdiction: string;     // state / court, if known
+  summary: string;          // plain-language description of what happened
+  incidentDate: string;     // when it happened (free text ok)
+  opposingParties: string;  // who they're up against
+  deadlines: string;        // any known deadlines / court dates
+  injuriesOrDamages: string;
+  desiredOutcome: string;
+  priorCounsel: string;     // have they spoken to other lawyers?
+}
+
+export type IntakeDisposition = 'accepted' | 'review' | 'denied';
+
+export interface IntakeScore {
+  score: number;                 // 0-100 case-strength / fit score
+  disposition: IntakeDisposition;
+  recommendedDepartment: string; // human label, e.g. "Personal Injury"
+  recommendedAgentId: string;    // specialist id, e.g. "personal-injury"
+  factors: { label: string; impact: 'positive' | 'negative' | 'neutral'; note: string }[];
+  reasoning: string;             // short internal rationale
+  clientMessage: string;         // friendly message shown to the prospect
+  urgency: 'low' | 'medium' | 'high';
+}
+
+export type IntakeStatus = 'new' | 'accepted' | 'denied' | 'routed';
+
+export interface IntakeCase {
+  id: string;
+  created_at: string;
+  full_name: string;
+  contact: string;
+  matter_type: string;
+  jurisdiction: string;
+  summary: string;
+  score: number;
+  disposition: IntakeDisposition;
+  status: IntakeStatus;
+  recommended_department: string;
+  recommended_agent_id: string;
+  urgency: 'low' | 'medium' | 'high';
+  intake: IntakeData;
+  score_detail: IntakeScore;
+  transcript: { speaker: string; text: string }[];
 }
 
 export interface Document {
@@ -102,4 +155,107 @@ export interface Transcription {
   timestamp: number;
   tags?: string[];
   notes?: string;
+}
+
+// ── Evidence (used in EvidenceTimeline) ──────────────────────────────────────
+export interface Evidence {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  dateObtained: string;
+  exhibitNumber?: string;
+  source?: string;
+  status?: string;
+  tags?: string[];
+  notes?: string;
+}
+
+// ── TimelineEvent (used in EvidenceTimeline) ─────────────────────────────────
+export interface TimelineEvent {
+  id: string;
+  date: string;
+  title: string;
+  description: string;
+  type?: string;
+  time?: string;
+  importance: 'low' | 'medium' | 'high' | 'critical';
+  tags?: string[];
+  linkedEvidence?: string[];
+  linkedWitnesses?: string[];
+}
+
+// ── Juror (used in MockJury) ─────────────────────────────────────────────────
+export interface Juror {
+  id: string;
+  name: string;
+  age: number;
+  occupation: string;
+  education: string;
+  avatar: string;
+  background?: string;
+  biases?: string[];
+  persuasionLevel?: number;
+  leaningScore?: number;
+}
+
+// ── JuryDeliberation (used in MockJury) ─────────────────────────────────────
+export interface JuryDeliberation {
+  jurorId: string;
+  statement: string;
+  sentiment?: string;
+}
+
+// ── JuryVerdict (used in MockJury) ──────────────────────────────────────────
+export interface JuryVerdict {
+  verdict: 'guilty' | 'not guilty' | 'hung';
+  confidence: number;
+  voteTally: { guilty: number; notGuilty: number };
+  reasoning: string;
+  strengths: string[];
+  weaknesses: string[];
+}
+
+// ── TrialSession (used in SessionHistory) ───────────────────────────────────
+export interface TrialSession {
+  id: string;
+  caseId?: string;
+  caseTitle?: string;
+  phase: string;
+  mode: string;
+  date: number | string;
+  duration: number;
+  score?: number;
+  transcript: Message[];
+  audioUrl?: string;
+  feedback?: string;
+  metrics?: {
+    objectionsReceived?: number;
+    fallaciesCommitted?: number;
+    avgRhetoricalScore?: number;
+    wordCount?: number;
+    fillerWordsCount?: number;
+  };
+}
+
+// ── War Room ─────────────────────────────────────────────────────────────────
+export interface WarRoomTask {
+  id: string;
+  agent: string;
+  category: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'working' | 'done' | 'error';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  done: boolean;
+  content?: string;
+}
+
+export interface WarRoomBriefing {
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  estimatedTrialReadiness: number;
+  topPriority: string;
+  keyRisks: string[];
+  summary: string;
+  tasks: WarRoomTask[];
 }

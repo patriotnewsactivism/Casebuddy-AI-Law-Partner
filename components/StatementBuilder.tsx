@@ -1,8 +1,14 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateStatement } from '../services/geminiService';
-import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2 } from 'lucide-react';
+import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2, FileDown } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
+
+const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
 interface Statement {
   id: string;
@@ -101,6 +107,20 @@ const StatementBuilder = () => {
     URL.revokeObjectURL(url);
   };
 
+  const exportPdf = (s: Statement) => {
+    const html = `
+      <h1>${s.type === 'opening' ? 'Opening' : 'Closing'} Statement</h1>
+      <div class="meta">
+        Case: ${s.caseTitle} &nbsp;|&nbsp; Date: ${new Date(s.timestamp).toLocaleDateString()} &nbsp;|&nbsp; Theory: ${s.theory}
+      </div>
+      <h2>Full Statement</h2>
+      <div class="section">${s.fullText.split('\n\n').map(p => `<p>${p.replace(/\n/g,'<br/>')}</p>`).join('')}</div>
+      <h2>Talking Points</h2>
+      <ol>${s.talkingPoints.map(p => `<li>${p}</li>`).join('')}</ol>
+    `;
+    printAsPdf(`${s.type === 'opening' ? 'Opening' : 'Closing'} Statement — ${s.caseTitle}`, html);
+  };
+
   if (!activeCase) {
     return (
       <div className="flex items-center justify-center min-h-64">
@@ -146,6 +166,7 @@ const StatementBuilder = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      <AgentHeader agent={DOC} compact />
       <div className="flex items-center gap-3">
         <BookOpen className="text-gold-500" size={32} />
         <div>
@@ -169,7 +190,10 @@ const StatementBuilder = () => {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Theory of the Case *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm text-slate-400">Theory of the Case *</label>
+                <VoiceMicButton size={15} onTranscript={t => setTheory(prev => prev + (prev ? ' ' : '') + t)} />
+              </div>
               <textarea value={theory} onChange={e => setTheory(e.target.value)}
                 placeholder="e.g. My client acted in self-defense after being threatened. The prosecution's case relies entirely on a single unreliable witness with motive to lie."
                 rows={4}
@@ -248,8 +272,12 @@ const StatementBuilder = () => {
                 <Copy size={14} /> Copy
               </button>
               <button onClick={() => download(statement)}
-                className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold rounded-lg text-sm">
-                <Download size={14} /> Download
+                className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
+                <Download size={14} /> .txt
+              </button>
+              <button onClick={() => exportPdf(statement)}
+                className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-lg text-sm">
+                <FileDown size={14} /> Export PDF
               </button>
             </div>
           </div>

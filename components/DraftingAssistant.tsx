@@ -1,11 +1,14 @@
 
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
-import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2, FileDown } from 'lucide-react';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
+import { deepseekChat } from '../services/deepseek';
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
 type DocumentTemplate =
   | 'motion-to-dismiss'
@@ -17,13 +20,19 @@ type DocumentTemplate =
   | 'memorandum-of-law'
   | 'opening-statement'
   | 'closing-argument'
-  | 'demand-letter';
+  | 'demand-letter'
+  | 'complaint-petition'
+  | 'answer-response'
+  | 'foia-request'
+  | 'subpoena'
+  | 'affidavit-declaration'
+  | 'engagement-letter';
 
 interface TemplateOption {
   id: DocumentTemplate;
   label: string;
   description: string;
-  category: 'Motion' | 'Discovery' | 'Brief' | 'Trial' | 'Pre-Litigation';
+  category: 'Motion' | 'Discovery' | 'Brief' | 'Trial' | 'Pre-Litigation' | 'Pleading' | 'Records';
 }
 
 const TEMPLATES: TemplateOption[] = [
@@ -86,6 +95,42 @@ const TEMPLATES: TemplateOption[] = [
     label: 'Demand Letter',
     description: 'Pre-litigation demand for settlement',
     category: 'Pre-Litigation'
+  },
+  {
+    id: 'complaint-petition',
+    label: 'Complaint / Petition',
+    description: 'Initiate a lawsuit; state claims and relief sought',
+    category: 'Pleading'
+  },
+  {
+    id: 'answer-response',
+    label: 'Answer / Response',
+    description: 'Respond to a complaint with defenses and admissions/denials',
+    category: 'Pleading'
+  },
+  {
+    id: 'foia-request',
+    label: 'FOIA / Public Records Request',
+    description: 'Request government records under FOIA or state public records law',
+    category: 'Records'
+  },
+  {
+    id: 'subpoena',
+    label: 'Subpoena',
+    description: 'Compel testimony or production of documents',
+    category: 'Discovery'
+  },
+  {
+    id: 'affidavit-declaration',
+    label: 'Affidavit / Declaration',
+    description: 'Sworn statement of facts under penalty of perjury',
+    category: 'Pleading'
+  },
+  {
+    id: 'engagement-letter',
+    label: 'Engagement Letter',
+    description: 'Attorney-client retainer agreement defining scope and fees',
+    category: 'Pre-Litigation'
   }
 ];
 
@@ -99,7 +144,7 @@ const DraftingAssistant = () => {
   const [copied, setCopied] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = ['All', 'Motion', 'Discovery', 'Brief', 'Trial', 'Pre-Litigation'];
+  const categories = ['All', 'Pleading', 'Motion', 'Discovery', 'Brief', 'Trial', 'Pre-Litigation', 'Records'];
 
   const filteredTemplates = selectedCategory === 'All'
     ? TEMPLATES
@@ -108,11 +153,6 @@ const DraftingAssistant = () => {
   const generateDocument = async () => {
     if (!selectedTemplate) {
       setError('Please select a document template');
-      return;
-    }
-
-    if (!apiKey || apiKey === '') {
-      setError('API key not configured. Please set GEMINI_API_KEY in .env.local');
       return;
     }
 
@@ -126,11 +166,24 @@ const DraftingAssistant = () => {
         ? `Case: ${activeCase.title}\nClient: ${activeCase.client}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`
         : 'No active case selected. Generate a general template.';
 
+      const foiaGuidance = selectedTemplate === 'foia-request'
+        ? `
+
+FOIA / Public Records Request Specific Requirements:
+- Identify the appropriate government agency (and the correct office/records custodian within it) that holds the records sought.
+- Cite the correct controlling statute: the federal Freedom of Information Act, 5 U.S.C. § 552, for records held by federal agencies, OR the relevant state public records act (e.g., a state's Public Records Act / Open Records Act / Freedom of Information Law) when the records are held by a state or local government body. Identify the applicable statute explicitly.
+- Describe the records sought with precision and specificity (date ranges, custodians, subject matter, record types, file/case numbers where known) so the agency can readily locate them, while avoiding overly narrow language that could be used to exclude responsive records.
+- Include a fee waiver request, explaining that disclosure is in the public interest and not primarily in the requester's commercial interest where that justification applies.
+- Include a request for expedited processing where appropriate, with a brief justification (e.g., compelling need, urgency to inform the public).
+- Include a statement requesting that any reasonably segregable non-exempt portions of records be released even if some material is withheld, and that the agency cite the specific exemption for any withholding.
+- Provide the statutory response deadline reference and preferred format/delivery for the records.`
+        : '';
+
       const prompt = `You are an expert legal document drafter. Generate a professional ${template?.label} for the following case.
 
 ${caseContext}
 
-Additional Instructions: ${customPrompt || 'None'}
+Additional Instructions: ${customPrompt || 'None'}${foiaGuidance}
 
 Requirements:
 1. Use proper legal formatting and citations (use [Citation] placeholders where specific case law would be cited)
@@ -142,15 +195,14 @@ Requirements:
 
 Generate the complete document ready for attorney review.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          temperature: 0.7,
-        }
+      const response = await deepseekChat({
+        systemInstruction: 'You are an expert legal document drafter. Return only the document text.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        maxTokens: 4096,
       });
 
-      setGeneratedContent(response.text || '');
+      setGeneratedContent(response || '');
     } catch (err: any) {
       console.error('Document generation failed', err);
       setError(`Generation failed: ${err.message || 'Unknown error'}`);
@@ -176,8 +228,21 @@ Generate the complete document ready for attorney review.`;
     URL.revokeObjectURL(url);
   };
 
+  const exportPdf = () => {
+    const template = TEMPLATES.find(t => t.id === selectedTemplate);
+    const docTitle = template?.label || 'Legal Document';
+    const caseInfo = activeCase ? `Case: ${activeCase.title}` : '';
+    const html = textToPdfHtml(
+      docTitle,
+      [caseInfo, `Generated: ${new Date().toLocaleDateString()}`].filter(Boolean).join(' &nbsp;|&nbsp; '),
+      generatedContent,
+    );
+    printAsPdf(docTitle, html);
+  };
+
   return (
     <div className="space-y-6">
+      <AgentHeader agent={DOC} compact />
       <div>
         <h1 className="text-3xl font-bold text-white font-serif">Drafting Assistant</h1>
         <p className="text-slate-400 mt-2">AI-powered legal document generation and drafting support</p>
@@ -250,9 +315,12 @@ Generate the complete document ready for attorney review.`;
 
           {/* Custom Instructions */}
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Additional Instructions (Optional)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-slate-300">
+                Additional Instructions (Optional)
+              </label>
+              <VoiceMicButton size={16} onTranscript={t => setCustomPrompt(prev => prev + (prev ? ' ' : '') + t)} />
+            </div>
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
@@ -301,6 +369,13 @@ Generate the complete document ready for attorney review.`;
                   title="Download as text file"
                 >
                   <Download className="text-slate-300" size={18} />
+                </button>
+                <button
+                  onClick={exportPdf}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold rounded-lg text-sm transition-colors"
+                  title="Export as PDF"
+                >
+                  <FileDown size={15} /> PDF
                 </button>
               </div>
             )}

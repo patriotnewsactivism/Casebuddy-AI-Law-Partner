@@ -1,8 +1,13 @@
 import React, { useState, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { predictVerdictAndSettlement } from '../services/geminiService';
-import { TrendingUp, Loader, AlertTriangle, CheckCircle, DollarSign, Scale, RefreshCw, Clock } from 'lucide-react';
+import { TrendingUp, Loader, AlertTriangle, CheckCircle, DollarSign, Scale, RefreshCw, Clock, MessageSquare } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const JULES = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
 
 interface Prediction {
   id: string;
@@ -99,6 +104,7 @@ const VerdictPredictor = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      <AgentHeader agent={JULES} compact />
       <div className="flex items-center gap-3">
         <TrendingUp className="text-gold-500" size={32} />
         <div>
@@ -287,6 +293,16 @@ const VerdictPredictor = () => {
               </div>
             </div>
           )}
+
+          {/* Cross-agent CTA */}
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link to="/app/legal-team" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm font-medium">
+              <MessageSquare size={15} /> 🧠 Consult Jules — Jury Strategy
+            </Link>
+            <Link to="/app/jury-sim" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm font-medium">
+              <Scale size={15} /> Run Jury Simulation
+            </Link>
+          </div>
         </div>
       </div>
     </div>

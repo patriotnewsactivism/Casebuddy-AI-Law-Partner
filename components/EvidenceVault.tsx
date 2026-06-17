@@ -3,6 +3,10 @@ import { AppContext } from '../App';
 import { analyzeEvidence } from '../services/geminiService';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
 
 interface EvidenceItem {
   id: string;
@@ -109,6 +113,7 @@ const EvidenceVault = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <AgentHeader agent={MAX} compact />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Archive className="text-gold-500" size={32} />

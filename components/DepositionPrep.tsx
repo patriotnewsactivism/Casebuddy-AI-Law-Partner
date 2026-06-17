@@ -3,6 +3,11 @@ import { AppContext } from '../App';
 import { generateDepositionQuestions } from '../services/geminiService';
 import { ClipboardList, Loader, ChevronDown, ChevronUp, Copy, Download, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
+
+const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
 interface DepoSession {
   id: string;
@@ -171,6 +176,7 @@ const DepositionPrep = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <AgentHeader agent={REX} compact />
       <div className="flex items-center gap-3">
         <ClipboardList className="text-gold-500" size={32} />
         <div>
@@ -201,7 +207,10 @@ const DepositionPrep = () => {
           </div>
 
           <div>
-            <label className="text-sm text-slate-400 block mb-1">Deposition Strategy</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm text-slate-400">Deposition Strategy</label>
+              <VoiceMicButton size={15} onTranscript={t => setStrategy(prev => prev + (prev ? ' ' : '') + t)} />
+            </div>
             <textarea value={strategy} onChange={e => setStrategy(e.target.value)}
               placeholder="e.g. Lock in timeline. Expose inconsistency between statement and report. Establish they never directly witnessed the event."
               rows={4}

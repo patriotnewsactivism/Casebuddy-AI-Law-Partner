@@ -1,0 +1,19 @@
+{
+  "name": "CaseBuddy — AI Legal Platform",
+  "short_name": "CaseBuddy",
+  "description": "Your complete AI law firm. Trial simulation, witness prep, jury analysis, and 12 specialist lawyers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#d4af37",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%23020617'/><text y='140' x='24' font-size='140'>⚖️</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "business", "legal"]
+}

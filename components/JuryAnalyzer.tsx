@@ -3,6 +3,10 @@ import { AppContext } from '../App';
 import { analyzeJuror } from '../services/geminiService';
 import { UserCheck, Loader, Trash2, AlertTriangle, CheckCircle, XCircle, HelpCircle, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { toast } from 'react-toastify';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+
+const JULES = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
 
 interface JurorProfile {
   id: string;
@@ -126,6 +130,7 @@ const JuryAnalyzer = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <AgentHeader agent={JULES} compact />
       <div className="flex items-center gap-3">
         <UserCheck className="text-gold-500" size={32} />
         <div>

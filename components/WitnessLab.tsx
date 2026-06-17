@@ -3,7 +3,12 @@ import { MOCK_WITNESSES } from '../constants';
 import { AppContext } from '../App';
 import { generateWitnessResponse, generateWitnessCoaching } from '../services/geminiService';
 import { Message, Witness } from '../types';
-import { Send, Mic, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
+import { Send, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
+import AgentHeader from './AgentHeader';
+import { OPERATIONAL_AGENTS } from '../agents/personas';
+import VoiceMicButton from './VoiceMicButton';
+
+const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
 interface CoachingTip {
   suggestion: string;
@@ -101,7 +106,9 @@ const WitnessLab = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex gap-4">
+    <div className="space-y-4">
+      <AgentHeader agent={REX} compact />
+      <div className="h-[calc(100vh-10rem)] flex gap-4">
       {/* Left Sidebar: Witness Selection */}
       <div className="w-64 flex flex-col gap-4 bg-slate-800 border border-slate-700 rounded-xl p-4 overflow-y-auto hidden lg:flex">
         <h3 className="text-white font-serif font-bold px-2">Witness List</h3>
@@ -203,9 +210,7 @@ const WitnessLab = () => {
               className="flex-1 bg-transparent border-none focus:ring-0 text-white px-4 py-3 placeholder-slate-500"
               disabled={isTyping}
             />
-            <button type="button" className="p-2 text-slate-400 hover:text-white transition-colors">
-              <Mic size={20} />
-            </button>
+            <VoiceMicButton size={20} onTranscript={t => setInput(prev => prev + (prev ? ' ' : '') + t)} />
             <button 
               type="submit" 
               disabled={!input.trim() || isTyping}
@@ -264,6 +269,7 @@ const WitnessLab = () => {
             {isTyping ? 'Generating coaching...' : 'Ask a question to get coaching tips'}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
