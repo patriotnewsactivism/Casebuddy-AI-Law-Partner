@@ -348,6 +348,12 @@ const LegalTeam: React.FC = () => {
     setSessions(prev => ({ ...prev, [activeId]: { specialistId: activeId, messages: [] } }));
   };
 
+  const handleClearAllMemory = () => {
+    if (!window.confirm('Clear all consultation histories for all specialists? This cannot be undone.')) return;
+    setSessions({});
+    localStorage.removeItem(SESSIONS_KEY);
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="mb-4 sm:mb-6 shrink-0">
@@ -360,6 +366,13 @@ const LegalTeam: React.FC = () => {
             <p className="text-slate-400 mt-1 text-sm">Consult with AI lawyers in 12 practice areas.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleClearAllMemory}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-500/40 text-xs transition-colors"
+              title="Clear all specialist memories"
+            >
+              <Trash2 size={12} /> Clear All Memory
+            </button>
             {activeCase && (
               <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs">
                 <Briefcase size={12} className="text-gold-400" />
