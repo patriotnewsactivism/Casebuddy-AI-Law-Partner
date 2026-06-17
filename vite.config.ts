@@ -35,23 +35,26 @@ export default defineConfig(({ mode }) => {
         // Deepgram — DEV ONLY
         'import.meta.env.VITE_DEEPGRAM_API_KEY': JSON.stringify(env.VITE_DEEPGRAM_API_KEY || (mode === 'development' ? env.DEEPGRAM_API_KEY : '')),
       },
-      build: {
-        rollupOptions: {
-          output: {
-            manualChunks: {
-              react: ['react', 'react-dom', 'react-router-dom'],
-              genai: ['@google/genai'],
-              charts: ['recharts'],
-              supabase: ['@supabase/supabase-js'],
-              motion: ['framer-motion'],
-            },
-          },
-        },
-      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      }
+      },
+      build: {
+        rollupOptions: {
+          external: [
+            'react',
+            'react-dom',
+            'react-dom/client',
+            'react-router-dom',
+            'lucide-react',
+            'recharts',
+            'react-toastify',
+            '@google/genai',
+            'framer-motion',
+            '@supabase/supabase-js',
+          ],
+        },
+      },
     };
 });
