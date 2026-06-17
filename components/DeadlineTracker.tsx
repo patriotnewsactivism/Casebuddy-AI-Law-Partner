@@ -125,6 +125,29 @@ const DeadlineTracker: React.FC = () => {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(deadlines)); } catch {}
   }, [deadlines]);
+  // ── Sol background deadline watcher ─────────────────────────────────────────
+  // Runs on mount + every 6 hours to alert on overdue/imminent deadlines
+  useEffect(() => {
+    const checkDeadlines = () => {
+      const overdue = deadlines.filter(d => !d.completed && daysUntil(d.dueDate) < 0);
+      const urgent  = deadlines.filter(d => !d.completed && daysUntil(d.dueDate) >= 0 && daysUntil(d.dueDate) <= 3);
+      if (overdue.length > 0) {
+        toast.error(`⚠️ ${overdue.length} deadline${overdue.length > 1 ? 's' : ''} OVERDUE — ${overdue[0].label || overdue[0].caseTitle}`, { autoClose: 8000 });
+      } else if (urgent.length > 0) {
+        toast.warning(`⏰ ${urgent.length} deadline${urgent.length > 1 ? 's' : ''} due within 3 days — ${urgent[0].label || urgent[0].caseTitle}`, { autoClose: 6000 });
+      }
+    };
+
+    // Check immediately on load
+    if (deadlines.length > 0) checkDeadlines();
+
+    // Re-check every 6 hours
+    const interval = setInterval(checkDeadlines, 6 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
 
   const calculateSol = async () => {
     if (!solForm.jurisdiction.trim() || !solForm.claimType.trim()) {
