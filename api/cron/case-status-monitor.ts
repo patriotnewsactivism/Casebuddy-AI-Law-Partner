@@ -63,32 +63,32 @@ export default async function handler(req: Request): Promise<Response> {
   const today = now.toISOString().split('T')[0];
   const alerts: string[] = [];
 
-  const casesRes = await fetch(`${SB_URL}/rest/v1/cases?select=data`, {
+  const casesRes = await fetch(`${SB_URL}/rest/v1/cases?select=id,name,status,client_name,opposing_counsel,judge,next_court_date,trial_date,updated_at`, {
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
   });
   const caseRows: any[] = await casesRes.json();
-  const cases = caseRows.map((r: any) => r.data).filter(Boolean);
+  const cases = caseRows.filter(Boolean);
 
   for (const c of cases) {
     // ── Court date TODAY → urgent SMS ──────────────────────────────────────
-    if (c.nextCourtDate && c.nextCourtDate !== 'TBD' && c.nextCourtDate === today) {
-      const msg = `🚨 COURT TODAY: ${c.title} (${c.status}) — ${c.client} vs ${c.opposingCounsel}. Log in to CaseBuddy War Room now.`;
+    if (c.next_court_date && c.next_court_date !== 'TBD' && c.next_court_date === today) {
+      const msg = `🚨 COURT TODAY: ${c.name} (${c.status}) — ${c.client_name} vs ${c.opposing_counsel}. Log in to CaseBuddy War Room now.`;
       await sendSms(TW_SID, TW_TOKEN, TW_FROM, OWNER_PHONE, msg);
-      await sendEmail(SG_KEY, OWNER_EMAIL, `🚨 Court Date TODAY — ${c.title}`,
+      await sendEmail(SG_KEY, OWNER_EMAIL, `🚨 Court Date TODAY — ${c.name}`,
         `<div style="font-family:sans-serif"><h2 style="color:#dc2626">🚨 Court Date Today</h2>
-         <p><strong>${c.title}</strong> — ${c.client}</p>
-         <p>Status: ${c.status} | Opposing: ${c.opposingCounsel} | Judge: ${c.judge}</p>
+         <p><strong>${c.name}</strong> — ${c.client_name}</p>
+         <p>Status: ${c.status} | Opposing: ${c.opposing_counsel} | Judge: ${c.judge}</p>
          <a href="https://casebuddy.live/app/war-room" style="background:#dc2626;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Open War Room →</a>
          </div>`);
-      alerts.push(`Court today: ${c.title}`);
+      alerts.push(`Court today: ${c.name}`);
     }
 
     // ── Court date TOMORROW → SMS reminder ─────────────────────────────────
     const tomorrow = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
-    if (c.nextCourtDate === tomorrow) {
-      const msg = `⏰ COURT TOMORROW: ${c.title} — prep in the War Room now. casebuddy.live/app/war-room`;
+    if (c.next_court_date === tomorrow) {
+      const msg = `⏰ COURT TOMORROW: ${c.name} — prep in the War Room now. casebuddy.live/app/war-room`;
       await sendSms(TW_SID, TW_TOKEN, TW_FROM, OWNER_PHONE, msg);
-      alerts.push(`Court tomorrow: ${c.title}`);
+      alerts.push(`Court tomorrow: ${c.name}`);
     }
 
     // ── Stale case (no update in 30 days) ──────────────────────────────────
@@ -97,15 +97,15 @@ export default async function handler(req: Request): Promise<Response> {
       const daysSinceUpdate = Math.floor(
         (now.getTime() - new Date(parseInt(c.id) || updatedAt).getTime()) / 86400000
       );
-      if (daysSinceUpdate >= 30 && ['Active', 'Discovery', 'Pre-Trial'].includes(c.status)) {
-        await sendEmail(SG_KEY, OWNER_EMAIL, `⚠️ Stale Case — ${c.title} (${daysSinceUpdate}d inactive)`,
+      if (daysSinceUpdate >= 30 && ['active', 'discovery', 'pre-trial', 'pre_trial'].includes(c.status?.toLowerCase())) {
+        await sendEmail(SG_KEY, OWNER_EMAIL, `⚠️ Stale Case — ${c.name} (${daysSinceUpdate}d inactive)`,
           `<div style="font-family:sans-serif">
            <h3>⚠️ Case May Need Attention</h3>
-           <p><strong>${c.title}</strong> (${c.status}) has had no recorded updates in ${daysSinceUpdate} days.</p>
-           <p>Client: ${c.client} | Opposing: ${c.opposingCounsel}</p>
+           <p><strong>${c.name}</strong> (${c.status}) has had no recorded updates in ${daysSinceUpdate} days.</p>
+           <p>Client: ${c.client_name} | Opposing: ${c.opposing_counsel}</p>
            <a href="https://casebuddy.live/app/cases" style="background:#f59e0b;color:#0f172a;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Review Case →</a>
            </div>`);
-        alerts.push(`Stale: ${c.title} (${daysSinceUpdate}d)`);
+        alerts.push(`Stale: ${c.name} (${daysSinceUpdate}d)`);
       }
     }
   }
