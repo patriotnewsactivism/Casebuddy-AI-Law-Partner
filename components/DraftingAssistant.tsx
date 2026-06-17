@@ -1,13 +1,8 @@
 
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
-<<<<<<< Updated upstream
 import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2, FileDown } from 'lucide-react';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
-import { GoogleGenAI, Type } from "@google/genai";
-=======
-import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
->>>>>>> Stashed changes
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
@@ -15,14 +10,6 @@ import { deepseekChat } from '../services/deepseek';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
-<<<<<<< Updated upstream
-const getApiKey = () =>
-  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
-const createAI = () => new GoogleGenAI({ apiKey: getApiKey() });
-
-
-=======
->>>>>>> Stashed changes
 type DocumentTemplate =
   | 'motion-to-dismiss'
   | 'motion-to-suppress'
@@ -169,16 +156,6 @@ const DraftingAssistant = () => {
       return;
     }
 
-<<<<<<< Updated upstream
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setError('API key not configured. Please set GEMINI_API_KEY in .env.local or add it in Settings.');
-      return;
-    }
-    const ai = createAI();
-
-=======
->>>>>>> Stashed changes
     setIsGenerating(true);
     setError('');
     setGeneratedContent('');

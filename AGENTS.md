@@ -43,7 +43,7 @@ index.html        # Importmap, Tailwind CDN config
 types.ts          # All TypeScript types/enums
 constants.ts      # MOCK_CASES (intentionally empty), MOCK_CASE_TEMPLATES
 components/       # One file per page/feature (36 files)
-services/         # geminiService.ts — all Gemini API calls
+services/         # geminiService.ts (multimodal), deepseek.ts (text generation)
 utils/            # errorHandler.ts, storage.ts, fileValidation.ts
 agents/           # personas.ts — 8 operational agents + 12 legal specialists
 server/           # db.ts — Drizzle/Postgres stub (vestigial); ignore it

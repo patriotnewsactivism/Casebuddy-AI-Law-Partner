@@ -10,7 +10,6 @@ const getApiKey = () => {
   return key;
 };
 const createAI = () => new GoogleGenAI({ apiKey: getApiKey() });
-<<<<<<< Updated upstream
 
 // Lazy-init: create a fresh GoogleGenAI instance on each call so that if
 // the user updates their API key in Settings mid-session, the next call
@@ -25,8 +24,6 @@ const ai = new Proxy({} as GoogleGenAI, {
     return (getAI() as any)[prop];
   },
 });
-=======
-const ai = createAI();
 const DS_MODEL = 'deepseek-chat';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -515,9 +512,7 @@ export async function* askCopilotStream(
     if (chunk.text) yield chunk.text;
   }
 }
-=======
 // ── Transcript analysis (text only → DeepSeek) ─────────────────────────────
->>>>>>> Stashed changes
 
 export const analyzeTranscription = async (
   transcriptText: string, caseContext: string, fileName: string
