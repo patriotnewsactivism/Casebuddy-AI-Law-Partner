@@ -155,3 +155,74 @@ export interface Transcription {
   tags?: string[];
   notes?: string;
 }
+
+// ── Evidence (used in EvidenceTimeline) ──────────────────────────────────────
+export interface Evidence {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  dateObtained: string;
+  exhibitNumber?: string;
+  source?: string;
+  status?: string;
+}
+
+// ── TimelineEvent (used in EvidenceTimeline) ─────────────────────────────────
+export interface TimelineEvent {
+  id: string;
+  date: string;
+  title: string;
+  description: string;
+  type?: string;
+  linkedEvidence?: string[];
+}
+
+// ── Juror (used in MockJury) ─────────────────────────────────────────────────
+export interface Juror {
+  id: string;
+  name: string;
+  age: number;
+  occupation: string;
+  education: string;
+  avatar: string;
+  biases?: string[];
+  persuasionLevel?: number;
+}
+
+// ── JuryDeliberation (used in MockJury) ─────────────────────────────────────
+export interface JuryDeliberation {
+  jurorId: string;
+  statement: string;
+  sentiment?: string;
+}
+
+// ── JuryVerdict (used in MockJury) ──────────────────────────────────────────
+export interface JuryVerdict {
+  verdict: 'guilty' | 'not guilty' | 'hung';
+  confidence: number;
+  voteTally: { guilty: number; notGuilty: number };
+  reasoning: string;
+  strengths: string[];
+  weaknesses: string[];
+}
+
+// ── TrialSession (used in SessionHistory) ───────────────────────────────────
+export interface TrialSession {
+  id: string;
+  caseTitle: string;
+  phase: string;
+  mode: string;
+  date: number;
+  duration: number;
+  score: number;
+  transcript?: string;
+  audioUrl?: string;
+  metrics?: {
+    objectionsReceived?: number;
+    fallaciesCommitted?: number;
+    avgRhetoricalScore?: number;
+    wordCount?: number;
+  };
+}
+
