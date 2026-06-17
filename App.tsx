@@ -53,7 +53,7 @@ const AuthPage         = React.lazy(() => import('./components/AuthPage'));
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import type { User } from '@supabase/supabase-js';
 
@@ -306,6 +306,8 @@ export const AppContext = React.createContext<{
   activeCase: Case | null;
   setActiveCase: (c: Case) => void;
   addCase: (c: Case) => void;
+  updateCase: (c: Case) => void;
+  deleteCase: (id: string) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
   syncStatus: SyncStatus;
@@ -316,6 +318,8 @@ export const AppContext = React.createContext<{
   activeCase: null,
   setActiveCase: () => {},
   addCase: () => {},
+  updateCase: () => {},
+  deleteCase: () => {},
   theme: 'dark',
   setTheme: () => {},
   syncStatus: 'local-only',
@@ -397,6 +401,29 @@ const App = () => {
     }
   };
 
+  const updateCase = (updatedCase: Case) => {
+    const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
+    setCases(updated);
+    saveCases(updated);
+    upsertCaseToCloud(updatedCase);
+    if (activeCase?.id === updatedCase.id) {
+      setActiveCaseState(updatedCase);
+      saveActiveCaseId(updatedCase.id);
+    }
+  };
+
+  const deleteCase = (id: string) => {
+    const updated = cases.filter(c => c.id !== id);
+    setCases(updated);
+    saveCases(updated);
+    deleteCaseFromCloud(id);
+    if (activeCase?.id === id) {
+      const next = updated[0] ?? null;
+      setActiveCaseState(next);
+      if (next) saveActiveCaseId(next.id);
+    }
+  };
+
   // Initial cloud sync
   useEffect(() => {
     setSyncStatus('syncing');
@@ -440,7 +467,7 @@ const App = () => {
   };
 
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus, user, authLoading }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, syncStatus, user, authLoading }}>
       <BrowserRouter>
         {showOnboarding && user && (
           <Suspense fallback={null}>
