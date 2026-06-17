@@ -56,6 +56,7 @@ import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
+import { isSupabaseConfigured } from './services/supabaseClient';
 import type { User } from '@supabase/supabase-js';
 
 // ─── Page-level loading spinner ──────────────────────────────────────────
@@ -349,11 +350,19 @@ const App = () => {
 
   // ─── Auth listener ─────────────────────────────────────────────────────────
   useEffect(() => {
+    // If Supabase is not configured the callback never fires — resolve immediately
+    // so the app does not spin forever on a blank loading screen.
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
     const unsub = onAuthStateChange((u, _session) => {
       setUser(u);
       setAuthLoading(false);
     });
-    return unsub;
+    // Safety net: if auth check takes >5 s, unblock the UI anyway
+    const timeout = setTimeout(() => setAuthLoading(false), 5000);
+    return () => { unsub(); clearTimeout(timeout); };
   }, []);
 
   // ─── Fetch server-side API keys once authenticated ─────────────────────────
@@ -377,6 +386,7 @@ const App = () => {
           const data = await resp.json();
           if (data.geminiKey) (window as any).__GEMINI_API_KEY = data.geminiKey;
           if (data.deepgramKey) (window as any).__DEEPGRAM_API_KEY = data.deepgramKey;
+          if (data.deepseekKey) (window as any).__DEEPSEEK_API_KEY = data.deepseekKey;
         }
       } catch { /* silent — services fall back to VITE_ env vars */ }
     })();
