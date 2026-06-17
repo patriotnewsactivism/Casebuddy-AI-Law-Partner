@@ -49,7 +49,7 @@ const JUROR_PRESETS: Juror[] = [
   { id: 6, name: 'Tyler J.', background: 'College student, 22, first-time juror, social media active', personality: 'Impressionable, responds to narrative storytelling, influenced by peers', persuasionLevel: 50 },
 ];
 
-const PersuasionBar = ({ level, jurorName, colorClass }: { level: number; jurorName: string; colorClass: string }) => {
+const PersuasionBar: React.FC<{ level: number; jurorName: string; colorClass: string }> = ({ level, jurorName, colorClass }) => {
   const pct = Math.max(0, Math.min(100, level));
   const barColor = pct >= 65 ? 'bg-green-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500';
   return (
@@ -65,7 +65,7 @@ const PersuasionBar = ({ level, jurorName, colorClass }: { level: number; jurorN
   );
 };
 
-const JurorCard = ({ juror, reaction }: { juror: Juror; reaction?: JurorReaction }) => {
+const JurorCard: React.FC<{ juror: Juror; reaction?: JurorReaction }> = ({ juror, reaction }) => {
   const [expanded, setExpanded] = useState(false);
   const delta = reaction?.persuasionDelta ?? 0;
 
