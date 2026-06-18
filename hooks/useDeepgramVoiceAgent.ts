@@ -170,26 +170,32 @@ export function useDeepgramVoiceAgent(
     const int16 = new Int16Array(buffer);
     if (int16.length === 0) return;
 
-    // Apply gentle fade-in/out (8ms each) to eliminate pops and clicks
-    // that make the voice sound cut-off or robotic.
-    const FADE_SAMPLES = Math.min(Math.floor(OUTPUT_RATE * 0.008), Math.floor(int16.length / 4));
+    // Check if this is the first chunk of a new utterance (no sources queued)
+    const isFirstChunk = sourcesRef.current.size === 0;
+
     const audioBuffer = outputCtx.createBuffer(1, int16.length, OUTPUT_RATE);
     const channel = audioBuffer.getChannelData(0);
-    for (let i = 0; i < int16.length; i++) {
-      let sample = int16[i] / 32768;
-      // Fade-in over the first FADE_SAMPLES
-      if (i < FADE_SAMPLES) sample *= i / FADE_SAMPLES;
-      // Fade-out over the last FADE_SAMPLES
-      const fromEnd = int16.length - 1 - i;
-      if (fromEnd < FADE_SAMPLES) sample *= fromEnd / FADE_SAMPLES;
-      channel[i] = sample;
+
+    if (isFirstChunk) {
+      // Only fade-in the very first chunk of a new utterance (6ms)
+      // to prevent the initial pop/click. Mid-stream chunks play raw
+      // so the voice stays smooth and continuous — no pulsing.
+      const FADE_IN = Math.min(Math.floor(OUTPUT_RATE * 0.006), Math.floor(int16.length / 4));
+      for (let i = 0; i < int16.length; i++) {
+        let sample = int16[i] / 32768;
+        if (i < FADE_IN) sample *= i / FADE_IN;
+        channel[i] = sample;
+      }
+    } else {
+      // Mid-stream chunks: straight PCM, no processing — keeps voice smooth
+      for (let i = 0; i < int16.length; i++) channel[i] = int16[i] / 32768;
     }
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
-    // Small look-ahead buffer (30ms) so the first chunk doesn't start
-    // right on the audio context edge — prevents initial clipping.
-    const now = outputCtx.currentTime + 0.03;
+    // Small look-ahead buffer (30ms) on first chunk only so it doesn't
+    // start right on the audio context edge — prevents initial clipping.
+    const now = outputCtx.currentTime + (isFirstChunk ? 0.03 : 0);
     nextStartRef.current = Math.max(nextStartRef.current, now);
     const src = outputCtx.createBufferSource();
     src.buffer = audioBuffer;
