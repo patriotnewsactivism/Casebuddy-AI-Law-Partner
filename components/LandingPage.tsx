@@ -141,30 +141,6 @@ const PIPELINE_STEPS = [
   },
 ];
 
-const TESTIMONIALS = [
-  {
-    name: 'Sarah M.',
-    role: 'Criminal Defense Attorney',
-    firm: 'Beta Tester',
-    quote: 'CaseBuddy\'s AI jury simulation saved us thousands in jury consultant fees and helped us win a difficult case. The 12 AI lawyers let me quickly consult on criminal procedure I haven\'t touched in years.',
-    rating: 5,
-  },
-  {
-    name: 'David C.',
-    role: 'Senior Litigator',
-    firm: 'Beta Tester',
-    quote: 'The live voice simulation is like having a sparring partner 24/7. The witness prep packages are exceptional — I walked into cross-examination better prepared than I\'ve ever been.',
-    rating: 5,
-  },
-  {
-    name: 'Maria R.',
-    role: 'Trial Attorney',
-    firm: 'Beta Tester',
-    quote: 'I use CaseBuddy before every trial. The verdict predictor, the jury simulator, the strategy analysis — this is what BigLaw clients pay consultants six figures for.',
-    rating: 5,
-  },
-];
-
 const PRACTICE_AREAS = [
   'Criminal Defense', 'Personal Injury', 'Family Law', 'Immigration',
   'IP & Patent', 'Corporate', 'Employment', 'Real Estate',
@@ -445,30 +421,6 @@ const LandingPage = () => {
                 </div>
                 <h3 className="text-base font-bold text-white mb-2">{f.title}</h3>
                 <p className="text-slate-400 text-sm leading-relaxed">{f.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials ─────────────────────────────────────────────────── */}
-      <section id="testimonials" className="py-12 sm:py-24 bg-gradient-to-b from-transparent via-slate-900/20 to-transparent">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8 sm:mb-14">
-            <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Social Proof</p>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">Trusted by Winning Attorneys</h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
-            {TESTIMONIALS.map((t, i) => (
-              <div key={i} className="card-premium p-5 sm:p-7 flex flex-col">
-                <StarRating rating={t.rating} />
-                <p className="text-slate-300 my-5 leading-relaxed flex-1 italic text-sm">"{t.quote}"</p>
-                <div className="border-t border-white/5 pt-4">
-                  <p className="font-semibold text-white text-sm">{t.name}</p>
-                  <p className="text-gold-500 text-xs mt-0.5">{t.role}</p>
-                  <p className="text-slate-600 text-xs mt-0.5">{t.firm}</p>
-                </div>
               </div>
             ))}
           </div>
