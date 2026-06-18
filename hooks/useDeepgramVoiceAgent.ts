@@ -38,7 +38,7 @@ export interface UseDeepgramVoiceAgentOptions {
   publicEndpoint?: boolean;
   /**
    * Playback speed multiplier for Aura-2 TTS. 1.0 = normal, 1.15 = slightly faster.
-   * Deepgram supports 0.5–1.5. Defaults to 1.1 for a natural, slightly upbeat pace.
+   * Deepgram supports 0.5–1.5. Defaults to 1.0 for the most natural, human sound.
    */
   speakingRate?: number;
 }
@@ -308,8 +308,8 @@ export function useDeepgramVoiceAgent(
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
 
-      // Speaking rate: slight speedup to keep Maya from dragging
-      const speakRate = opts.speakingRate ?? 1.1;
+      // Speaking rate: natural human pace — 1.0 sounds the most realistic
+      const speakRate = opts.speakingRate ?? 1.0;
 
       ws.onopen = () => {
         const settings = {
