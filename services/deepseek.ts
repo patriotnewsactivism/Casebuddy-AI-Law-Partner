@@ -1,15 +1,13 @@
+/**
+ * deepseek.ts — compatibility shim
+ *
+ * DeepSeek credits are exhausted. This module preserves the exact same
+ * exported interface (deepseekChat, parseDeepSeekJson) but routes all
+ * calls through the Gemini API proxy (/api/ai/gemini) so every caller
+ * works without any changes.
+ */
+
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
-
-const DEEPSEEK_BASE = 'https://api.deepseek.com/v1/chat/completions';
-
-const getDeepSeekKey = (): string => {
-  const key =
-    (import.meta as any).env?.VITE_DEEPSEEK_API_KEY ||
-    (window as any).__DEEPSEEK_API_KEY ||
-    process.env.DEEPSEEK_API_KEY ||
-    '';
-  return key;
-};
 
 export interface DeepSeekParams {
   systemInstruction?: string;
@@ -38,50 +36,58 @@ function cleanJsonResponse(text: string): string {
   return cleaned;
 }
 
-/** Single-turn DeepSeek chat call. Returns raw text response. */
+/**
+ * Drop-in replacement for deepseekChat — now powered by Gemini 2.5 Flash.
+ * Keeps the exact same signature so all callers work unchanged.
+ */
 export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
-  const key = getDeepSeekKey();
-  if (!key) throw new Error('DEEPSEEK_API_KEY not found. Set it in .env.local.');
+  // Build Gemini contents array from messages
+  const contents = params.messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
 
-  const messages: { role: string; content: string }[] = [];
-  if (params.systemInstruction) {
-    messages.push({ role: 'system', content: params.systemInstruction });
-  }
-  if (params.jsonMode && !params.systemInstruction?.toLowerCase().includes('json')) {
-    if (messages[0]?.role === 'system') {
-      messages[0].content += "\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.";
-    }
-  }
-  messages.push(...params.messages);
+  const systemInstruction = params.systemInstruction
+    ? { parts: [{ text: params.jsonMode
+        ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
+        : params.systemInstruction }] }
+    : undefined;
+
+  const body: Record<string, unknown> = {
+    model: 'gemini-2.5-flash',
+    contents,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    config: {
+      temperature: params.temperature ?? 0.7,
+      maxOutputTokens: params.maxTokens ?? 2048,
+      ...(params.jsonMode ? { responseMimeType: 'application/json' } : {}),
+    },
+  };
 
   return retryWithBackoff(async () => {
     const res = await withTimeout(
-      fetch(DEEPSEEK_BASE, {
+      fetch('/api/ai/gemini', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages,
-          temperature: params.temperature ?? 0.7,
-          max_tokens: params.maxTokens ?? 2048,
-          ...(params.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       }),
       params.timeoutMs ?? 30000
     );
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`DeepSeek API error ${res.status}: ${errBody.slice(0, 300)}`);
+      throw new Error(`Gemini API error ${res.status}: ${errBody.slice(0, 300)}`);
     }
 
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content || '';
-    if (!text) throw new Error('Empty response from DeepSeek');
+    // Handle both streaming text and direct response shapes
+    const text =
+      data.text ||
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      data.choices?.[0]?.message?.content ||
+      '';
 
+    if (!text) throw new Error('Empty response from Gemini');
     return params.jsonMode ? cleanJsonResponse(text) : text;
   }, 3);
 };
