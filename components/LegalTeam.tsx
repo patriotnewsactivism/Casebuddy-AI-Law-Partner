@@ -6,6 +6,7 @@ import AgentHeader from './AgentHeader';
 import { consultSpecialist } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
+import AIDisclaimer from './AIDisclaimer';
 
 interface ChatMessage {
   role: 'user' | 'model';
@@ -102,6 +103,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
       </head><body>
         <h1>Consultation: ${specialist.name} — ${specialist.practiceArea}</h1>
         <div class="meta">
+      <AIDisclaimer variant="full" className="mb-5" />
           Exported ${new Date().toLocaleDateString()} · ${session.messages.length} messages
           ${activeCase ? `· Case: ${activeCase.title}` : ''}
         </div>
