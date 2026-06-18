@@ -6,6 +6,7 @@ import { getSession } from '../services/authService';
 // Single WebSocket at wss://agent.deepgram.com/v1/agent/converse.
 //
 // API keys are fetched at runtime from /api/ai/voice-keys (behind auth)
+// or /api/ai/voice-keys-public (no auth, for public intake page)
 // so they never appear in the JS bundle.
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
@@ -22,13 +23,23 @@ export interface VoiceTurn {
 }
 
 export interface UseDeepgramVoiceAgentOptions {
-  /** Aura-2 voice model id, e.g. "aura-2-helena-en". */
+  /** Aura-2 voice model id, e.g. "aura-2-thalia-en". */
   voiceModel: string;
   /** Gemini system prompt (persona). */
   systemInstruction: string;
   /** First line the agent speaks on connect. */
   greeting: string;
   caseContext?: string;
+  /**
+   * Set to true to use the public (no-auth) key endpoint.
+   * Use this for pages accessible without login (e.g. PublicIntake).
+   */
+  publicEndpoint?: boolean;
+  /**
+   * Playback speed multiplier for Aura-2 TTS. 1.0 = normal, 1.15 = slightly faster.
+   * Deepgram supports 0.5–1.5. Defaults to 1.1 for a natural, quick pace.
+   */
+  speakingRate?: number;
 }
 
 export interface UseDeepgramVoiceAgentResult {
@@ -47,25 +58,43 @@ export interface UseDeepgramVoiceAgentResult {
  * Fetch API keys from the server at runtime (never baked into the bundle).
  * Falls back to env vars for local development only.
  */
-const fetchVoiceKeys = async (): Promise<{ deepgramKey: string; geminiKey: string }> => {
-  // Try server endpoint first (production path)
-  try {
-    const session = await getSession();
-    if (session?.access_token) {
-      const resp = await fetch('/api/ai/voice-keys', {
+const fetchVoiceKeys = async (
+  publicEndpoint = false
+): Promise<{ deepgramKey: string; geminiKey: string }> => {
+  // Public intake path — no auth required
+  if (publicEndpoint) {
+    try {
+      const resp = await fetch('/api/ai/voice-keys-public', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
       if (resp.ok) {
         const data = await resp.json();
-        if (data.deepgramKey && data.geminiKey) return data;
+        if (data.deepgramKey) return { deepgramKey: data.deepgramKey, geminiKey: data.geminiKey || '' };
       }
+    } catch {
+      // Fall through to env var fallback below
     }
-  } catch {
-    // Fall through to env var fallback
+  } else {
+    // Authenticated path — verify Supabase session first
+    try {
+      const session = await getSession();
+      if (session?.access_token) {
+        const resp = await fetch('/api/ai/voice-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.deepgramKey && data.geminiKey) return data;
+        }
+      }
+    } catch {
+      // Fall through to env var fallback
+    }
   }
 
   // Local dev fallback — reads from import.meta.env (only available in dev builds)
@@ -196,26 +225,28 @@ export function useDeepgramVoiceAgent(
     setStatus('connecting');
     setTranscript([]);
 
+    const opts = optsRef.current;
+
     // Fetch keys from server (never baked into bundle)
     let dgKey: string;
     let geminiKey: string;
     try {
-      const keys = await fetchVoiceKeys();
+      const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
       dgKey = keys.deepgramKey.trim();
       geminiKey = keys.geminiKey.trim();
     } catch {
-      setError('Could not retrieve voice credentials. Please sign in and try again.');
+      setError('Could not retrieve voice credentials. Please try again.');
       setStatus('error');
       return;
     }
 
     if (!dgKey) {
-      setError('Deepgram key not available. Check your configuration.');
+      setError('Voice service is not available right now. Please try again shortly.');
       setStatus('error');
       return;
     }
     if (!geminiKey) {
-      setError('Gemini key not available. Check your configuration.');
+      setError('AI service is not available right now. Please try again shortly.');
       setStatus('error');
       return;
     }
@@ -245,10 +276,12 @@ export function useDeepgramVoiceAgent(
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
-      const opts = optsRef.current;
       const prompt = opts.caseContext
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
+
+      // Speaking rate: slightly faster than default for a more natural, quick pace
+      const speakRate = opts.speakingRate ?? 1.1;
 
       ws.onopen = () => {
         const settings = {
@@ -266,7 +299,14 @@ export function useDeepgramVoiceAgent(
               provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.6 },
               prompt,
             },
-            speak: { provider: { type: 'deepgram', model: opts.voiceModel } },
+            speak: {
+              provider: {
+                type: 'deepgram',
+                model: opts.voiceModel,
+                // speed: slightly faster than default, keeps voice natural without sounding rushed
+                speed: speakRate,
+              },
+            },
             greeting: opts.greeting,
           },
         };
