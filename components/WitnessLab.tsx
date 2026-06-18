@@ -5,6 +5,7 @@ import { generateWitnessResponse, generateWitnessCoaching } from '../services/ge
 import { Message, Witness } from '../types';
 import { Send, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 
