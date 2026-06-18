@@ -67,5 +67,15 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              recharts: ['recharts'],
+              supabase: ['@supabase/supabase-js'],
+            },
+          },
+        },
+      },
     };
 });

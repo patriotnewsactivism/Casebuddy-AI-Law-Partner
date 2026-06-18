@@ -1,10 +1,11 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download } from 'lucide-react';
+import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download, Printer } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -395,6 +396,17 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
     URL.revokeObjectURL(url);
   };
 
+  const saveAsPdf = () => {
+    if (!letter) return;
+    const safeName = (form.name || 'Client').replace(/[^a-z0-9]+/gi, ' ').trim();
+    const html = textToPdfHtml(
+      'Engagement Letter',
+      `Prepared for ${safeName} — ${form.matterType || 'General Inquiry'}`,
+      letter,
+    );
+    printAsPdf(`Engagement Letter — ${safeName}`, html);
+  };
+
   /* ── label helper ── */
   const inputCls = 'w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all';
   const labelCls = 'block text-sm font-semibold text-slate-300 mb-1.5';
@@ -719,6 +731,12 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
                     >
                       <Download size={15} /> Download
+                    </button>
+                    <button
+                      onClick={saveAsPdf}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
+                    >
+                      <Printer size={15} /> Save as PDF
                     </button>
                     <button
                       onClick={generateLetter}

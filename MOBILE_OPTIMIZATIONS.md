@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document details all mobile responsiveness improvements made to LexSim to ensure optimal user experience across all device sizes (320px - 1920px+).
+This document details all mobile responsiveness improvements made to CaseBuddy to ensure optimal user experience across all device sizes (320px - 1920px+).
 
 ---
 

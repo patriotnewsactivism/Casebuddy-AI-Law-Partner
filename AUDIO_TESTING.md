@@ -49,7 +49,7 @@ The AI responds with:
 
 ### Test 1: Microphone Access
 
-1. Open LexSim in your browser: `http://localhost:3000`
+1. Open CaseBuddy in your browser: `http://localhost:3000`
 2. Navigate to **Trial Simulator**
 3. Select any case (or create one)
 4. Choose a trial phase (e.g., "Cross Examination")
@@ -164,7 +164,7 @@ Test the full conversation flow:
 **Solutions:**
 ```
 1. Check Chrome: chrome://settings/content/microphone
-2. Ensure LexSim is in the "Allow" list
+2. Ensure CaseBuddy is in the "Allow" list
 3. On macOS: System Preferences → Security & Privacy → Microphone
 4. On Windows: Settings → Privacy → Microphone
 5. Close Zoom, Discord, OBS, or other audio apps

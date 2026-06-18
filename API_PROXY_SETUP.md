@@ -171,7 +171,7 @@ PORT=3001
 {
   "name": "lexsim-backend",
   "version": "1.0.0",
-  "description": "API proxy for LexSim",
+  "description": "API proxy for CaseBuddy",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
