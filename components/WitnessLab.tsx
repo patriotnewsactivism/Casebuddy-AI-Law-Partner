@@ -109,6 +109,7 @@ const WitnessLab = () => {
   return (
     <div className="space-y-4">
       <AgentHeader agent={REX} compact />
+      <AIDisclaimer variant="full" className="mb-4" />
       <div className="h-[calc(100vh-10rem)] flex gap-4">
       {/* Left Sidebar: Witness Selection */}
       <div className="w-64 flex flex-col gap-4 bg-slate-800 border border-slate-700 rounded-xl p-4 overflow-y-auto hidden lg:flex">
