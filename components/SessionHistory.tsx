@@ -71,7 +71,7 @@ const SessionHistory = () => {
       .join('\n\n');
 
     const content = `
-LexSim Trial Session Transcript
+CaseBuddy Trial Session Transcript
 ================================
 
 Case: ${session.caseTitle}

@@ -286,6 +286,9 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
   const { user, authLoading } = React.useContext(AppContext);
 
+  // When Supabase is not configured, skip auth entirely — enables local-only / demo usage
+  if (!isSupabaseConfigured) return <>{children}</>;
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#020617] flex items-center justify-center">

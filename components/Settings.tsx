@@ -293,7 +293,7 @@ const Settings = () => {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white font-serif">Settings</h1>
-          <p className="text-slate-400 mt-2">Configure your LexSim preferences and API settings</p>
+          <p className="text-slate-400 mt-2">Configure your CaseBuddy preferences and API settings</p>
         </div>
         {saveMessage && (
           <div className="flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-700 rounded-lg">

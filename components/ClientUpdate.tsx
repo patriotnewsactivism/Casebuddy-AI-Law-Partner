@@ -6,6 +6,7 @@ import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer } from 'l
 import { printAsPdf, letterToPdfHtml } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const SIERRA = OPERATIONAL_AGENTS.find(a => a.id === 'sierra')!;
@@ -145,6 +146,7 @@ const ClientUpdate = () => {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <AgentHeader agent={SIERRA} compact />
+      <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">
         <Mail className="text-gold-500" size={32} />
         <div>

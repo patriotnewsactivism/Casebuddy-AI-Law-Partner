@@ -47,7 +47,7 @@ export const handleError = (
   }
 
   // In development, also log to console for debugging
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     console.error(`[${context || 'Error'}]:`, errorMessage, error);
   }
 };

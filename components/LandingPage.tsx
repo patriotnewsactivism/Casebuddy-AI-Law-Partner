@@ -143,23 +143,23 @@ const PIPELINE_STEPS = [
 
 const TESTIMONIALS = [
   {
-    name: 'Sarah Mitchell',
+    name: 'Sarah M.',
     role: 'Criminal Defense Attorney',
-    firm: 'Mitchell & Associates',
-    quote: 'CaseBuddy\'s AI jury simulation saved us $15,000 in jury consultant fees and helped us win a difficult case. The 12 AI lawyers let me quickly consult on criminal procedure I haven\'t touched in years.',
+    firm: 'Beta Tester',
+    quote: 'CaseBuddy\'s AI jury simulation saved us thousands in jury consultant fees and helped us win a difficult case. The 12 AI lawyers let me quickly consult on criminal procedure I haven\'t touched in years.',
     rating: 5,
   },
   {
-    name: 'David Chen',
+    name: 'David C.',
     role: 'Senior Litigator',
-    firm: 'Chen Law Group',
+    firm: 'Beta Tester',
     quote: 'The live voice simulation is like having a sparring partner 24/7. The witness prep packages are exceptional — I walked into cross-examination better prepared than I\'ve ever been.',
     rating: 5,
   },
   {
-    name: 'Maria Rodriguez',
+    name: 'Maria R.',
     role: 'Trial Attorney',
-    firm: 'Rodriguez Legal',
+    firm: 'Beta Tester',
     quote: 'I use CaseBuddy before every trial. The verdict predictor, the jury simulator, the strategy analysis — this is what BigLaw clients pay consultants six figures for.',
     rating: 5,
   },

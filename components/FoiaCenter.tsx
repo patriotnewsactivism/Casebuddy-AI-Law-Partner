@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
 
@@ -325,6 +326,7 @@ Output ONLY the follow-up letter.`;
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <AgentHeader agent={MAX} compact />
+      <AIDisclaimer variant="full" className="mt-4" />
 
       {/* Header */}
       <div className="flex items-start gap-3">

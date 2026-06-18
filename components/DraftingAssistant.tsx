@@ -7,6 +7,7 @@ import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 import { deepseekChat } from '../services/deepseek';
+import AIDisclaimer from './AIDisclaimer';
 
 const DOC = OPERATIONAL_AGENTS.find(a => a.id === 'doc')!;
 
@@ -410,11 +411,7 @@ Generate the complete document ready for attorney review.`;
           </div>
 
           {generatedContent && (
-            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-              <p className="text-blue-300 text-sm">
-                <strong>Note:</strong> AI-generated documents require attorney review. Verify all facts, citations, and legal arguments before filing.
-              </p>
-            </div>
+            <AIDisclaimer variant="full" />
           )}
         </div>
       </div>

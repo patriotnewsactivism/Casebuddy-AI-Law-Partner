@@ -4,6 +4,7 @@ import { generateStatement } from '../services/geminiService';
 import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2, FileDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
@@ -167,6 +168,7 @@ const StatementBuilder = () => {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <AgentHeader agent={DOC} compact />
+      <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">
         <BookOpen className="text-gold-500" size={32} />
         <div>
