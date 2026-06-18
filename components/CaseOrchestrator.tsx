@@ -6,6 +6,7 @@ import {
   Clock, FileDown, RefreshCw,
 } from 'lucide-react';
 import { printAsPdf } from '../utils/pdfExport';
+import AIDisclaimer from './AIDisclaimer';
 import { AppContext } from '../App';
 import { LEGAL_SPECIALISTS, getSpecialistById } from '../agents/personas';
 import {
@@ -31,6 +32,7 @@ const MiniMarkdown: React.FC<{ text: string }> = ({ text }) => {
     );
   return (
     <div className="space-y-1.5 text-sm text-slate-300 leading-relaxed">
+      <AIDisclaimer variant="full" className="mb-5" />
       {lines.map((raw, i) => {
         const line = raw.trim();
         if (!line) return null;
