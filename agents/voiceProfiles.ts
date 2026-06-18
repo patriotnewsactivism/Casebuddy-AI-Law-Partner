@@ -162,3 +162,11 @@ ${CORE_RULES}`,
       "Max here — filing and procedure. What court are we working with and what needs to go in?",
   },
 };
+
+/**
+ * Look up a voice profile by agent id (e.g. "maya", "lex").
+ * Returns undefined if no profile is registered for that id.
+ */
+export function getVoiceProfile(agentId: string): VoiceProfile | undefined {
+  return VOICE_PROFILES[agentId.toLowerCase()];
+}
