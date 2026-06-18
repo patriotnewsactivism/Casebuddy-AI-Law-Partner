@@ -5,7 +5,7 @@ import {
   Scale, Mic, Users, BrainCircuit, TrendingUp, CheckCircle, Zap, Shield,
   Star, ArrowRight, Menu, X, FileAudio, Gavel, UserCheck, ClipboardList,
   FileText, Mail, Archive, BookOpen, ChevronRight, PhoneCall, Network,
-  Inbox, BarChart3
+  Inbox, BarChart3, Lock, AlertTriangle
 } from 'lucide-react';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 
@@ -542,6 +542,32 @@ const LandingPage = () => {
               </Link>
             </div>
             <p className="mt-5 text-xs text-slate-600">14-day free trial · No credit card required · Cancel anytime</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Trust & Security ─────────────────────────────────────────── */}
+      <section className="py-16 sm:py-20 border-t border-white/5">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl sm:text-3xl font-serif font-bold mb-8">
+            Built for <span className="text-gradient-gold">Legal Professionals</span>
+          </h2>
+          <div className="grid sm:grid-cols-3 gap-6">
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <Shield size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">Your Data, Your Control</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">Data stored locally or in your private Supabase instance. Export or delete all data anytime. No vendor lock-in.</p>
+            </div>
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <Lock size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">Secure by Design</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">API keys server-side, encrypted auth via Supabase, Row Level Security. Your cases are private to your firm.</p>
+            </div>
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <AlertTriangle size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">AI-Assisted, Not AI-Replaced</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">CaseBuddy is a tool, not a lawyer. AI outputs require attorney review. Clear disclaimers on every AI-generated work product.</p>
+            </div>
           </div>
         </div>
       </section>

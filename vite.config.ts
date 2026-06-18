@@ -67,5 +67,17 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'lucide': ['lucide-react'],
+              'framer-motion': ['framer-motion'],
+              'vendor': ['react', 'react-dom', 'react-router-dom', 'react-toastify'],
+              'ai-services': ['@google/genai']
+            }
+          }
+        }
+      }
     };
 });
