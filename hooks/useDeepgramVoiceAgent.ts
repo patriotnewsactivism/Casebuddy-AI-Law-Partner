@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSession } from '../services/authService';
+import { setRuntimeKeys } from '../services/runtimeKeys';
 
 // Live voice via the Deepgram Voice Agent API:
 //   Deepgram Nova (ears) -> Gemini 2.5 Flash (brain) -> Aura-2 (mouth)
@@ -234,6 +235,8 @@ export function useDeepgramVoiceAgent(
       const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
       dgKey = keys.deepgramKey.trim();
       geminiKey = keys.geminiKey.trim();
+      // Cache keys for use by intakeService and other client-side services
+      setRuntimeKeys({ deepgramKey: dgKey, geminiKey });
     } catch {
       setError('Could not retrieve voice credentials. Please try again.');
       setStatus('error');
