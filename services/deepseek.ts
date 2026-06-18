@@ -1,10 +1,12 @@
 /**
- * deepseek.ts — compatibility shim
+ * deepseek.ts — Gemini-powered compatibility shim
  *
- * DeepSeek credits are exhausted. This module preserves the exact same
- * exported interface (deepseekChat, parseDeepSeekJson) but routes all
- * calls through the Gemini API proxy (/api/ai/gemini) so every caller
- * works without any changes.
+ * DeepSeek credits exhausted. Same exported interface (deepseekChat,
+ * parseDeepSeekJson) — all callers work unchanged.
+ *
+ * Model routing strategy:
+ *   • JSON extraction / structured output  → gemini-2.0-flash-lite  (fastest)
+ *   • Complex legal reasoning / drafting   → gemini-2.5-flash        (smartest)
  */
 
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
@@ -16,6 +18,17 @@ export interface DeepSeekParams {
   maxTokens?: number;
   jsonMode?: boolean;
   timeoutMs?: number;
+}
+
+// Keywords that indicate complex legal reasoning — use the smarter model
+const HEAVY_KEYWORDS = /strateg|analyz|analys|draft|argument|deposition|witness|predict|jury|verdict|research|motion|brief|summariz/i;
+
+function pickModel(params: DeepSeekParams): string {
+  const hint = (params.systemInstruction || '') + (params.messages[0]?.content || '');
+  // JSON-only calls that don't need deep reasoning → fastest model
+  if (params.jsonMode && !HEAVY_KEYWORDS.test(hint)) return 'gemini-2.0-flash-lite';
+  // Everything else → best flash model
+  return 'gemini-2.5-flash';
 }
 
 function cleanJsonResponse(text: string): string {
@@ -36,34 +49,40 @@ function cleanJsonResponse(text: string): string {
   return cleaned;
 }
 
-/**
- * Drop-in replacement for deepseekChat — now powered by Gemini 2.5 Flash.
- * Keeps the exact same signature so all callers work unchanged.
- */
+/** Drop-in replacement for deepseekChat — now powered by Gemini. */
 export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
-  // Build Gemini contents array from messages
+  const model = pickModel(params);
+
   const contents = params.messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }],
   }));
 
   const systemInstruction = params.systemInstruction
-    ? { parts: [{ text: params.jsonMode
-        ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
-        : params.systemInstruction }] }
+    ? {
+        parts: [{
+          text: params.jsonMode
+            ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
+            : params.systemInstruction,
+        }],
+      }
     : undefined;
 
+  // JSON calls rarely need more than 1024 tokens; save latency
+  const maxOutputTokens = params.maxTokens ?? (params.jsonMode ? 1024 : 2048);
+
   const body: Record<string, unknown> = {
-    model: 'gemini-2.5-flash',
+    model,
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
     config: {
-      temperature: params.temperature ?? 0.7,
-      maxOutputTokens: params.maxTokens ?? 2048,
+      temperature: params.temperature ?? (params.jsonMode ? 0.2 : 0.7),
+      maxOutputTokens,
       ...(params.jsonMode ? { responseMimeType: 'application/json' } : {}),
     },
   };
 
+  // 2 retries is enough — fail fast, callers handle gracefully
   return retryWithBackoff(async () => {
     const res = await withTimeout(
       fetch('/api/ai/gemini', {
@@ -71,7 +90,7 @@ export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
-      params.timeoutMs ?? 30000
+      params.timeoutMs ?? 25000
     );
 
     if (!res.ok) {
@@ -80,16 +99,14 @@ export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
     }
 
     const data = await res.json();
-    // Handle both streaming text and direct response shapes
     const text =
       data.text ||
       data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      data.choices?.[0]?.message?.content ||
       '';
 
     if (!text) throw new Error('Empty response from Gemini');
     return params.jsonMode ? cleanJsonResponse(text) : text;
-  }, 3);
+  }, 2);
 };
 
 /** Helper: extract and parse JSON with cleanup. */
