@@ -3,6 +3,14 @@
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
+    },
+    {
+      "source": "/api/webhooks/email-inbound",
+      "destination": "/api/webhooks/email-inbound"
+    },
+    {
+      "source": "/api/mail/send",
+      "destination": "/api/mail/send"
     }
   ],
   "headers": [
