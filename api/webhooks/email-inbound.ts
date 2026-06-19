@@ -118,7 +118,7 @@ RULES:
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: `Email from ${fromName} <${fromEmail}>\nSubject: ${subject}\nIntent: ${intent}\n\n${body.slice(0, 2000)}` }] }],
-        generationConfig: { temperature: 0.75, maxOutputTokens: 600 },
+        generationConfig: { temperature: 0.75, maxOutputTokens: 2000 },
       }),
     }
   );
@@ -205,6 +205,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const replyBody    = await generateReply(agentId, fromName, fromEmail, subject, text, intent, history);
     const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
 
+    // 3-minute human-like delay before replying
+    await new Promise(resolve => setTimeout(resolve, 3 * 60 * 1000));
+
     await sendEmail(fromEmail, fromName, agentId, replySubject, replyBody);
 
     await saveEmail({
@@ -235,3 +238,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ ok: false, error: err.message });
   }
 }
+
+
