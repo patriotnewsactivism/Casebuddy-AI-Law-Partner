@@ -1,16 +1,12 @@
 {
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
-    },
-    {
-      "source": "/api/webhooks/email-inbound",
-      "destination": "/api/webhooks/email-inbound"
-    },
-    {
-      "source": "/api/mail/send",
-      "destination": "/api/mail/send"
     }
   ],
   "headers": [
@@ -54,7 +50,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://casebuddy.live"
+          "value": "*"
         },
         {
           "key": "Access-Control-Allow-Methods",
