@@ -1,5 +1,5 @@
--- Migration 0005: firm_emails table for inbound/outbound email tracking
--- Run in Supabase Dashboard → SQL Editor
+-- Migration 0005: firm_emails table
+-- Safe to re-run — all statements are idempotent
 
 create table if not exists public.firm_emails (
   id            uuid primary key default gen_random_uuid(),
@@ -24,7 +24,15 @@ create index if not exists firm_emails_direction_idx on public.firm_emails (dire
 create index if not exists firm_emails_received_idx  on public.firm_emails (received_at desc);
 
 alter table public.firm_emails enable row level security;
-create policy "firm_emails_open" on public.firm_emails for all using (true) with check (true);
 
--- Grant access
+-- Safe policy creation — skips if already exists
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'firm_emails' and policyname = 'firm_emails_open'
+  ) then
+    execute 'create policy "firm_emails_open" on public.firm_emails for all using (true) with check (true)';
+  end if;
+end $$;
+
 grant all on public.firm_emails to anon, authenticated, service_role;
