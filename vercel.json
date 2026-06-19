@@ -109,5 +109,6 @@
       "path": "/api/cron/weekly-client-updates",
       "schedule": "0 15 * * 5"
     }
-  ]
+  ],
+  "_deployedAt": "2026-06-19T20:00:00Z"
 }
