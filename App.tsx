@@ -52,6 +52,7 @@ const PublicIntake     = React.lazy(() => import('./components/PublicIntake'));
 const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'));
 const UserGuide        = React.lazy(() => import('./components/UserGuide'));
 const AuthPage         = React.lazy(() => import('./components/AuthPage'));
+const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -500,6 +501,8 @@ const App = () => {
             <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/tos" element={<TermsOfService />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="/enroll" element={<EnrollPage />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/start" element={<IntakePage />} />
             <Route path="/intake" element={<PublicIntake />} />
