@@ -1,407 +1,286 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Loader, Copy, Download, Trash2, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
-import { deepseekChat } from '../services/deepseek';
+import { Search, Plus, Loader, Copy, Trash2, AlertTriangle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { getSupabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface FOIARequest {
   id: string;
   agency: string;
-  agencyType: 'federal' | 'state' | 'local';
-  jurisdiction: string;
   subject: string;
-  recordsDescription: string;
-  purpose: string;
-  submittedDate: string;
-  responseDeadline: string;
-  status: 'draft' | 'submitted' | 'acknowledged' | 'partial' | 'denied' | 'appealed' | 'closed';
-  responseNotes: string;
-  generatedRequest: string;
-  followUpCount: number;
-  createdAt: string;
+  description: string;
+  request_date: string;
+  due_date?: string;
+  status: string;
+  tracking_number: string;
+  response_received: boolean;
+  notes: string;
+  case_id?: string;
+  created_at: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: 'Draft', color: 'text-slate-400', bg: 'bg-slate-700' },
-  submitted: { label: 'Submitted', color: 'text-blue-400', bg: 'bg-blue-500/20' },
-  acknowledged: { label: 'Acknowledged', color: 'text-cyan-400', bg: 'bg-cyan-500/20' },
-  partial: { label: 'Partial Response', color: 'text-amber-400', bg: 'bg-amber-500/20' },
-  denied: { label: 'Denied', color: 'text-red-400', bg: 'bg-red-500/20' },
-  appealed: { label: 'Under Appeal', color: 'text-purple-400', bg: 'bg-purple-500/20' },
-  closed: { label: 'Closed', color: 'text-green-400', bg: 'bg-green-500/20' },
-};
+const STATUS_OPTIONS = [
+  'submitted', 'acknowledged', 'processing', 'fulfilled', 'denied', 'appealed'
+];
 
-const FEDERAL_DEADLINES: Record<string, number> = {
-  'federal': 20, // business days
-  'state': 10,
-  'local': 10,
-};
+const FEDERAL_AGENCIES = [
+  'FBI', 'CIA', 'DEA', 'ATF', 'IRS', 'DHS', 'CBP', 'ICE', 'USCIS',
+  'DOJ', 'DOD', 'DOE', 'HHS', 'FDA', 'EPA', 'FTC', 'SEC', 'FCC',
+  'USPS', 'VA', 'SSA', 'State Department', 'Treasury', 'Other Federal',
+  'State Agency', 'Local Government'
+];
 
-const AGENCY_TEMPLATES: Record<string, string> = {
-  police: 'police department, sheriff office, law enforcement',
-  court: 'court records, clerk of court, judicial records',
-  city: 'city hall, municipal records, city council',
-  federal: 'FBI, DOJ, DHS, CBP, ICE, ATF, DEA, IRS, EPA',
-  school: 'school district, board of education, university',
-};
+const FIRM_ID = 'casebuddy-default';
 
-const FOIATracker: React.FC = () => {
-  const [requests, setRequests] = useState<FOIARequest[]>(() => {
-    const saved = localStorage.getItem('casebuddy_foia');
-    return saved ? JSON.parse(saved) : [];
-  });
+export default function FOIATracker() {
+  const [requests, setRequests] = useState<FOIARequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ requestId: string; text: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'tracker' | 'generator'>('tracker');
-
+  const [filter, setFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState({
-    agency: '',
-    agencyType: 'federal' as 'federal' | 'state' | 'local',
-    jurisdiction: '',
-    subject: '',
-    recordsDescription: '',
-    purpose: '',
-    yourName: '',
-    yourAddress: '',
-    yourEmail: '',
-    expedited: false,
-    feeWaiver: false,
-    feeWaiverBasis: 'news media / public interest journalism',
+    agency: '', subject: '', description: '',
+    request_date: new Date().toISOString().split('T')[0],
+    due_date: '', tracking_number: '', notes: '', case_id: ''
   });
 
-  const save = (updated: FOIARequest[]) => {
-    setRequests(updated);
-    localStorage.setItem('casebuddy_foia', JSON.stringify(updated));
-  };
+  const supabase = getSupabase();
 
-  const getDaysRemaining = (deadline: string) => {
-    const d = new Date(deadline);
-    const now = new Date();
-    return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  };
+  useEffect(() => { loadRequests(); }, []);
 
-  const getResponseDeadline = (submittedDate: string, agencyType: string) => {
-    const d = new Date(submittedDate);
-    const days = FEDERAL_DEADLINES[agencyType] || 20;
-    // Add business days (approximate)
-    let added = 0;
-    while (added < days) {
-      d.setDate(d.getDate() + 1);
-      if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+  async function loadRequests() {
+    setLoading(true);
+    if (!supabase || !isSupabaseConfigured) {
+      const saved = localStorage.getItem('casebuddy_foia_backup');
+      if (saved) setRequests(JSON.parse(saved));
+      setLoading(false);
+      return;
     }
-    return d.toISOString().split('T')[0];
-  };
 
-  const generateRequest = async () => {
-    if (!form.agency || !form.recordsDescription) return;
-    setGenerating(true);
-    try {
+    const { data, error } = await supabase
+      .from('foia_requests')
+      .select('*')
+      .eq('firm_id', FIRM_ID)
+      .order('created_at', { ascending: false });
 
-      const prompt = `Draft a professional, legally precise Freedom of Information Act (FOIA) / public records request letter.
-
-Requester: ${form.yourName || '[YOUR NAME]'}
-Address: ${form.yourAddress || '[YOUR ADDRESS]'}
-Email: ${form.yourEmail || '[YOUR EMAIL]'}
-Agency: ${form.agency}
-Agency Type: ${form.agencyType} (${form.jurisdiction || 'jurisdiction'})
-Subject: ${form.subject}
-Records Requested: ${form.recordsDescription}
-Purpose: ${form.purpose || 'Public interest / journalism / accountability'}
-Expedited Processing: ${form.expedited ? 'YES — explain urgency' : 'No'}
-Fee Waiver Requested: ${form.feeWaiver ? `YES — basis: ${form.feeWaiverBasis}` : 'No'}
-
-Requirements:
-- Cite the applicable statute (FOIA 5 U.S.C. § 552 for federal; note state equivalent if local/state)
-- Use precise, unambiguous language describing the records
-- Include a reasonable time period for the records
-- Request all responsive records in electronic format where possible
-- Include fee waiver language if applicable
-- Add expedited processing request if applicable
-- Include proper closing with signature block
-- Add note about right to appeal if denied
-- Professional, assertive tone — make it hard to deny
-
-Draft the complete letter now:`;
-
-      const text = await deepseekChat({
-        systemInstruction: 'You are a FOIA/public-records expert drafting requests. Return only the letter text, no markdown.',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        maxTokens: 3000,
-      });
-
-      const today = new Date().toISOString().split('T')[0];
-      const deadline = getResponseDeadline(today, form.agencyType);
-
-      const newRequest: FOIARequest = {
-        id: Date.now().toString(),
-        agency: form.agency,
-        agencyType: form.agencyType,
-        jurisdiction: form.jurisdiction,
-        subject: form.subject,
-        recordsDescription: form.recordsDescription,
-        purpose: form.purpose,
-        submittedDate: today,
-        responseDeadline: deadline,
-        status: 'draft',
-        responseNotes: '',
-        generatedRequest: text,
-        followUpCount: 0,
-        createdAt: new Date().toISOString(),
-      };
-
-      save([...requests, newRequest]);
-      setPreview({ requestId: newRequest.id, text });
-      setActiveTab('tracker');
-      setShowForm(false);
-    } catch (e) {
-      alert('Error generating request. Check your API configuration.');
-    } finally {
-      setGenerating(false);
+    if (error) {
+      console.error('[FOIATracker] load error:', error);
+    } else {
+      setRequests(data || []);
+      localStorage.setItem('casebuddy_foia_backup', JSON.stringify(data || []));
     }
-  };
+    setLoading(false);
+  }
 
-  const generateFollowUp = async (request: FOIARequest) => {
-    setGeneratingFollowUp(request.id);
-    try {
-      const daysOver = Math.abs(getDaysRemaining(request.responseDeadline));
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.agency || !form.subject) return;
+    setSaving(true);
 
-      const prompt = `Draft a firm follow-up letter for an unanswered FOIA request.
+    const newReq = {
+      firm_id: FIRM_ID,
+      agency: form.agency,
+      subject: form.subject,
+      description: form.description,
+      request_date: form.request_date,
+      due_date: form.due_date || null,
+      tracking_number: form.tracking_number,
+      notes: form.notes,
+      case_id: form.case_id,
+      status: 'submitted',
+      response_received: false,
+      requester_name: 'CaseBuddy Law Firm',
+      assigned_agent: 'sierra'
+    };
 
-Original Request:
-Agency: ${request.agency}
-Records Requested: ${request.recordsDescription}
-Submitted: ${request.submittedDate}
-Deadline: ${request.responseDeadline} (${daysOver} days overdue)
-Follow-up Number: ${request.followUpCount + 1}
-Current Status: ${request.status}
-
-Draft a firm, professional follow-up that:
-- References the original request and deadline
-- Notes the specific statutory violation (overdue response)
-- Requests immediate response within 5 business days
-- Mentions right to file a complaint with the agency's FOIA office / Inspector General
-- If this is follow-up #2+, escalate language and mention potential litigation under ${request.agencyType === 'federal' ? '5 U.S.C. § 552(a)(4)(B)' : 'state public records law'}
-- Keep it professional but assertive`;
-
-      const text = await deepseekChat({
-        systemInstruction: 'You are a FOIA/public-records expert. Return only the letter text, no markdown.',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        maxTokens: 2000,
-      });
-
-      const updated = requests.map(r => r.id === request.id ? { ...r, followUpCount: r.followUpCount + 1 } : r);
-      save(updated);
-      setPreview({ requestId: request.id, text });
-    } catch (e) {
-      alert('Error generating follow-up.');
-    } finally {
-      setGeneratingFollowUp(null);
+    if (supabase && isSupabaseConfigured) {
+      const { data, error } = await supabase.from('foia_requests').insert([newReq]).select().single();
+      if (!error && data) {
+        setRequests(prev => [data, ...prev]);
+      }
     }
-  };
 
-  const updateStatus = (id: string, status: FOIARequest['status']) => {
-    save(requests.map(r => r.id === id ? { ...r, status } : r));
-  };
+    setForm({ agency: '', subject: '', description: '', request_date: new Date().toISOString().split('T')[0], due_date: '', tracking_number: '', notes: '', case_id: '' });
+    setShowForm(false);
+    setSaving(false);
+  }
 
-  const remove = (id: string) => save(requests.filter(r => r.id !== id));
+  async function updateStatus(id: string, status: string) {
+    if (supabase && isSupabaseConfigured) {
+      await supabase.from('foia_requests').update({ status }).eq('id', id);
+    }
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  }
 
-  const copyText = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this FOIA request?')) return;
+    if (supabase && isSupabaseConfigured) {
+      await supabase.from('foia_requests').delete().eq('id', id);
+    }
+    setRequests(prev => prev.filter(r => r.id !== id));
+  }
+
+  const getStatusColor = (status: string) => ({
+    submitted: 'text-blue-400 bg-blue-900/30',
+    acknowledged: 'text-cyan-400 bg-cyan-900/30',
+    processing: 'text-yellow-400 bg-yellow-900/30',
+    fulfilled: 'text-green-400 bg-green-900/30',
+    denied: 'text-red-400 bg-red-900/30',
+    appealed: 'text-orange-400 bg-orange-900/30',
+  }[status] || 'text-slate-400 bg-slate-800');
+
+  const filtered = requests.filter(r => {
+    const matchFilter = filter === 'all' || r.status === filter;
+    const matchSearch = !search || r.agency.toLowerCase().includes(search.toLowerCase()) || r.subject.toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchSearch;
+  });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-serif font-bold text-white flex items-center gap-2">
-            <Search className="text-gold-400" /> FOIA Request Generator & Tracker
-          </h1>
-          <p className="text-slate-400 mt-1">Generate targeted records requests, track status, auto-generate follow-ups when agencies miss deadlines.</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => { setActiveTab('generator'); setShowForm(true); }}
-            className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-bold px-4 py-2 rounded-xl text-sm">
-            <Plus size={16} /> New Request
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-800/50 border border-slate-700 rounded-xl p-1 mb-6 w-fit">
-        {(['tracker', 'generator'] as const).map(t => (
-          <button key={t} onClick={() => { setActiveTab(t); if (t === 'generator') setShowForm(true); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${activeTab === t ? 'bg-gold-500/20 text-gold-300' : 'text-slate-400 hover:text-white'}`}>
-            {t === 'tracker' ? '📋 Request Tracker' : '✍️ Generate Request'}
-          </button>
-        ))}
-      </div>
-
-      {/* Generator Form */}
-      {activeTab === 'generator' && showForm && (
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-          <h2 className="font-bold text-white mb-5">Generate FOIA Request</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="min-h-screen bg-slate-950 text-white p-6">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Search className="w-8 h-8 text-cyan-400" />
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Agency Name *</label>
-              <input value={form.agency} onChange={e => setForm(f => ({ ...f, agency: e.target.value }))}
-                placeholder="e.g. Chicago Police Department"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Agency Type</label>
-              <select value={form.agencyType} onChange={e => setForm(f => ({ ...f, agencyType: e.target.value as any }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/50">
-                <option value="federal">Federal</option>
-                <option value="state">State</option>
-                <option value="local">Local / Municipal</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Jurisdiction / State</label>
-              <input value={form.jurisdiction} onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))}
-                placeholder="e.g. Illinois, Cook County"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Subject / Case Reference</label>
-              <input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
-                placeholder="e.g. Incident on 01/15/2024, Case #2024-001"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Your Name</label>
-              <input value={form.yourName} onChange={e => setForm(f => ({ ...f, yourName: e.target.value }))}
-                placeholder="Full name"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Your Email</label>
-              <input value={form.yourEmail} onChange={e => setForm(f => ({ ...f, yourEmail: e.target.value }))}
-                placeholder="email@example.com"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Records Requested *</label>
-              <textarea value={form.recordsDescription} onChange={e => setForm(f => ({ ...f, recordsDescription: e.target.value }))}
-                rows={4} placeholder="Describe the specific records you are requesting. Be precise: include date ranges, names, case numbers, incident numbers, etc."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 resize-none focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Purpose</label>
-              <input value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))}
-                placeholder="e.g. Public interest journalism / accountability reporting / legal proceeding"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-gold-500/50" />
-            </div>
-            <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.expedited} onChange={e => setForm(f => ({ ...f, expedited: e.target.checked }))}
-                  className="w-4 h-4 accent-gold-500" />
-                <span className="text-sm text-slate-300">Request Expedited Processing</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.feeWaiver} onChange={e => setForm(f => ({ ...f, feeWaiver: e.target.checked }))}
-                  className="w-4 h-4 accent-gold-500" />
-                <span className="text-sm text-slate-300">Request Fee Waiver</span>
-              </label>
+              <h1 className="text-2xl font-bold">FOIA Tracker</h1>
+              <p className="text-slate-400 text-sm">
+                {isSupabaseConfigured ? '☁️ Cloud synced' : '⚠️ Local backup mode'}
+              </p>
             </div>
           </div>
-          <div className="flex gap-3 mt-5">
-            <button onClick={generateRequest} disabled={generating || !form.agency || !form.recordsDescription}
-              className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-slate-900 font-bold px-6 py-2.5 rounded-xl">
-              {generating ? <><Loader size={16} className="animate-spin" /> Generating...</> : '⚡ Generate Request'}
+          <div className="flex gap-2">
+            <button onClick={loadRequests} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition" title="Refresh">
+              <RefreshCw className="w-4 h-4 text-slate-400" />
             </button>
-            <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white px-4 py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg font-semibold transition">
+              <Plus className="w-4 h-4" /> New FOIA Request
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Preview Modal */}
-      {preview && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
-              <h3 className="font-bold text-white">Generated Request</h3>
-              <div className="flex gap-2">
-                <button onClick={() => copyText(preview.text)}
-                  className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg">
-                  <Copy size={12} /> {copied ? 'Copied!' : 'Copy'}
-                </button>
-                <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-white text-sm px-3 py-1.5">Close</button>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          {[
+            { label: 'Total', count: requests.length, color: 'text-slate-300' },
+            { label: 'Pending', count: requests.filter(r => ['submitted','acknowledged','processing'].includes(r.status)).length, color: 'text-yellow-400' },
+            { label: 'Fulfilled', count: requests.filter(r => r.status === 'fulfilled').length, color: 'text-green-400' },
+          ].map(s => (
+            <div key={s.label} className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+              <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
+              <div className="text-slate-400 text-sm">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Add Form */}
+        {showForm && (
+          <form onSubmit={handleAdd} className="bg-slate-900 rounded-xl p-6 mb-6 border border-cyan-500/30">
+            <h2 className="text-lg font-semibold mb-4 text-cyan-400">New FOIA Request</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <select required value={form.agency} onChange={e => setForm({...form, agency: e.target.value})}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                <option value="">Select Agency *</option>
+                {FEDERAL_AGENCIES.map(a => <option key={a}>{a}</option>)}
+              </select>
+              <input value={form.tracking_number} onChange={e => setForm({...form, tracking_number: e.target.value})}
+                placeholder="Tracking number" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              <input required value={form.subject} onChange={e => setForm({...form, subject: e.target.value})}
+                placeholder="Subject / records requested *" className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})}
+                placeholder="Detailed description of records..." rows={3}
+                className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm resize-none" />
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Request Date</label>
+                <input type="date" value={form.request_date} onChange={e => setForm({...form, request_date: e.target.value})}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
               </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Response Due Date</label>
+                <input type="date" value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <input value={form.case_id} onChange={e => setForm({...form, case_id: e.target.value})}
+                placeholder="Related case ID (optional)" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              <input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
+                placeholder="Notes" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
             </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              <pre className="whitespace-pre-wrap text-slate-300 text-sm font-mono leading-relaxed">{preview.text}</pre>
+            <div className="flex gap-3 mt-4">
+              <button type="submit" disabled={saving}
+                className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50">
+                {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Submit Request
+              </button>
+              <button type="button" onClick={() => setShowForm(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Cancel</button>
             </div>
+          </form>
+        )}
+
+        {/* Search + Filter */}
+        <div className="flex gap-3 mb-4">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search agency or subject..."
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          <div className="flex gap-1">
+            {['all', ...STATUS_OPTIONS].map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-2 py-1 rounded-full text-xs font-medium transition capitalize ${filter===f ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                {f}
+              </button>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Tracker */}
-      {activeTab === 'tracker' && (
-        <div className="space-y-3">
-          {requests.length === 0 && (
-            <div className="text-center py-16 text-slate-500">
-              <Search size={40} className="mx-auto mb-3 opacity-30" />
-              <p>No FOIA requests yet. Generate your first request above.</p>
-            </div>
-          )}
-          {requests.map(req => {
-            const days = getDaysRemaining(req.responseDeadline);
-            const overdue = req.status !== 'closed' && req.status !== 'denied' && days < 0;
-            return (
-              <div key={req.id} className={`bg-slate-800/50 border rounded-xl p-4 ${overdue ? 'border-red-500/30' : 'border-slate-700'}`}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="flex-1 min-w-0">
+        {/* List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader className="w-6 h-6 animate-spin text-cyan-400" />
+            <span className="ml-3 text-slate-400">Loading from cloud...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <Search className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p>No FOIA requests found.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(r => (
+              <div key={r.id} className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <h3 className="font-semibold text-white">{req.agency}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_CONFIG[req.status].bg} ${STATUS_CONFIG[req.status].color}`}>
-                        {STATUS_CONFIG[req.status].label}
-                      </span>
-                      {overdue && <span className="text-xs bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">⚠️ {Math.abs(days)}d OVERDUE</span>}
-                      {req.followUpCount > 0 && <span className="text-xs text-slate-500">Follow-ups sent: {req.followUpCount}</span>}
+                      <h3 className="font-semibold text-white">{r.agency}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${getStatusColor(r.status)}`}>{r.status}</span>
+                      {r.tracking_number && (
+                        <span className="text-xs text-slate-500 font-mono">#{r.tracking_number}</span>
+                      )}
                     </div>
-                    <p className="text-sm text-slate-400 truncate">{req.recordsDescription}</p>
-                    <div className="flex gap-4 mt-1 text-xs text-slate-500">
-                      <span>📅 Submitted: {req.submittedDate}</span>
-                      <span>⏰ Deadline: {req.responseDeadline}</span>
-                      {req.subject && <span>📋 {req.subject}</span>}
+                    <p className="text-sm text-slate-300">{r.subject}</p>
+                    {r.description && <p className="text-xs text-slate-500 mt-1">{r.description}</p>}
+                    <div className="flex gap-4 mt-2 text-xs text-slate-500">
+                      <span>Submitted: {new Date(r.request_date).toLocaleDateString()}</span>
+                      {r.due_date && <span>Due: {new Date(r.due_date).toLocaleDateString()}</span>}
+                      {r.case_id && <span>Case: {r.case_id}</span>}
+                    </div>
+                    {/* Status updater */}
+                    <div className="flex gap-1 mt-2">
+                      {STATUS_OPTIONS.map(s => (
+                        <button key={s} onClick={() => updateStatus(r.id, s)}
+                          className={`text-xs px-2 py-0.5 rounded-full transition capitalize ${r.status===s ? getStatusColor(s) : 'bg-slate-800 text-slate-500 hover:text-white'}`}>
+                          {s}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <select value={req.status} onChange={e => updateStatus(req.id, e.target.value as any)}
-                      className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
-                      {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                    {req.generatedRequest && (
-                      <button onClick={() => setPreview({ requestId: req.id, text: req.generatedRequest })}
-                        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded-lg">
-                        View
-                      </button>
-                    )}
-                    {overdue && (
-                      <button onClick={() => generateFollowUp(req)} disabled={generatingFollowUp === req.id}
-                        className="flex items-center gap-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-2 py-1 rounded-lg">
-                        {generatingFollowUp === req.id ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                        Follow-up
-                      </button>
-                    )}
-                    <button onClick={() => remove(req.id)} className="text-slate-600 hover:text-red-400">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  <button onClick={() => handleDelete(r.id)}
+                    className="p-1.5 rounded-lg hover:bg-red-900/40 text-red-500 transition shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
-};
-
-export default FOIATracker;
+}
