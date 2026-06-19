@@ -370,7 +370,7 @@ const MailRoom: React.FC = () => {
     if (!email.read) markRead(email.id);
   };
 
-  const sendEmail = () => {
+  const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) return;
     const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent);
     // Send via real API if available
