@@ -1,54 +1,76 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+const FIRM_OWNER_CELL = process.env.FIRM_OWNER_CELL || '';
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const callSid    = req.body?.CallSid    || req.query?.CallSid    || '';
-  const from       = req.body?.From       || req.query?.From       || '';
-  const to         = req.body?.To         || req.query?.To         || '';
-  const callStatus = req.body?.CallStatus || '';
-  const digits     = req.body?.Digits     || '';
-
-  console.log(`[voice-inbound] CallSid=${callSid} From=${from} To=${to} Status=${callStatus} Digits=${digits}`);
-
   res.setHeader('Content-Type', 'text/xml');
 
-  // Step 2: caller pressed a key after the initial prompt — now record full intake
-  if (digits) {
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="Polly.Joanna">
-    Perfect. Please state your full name, the best phone number to reach you, your preferred callback time, and a brief description of your legal matter. Speak clearly after the tone. When finished, press pound or simply stay silent for five seconds.
-  </Say>
-  <Record
-    action="https://casebuddy.live/api/twilio/recording-complete"
-    recordingStatusCallback="https://casebuddy.live/api/twilio/recording-status"
-    recordingStatusCallbackMethod="POST"
-    maxLength="300"
-    timeout="5"
-    finishOnKey="#"
-    transcribe="true"
-    transcribeCallback="https://casebuddy.live/api/twilio/recording-complete"
-    playBeep="true"
-  />
-  <Say voice="Polly.Joanna">Thank you. An attorney from CaseBuddy will review your message and reach out within one business day. Goodbye.</Say>
-</Response>`;
-    return res.status(200).send(twiml);
+  const digits     = String(req.body?.Digits || req.query?.Digits || '');
+  const callStatus = String(req.body?.CallStatus || '');
+  const from       = String(req.body?.From || req.query?.From || '');
+
+  // ── Route based on menu selection ─────────────────────────────────────────
+  if (digits === '1') {
+    // ── Client intake — go through Maya ───────────────────────────────────
+    return res.status(200).send(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Response>' +
+        '<Say voice="Polly.Joanna">Connecting you to our intake team. Please hold.</Say>' +
+        '<Gather numDigits="1" action="https://casebuddy.live/api/twilio/intake-record" method="POST" timeout="10">' +
+          '<Say voice="Polly.Joanna">' +
+            'To leave a message for one of our attorneys, press any key. ' +
+            'After the tone, state your full name, best phone number, preferred callback time, and a brief description of your legal matter.' +
+          '</Say>' +
+        '</Gather>' +
+        '<Say voice="Polly.Joanna">We did not receive your input. Please call back. Goodbye.</Say>' +
+      '</Response>'
+    );
   }
 
-  // Step 1: greet and collect info via Gather keypress, then record
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="Polly.Joanna">
-    Thank you for calling CaseBuddy AI Law. This call will be recorded for legal documentation purposes.
-  </Say>
-  <Gather numDigits="1" action="https://casebuddy.live/api/twilio/voice-inbound" method="POST" timeout="10">
-    <Say voice="Polly.Joanna">
-      To leave a message for one of our attorneys, please press any key. After the tone, please state your full name, the best phone number to reach you, your preferred callback time and timezone, and a brief description of your legal matter. Press any key to begin.
-    </Say>
-  </Gather>
-  <Say voice="Polly.Joanna">
-    We did not receive your input. Please call back and press any key to leave your message. Goodbye.
-  </Say>
-</Response>`;
+  if (digits === '2') {
+    // ── Redirect to dial-in recorder ──────────────────────────────────────
+    return res.status(200).send(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Response>' +
+        '<Redirect method="GET">https://casebuddy.live/api/twilio/dial-in-recorder</Redirect>' +
+      '</Response>'
+    );
+  }
 
-  return res.status(200).send(twiml);
+  // ── Main menu — detect if this is the firm owner calling ────────────────
+  // If FIRM_OWNER_CELL is set and matches the caller, skip straight to recorder option
+  const isFirmOwner = FIRM_OWNER_CELL && from && from.replace(/\D/g,'').endsWith(FIRM_OWNER_CELL.replace(/\D/g,'').slice(-10));
+
+  if (isFirmOwner) {
+    // Owner calling in — offer both options
+    return res.status(200).send(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Response>' +
+        '<Gather numDigits="1" action="https://casebuddy.live/api/twilio/voice-inbound" method="POST" timeout="10">' +
+          '<Say voice="Polly.Joanna">' +
+            'Welcome back. ' +
+            'Press 1 for client intake. ' +
+            'Press 2 to record an outbound call.' +
+          '</Say>' +
+        '</Gather>' +
+        '<Say voice="Polly.Joanna">No input received. Goodbye.</Say>' +
+      '</Response>'
+    );
+  }
+
+  // Everyone else — standard intake menu
+  return res.status(200).send(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<Response>' +
+      '<Say voice="Polly.Joanna">' +
+        'Thank you for calling CaseBuddy AI Law. This call may be recorded for legal documentation purposes.' +
+      '</Say>' +
+      '<Gather numDigits="1" action="https://casebuddy.live/api/twilio/voice-inbound" method="POST" timeout="10">' +
+        '<Say voice="Polly.Joanna">' +
+          'To leave a message for one of our attorneys, press any key.' +
+        '</Say>' +
+      '</Gather>' +
+      '<Say voice="Polly.Joanna">We did not receive your input. Please call back. Goodbye.</Say>' +
+    '</Response>'
+  );
 }
