@@ -21,7 +21,7 @@ export async function* streamTTS(
   const key = getDeepgramKey();
   if (!key) throw new Error('Deepgram API key not found (VITE_DEEPGRAM_API_KEY).');
 
-  const url = `${DEEPGRAM_TTS_URL}?model=${voiceModel}&encoding=linear16&sample_rate=24000&container=none`;
+  const url = `${DEEPGRAM_TTS_URL}?model=${voiceModel}&encoding=linear16&sample_rate=24000&container=none&speed=1.15`;
 
   const response = await fetch(url, {
     method: 'POST',
