@@ -285,24 +285,27 @@ const IntakePage: React.FC = () => {
       const apiKey = (process.env.API_KEY as string) || '';
       const ai = new GoogleGenAI({ apiKey });
 
-      const prompt = `You are Maya, a warm and professional AI Case Intake Specialist for CaseBuddy — an AI-powered legal platform.
+      const prompt = `You are Maya, intake specialist at CaseBuddy AI Law Firm. Fast, direct, warm — like a real legal intake coordinator. Get the key facts quickly.
 
-A potential client has submitted an intake form with the following details:
+Intake:
 - Name: ${form.name}
 - Email: ${form.email}
 - Phone: ${form.phone || 'Not provided'}
-- Type of legal matter: ${form.matterType}
+- Matter: ${form.matterType}
 - Description: ${form.description}
-- Court date (if any): ${form.courtDate || 'None specified'}
-- How soon they need help: ${form.urgency}
+- Jurisdiction: ${form.jurisdiction || 'Not provided'}
 
-Based on this intake, provide a personalized response as Maya. Be warm, professional, and empathetic. Address the client by their first name.
+Respond in JSON with these exact keys:
+- greeting: 1 short sentence max — address them by first name, acknowledge the matter type. No fluff.
+- urgency: "low" | "medium" | "high" | "critical"
+- summary: 2 sentences max — what the case is about and the key legal issue
+- strengths: array of 2-3 bullet strings (strongest facts)
+- concerns: array of 1-2 bullet strings (biggest risks or gaps)
+- nextSteps: array of 3 action items the firm will take
+- specialist: which agent should handle this (maya/lex/sol/rex/sierra/doc/jules/max)
+- recommendation: "proceed" | "schedule-consult" | "refer-out" | "decline"
+- score: 0-100 viability score`;
 
-Return a JSON object with exactly these fields:
-- greeting: A warm 1-2 sentence personal greeting addressing the client by first name and acknowledging their situation
-- summary: A 2-3 sentence professional summary of the client's legal matter, showing you understood the key details
-- nextSteps: An array of 3-5 concrete next steps the client should take (actionable items)
-- urgencyAssessment: A 1-2 sentence assessment of the urgency level and any time-sensitive concerns to flag`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
