@@ -80,7 +80,7 @@ WRAP UP FAST:
 - DO NOT let the call drag past 5 exchanges if the facts are clear.
 
 ${CORE_RULES}\`,
-    greeting: "Hi, this is Maya over at CaseBuddy — how can I help you today?",
+    greeting: "CaseBuddy, Maya speaking — what's going on?",
   },
   lex: {
     agentId: 'lex',
