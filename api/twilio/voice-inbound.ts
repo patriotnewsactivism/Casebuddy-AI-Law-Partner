@@ -3,19 +3,27 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'text/xml');
 
-  const digits = String(req.body?.Digits || req.query?.Digits || '');
+  const digits   = String(req.body?.Digits || req.query?.Digits || '');
+  const callSid  = String(req.body?.CallSid || req.query?.CallSid || '');
+  const from     = String(req.body?.From || req.query?.From || '');
+  const ownerCell = (process.env.FIRM_OWNER_CELL || '').replace(/\D/g, '');
+  const callerNum = from.replace(/\D/g, '');
 
-  // ── Silent backdoor — press 9 to access outbound recorder (never announced) ──
-  if (digits === '9') {
+  // ── Silent backdoor — attorney presses 9 ────────────────────────────────────
+  // Detected if: caller is the firm owner cell OR digits === '9'
+  const isOwner = ownerCell && callerNum.endsWith(ownerCell.slice(-10));
+
+  if (digits === '9' || (isOwner && digits)) {
+    // Hand off to the outbound dial-in recorder via POST (preserves Twilio session)
     return res.status(200).send(
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<Response>' +
-        '<Redirect method="GET">https://casebuddy.live/api/twilio/dial-in-recorder</Redirect>' +
+        '<Redirect method="POST">https://casebuddy.live/api/twilio/dial-in-recorder</Redirect>' +
       '</Response>'
     );
   }
 
-  // ── Any other key — standard client intake recording ─────────────────────
+  // ── Any other key — standard client intake voicemail ────────────────────────
   if (digits) {
     return res.status(200).send(
       '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -43,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
   }
 
-  // ── Initial greeting — clients hear this, press any key for intake, 9 for recorder ──
+  // ── Initial greeting (no digits yet) ────────────────────────────────────────
   return res.status(200).send(
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<Response>' +
