@@ -21,6 +21,8 @@ const Dashboard        = React.lazy(() => import('./components/Dashboard'));
 const CaseManager      = React.lazy(() => import('./components/CaseManager'));
 const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
 const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
+const MailRoom         = React.lazy(() => import('./components/MailRoom'));
+const IntercomPanel    = React.lazy(() => import('./components/IntercomPanel'));
 const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
 const LandingPage      = React.lazy(() => import('./components/LandingPage'));
 const PrivacyPolicy    = React.lazy(() => import('./components/PrivacyPolicy'));
@@ -82,6 +84,8 @@ const NAV_GROUPS = [
     label: 'Legal Team',
     items: [
       { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
+      { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
+      { path: '/app/intercom', icon: Phone, label: 'Intercom', badge: 'Live' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
     ]
   },
@@ -509,6 +513,8 @@ const App = () => {
             <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
             <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
             <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
+              <Route path="/app/mail-room" element={<AuthGate><Layout><MailRoom /></Layout></AuthGate>} />
+              <Route path="/app/intercom" element={<AuthGate><Layout><IntercomPanel /></Layout></AuthGate>} />
             <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
             <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
             <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
