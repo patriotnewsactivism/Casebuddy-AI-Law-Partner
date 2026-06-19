@@ -90,12 +90,12 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/daily-briefing",
-      "schedule": "0 14 * * *"
+      "path": "/api/cron/send-pending-emails",
+      "schedule": "0 12 * * *"
     },
     {
-      "path": "/api/cron/weekly-client-updates",
-      "schedule": "0 15 * * 5"
+      "path": "/api/cron/daily-briefing",
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/cron/case-status-monitor",
@@ -106,8 +106,8 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/send-pending-emails",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/weekly-client-updates",
+      "schedule": "0 15 * * 5"
     }
   ]
 }
