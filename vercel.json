@@ -107,7 +107,7 @@
     },
     {
       "path": "/api/cron/send-pending-emails",
-      "schedule": "* * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
