@@ -7,7 +7,6 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY            || '';
 const FIRM_EMAIL = process.env.FIRM_OWNER_EMAIL          || '';
 const REPLY_DELAY_MS = 3 * 60 * 1000; // 3 minutes
 
-// ── Agent definitions ─────────────────────────────────────────────────────────
 const AGENTS: Record<string, { name: string; role: string; personality: string }> = {
   maya:   { name: 'Maya',   role: 'Case Intake Specialist',      personality: 'Warm, efficient, direct. Gets the key facts quickly. Short, actionable responses. Never wastes words.' },
   sol:    { name: 'Sol',    role: 'Deadline & Calendar Manager', personality: 'Precise, urgent when needed. Always gives specific dates and actions. No fluff.' },
@@ -17,7 +16,26 @@ const AGENTS: Record<string, { name: string; role: string; personality: string }
   doc:    { name: 'Doc',    role: 'Legal Drafter',               personality: 'Methodical, precise, thorough. Asks clarifying questions before drafting.' },
 };
 
-// ── Routing ───────────────────────────────────────────────────────────────────
+// ── Intake fields we need from every new contact ──────────────────────────────
+const INTAKE_FIELDS = [
+  'full name',
+  'best phone number to reach you',
+  'best time / timezone to call',
+  'brief description of your legal matter',
+];
+
+function missingIntakeFields(body: string, fromName: string): string[] {
+  const lower = body.toLowerCase();
+  const missing: string[] = [];
+  // Check name — if fromName is just an email address, ask for name
+  if (!fromName || fromName.includes('@') || fromName.length < 3) missing.push('full name');
+  // Check phone
+  if (!/\d{3}[\s.\-]\d{3}[\s.\-]\d{4}|\(\d{3}\)[\s.\-]?\d{3}[\s.\-]\d{4}|\+1\s?\d{10}/.test(body)) missing.push('best phone number');
+  // Check time preference
+  if (!/best time|call me|reach me|available|timezone|morning|afternoon|evening|am|pm/.test(lower)) missing.push('best time to call');
+  return missing;
+}
+
 function detectAgent(toField: string): string {
   const lower = toField.toLowerCase();
   for (const id of Object.keys(AGENTS)) {
@@ -33,11 +51,9 @@ function classifyIntent(subject: string, body: string): string {
   if (/trial|witness|cross.exam|opening|closing|strategy/.test(t))          return 'trial';
   if (/draft|contract|motion|agreement|letter|document/.test(t))            return 'drafting';
   if (/client|update|status|how is my case/.test(t))                        return 'client-update';
-  if (/intake|new case|representation|help|injured|fired|arrested|accident/.test(t)) return 'intake';
-  return 'general';
+  return 'intake';
 }
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
 async function sbFetch(path: string, opts: RequestInit = {}) {
   return fetch(`${SB_URL}/rest/v1/${path}`, {
     ...opts,
@@ -83,14 +99,15 @@ async function saveEmail(record: {
   } catch { return null; }
 }
 
-// ── Gemini ────────────────────────────────────────────────────────────────────
 async function generateReply(
   agentId: string, fromName: string, fromEmail: string,
   subject: string, body: string, intent: string,
-  history: Array<{ role: 'user' | 'agent'; content: string }>
+  history: Array<{ role: 'user' | 'agent'; content: string }>,
+  isNewContact: boolean,
+  missingFields: string[]
 ): Promise<string> {
   const agent = AGENTS[agentId];
-  if (!GEMINI_KEY) return `Thank you for reaching out. We'll get back to you shortly.\n\n— ${agent.name}`;
+  if (!GEMINI_KEY) return `Thank you for reaching out to CaseBuddy AI Law. To connect you with one of our attorneys, I need a few quick details:\n\n1. Your full name\n2. Best phone number to reach you\n3. Best time and timezone to call\n4. Brief description of your legal matter\n\nPlease reply with these and I'll get an attorney in touch with you right away.\n\n— ${agent.name} · CaseBuddy AI Law`;
 
   const historyContext = history.length > 0
     ? `\n\nPREVIOUS CONVERSATION with ${fromName} (oldest first):\n` +
@@ -98,13 +115,31 @@ async function generateReply(
       '\n--- END HISTORY ---\n'
     : '';
 
+  // Build intake instructions only for new contacts or when fields are still missing
+  const intakeInstruction = (isNewContact || missingFields.length > 0) ? `
+CRITICAL INTAKE RULE — you MUST follow this before anything else:
+Before discussing legal advice, strategy, or case specifics, you MUST collect ALL of the following from the person if not already provided:
+  1. Their full name
+  2. Best phone number to reach them
+  3. Best day/time and timezone for an attorney callback
+  4. A brief description of their legal matter (1-2 sentences is fine)
+
+${missingFields.length > 0
+  ? `The following are STILL MISSING from this contact: ${missingFields.join(', ')}. Ask for ONLY what is missing — do not re-ask for things they already provided.`
+  : 'All intake fields have been collected. Acknowledge their info, confirm an attorney will reach out, and briefly address their question.'}
+
+Format your ask naturally and warmly — NOT as a numbered list. Weave it into your opening as a friendly, professional intake specialist would.
+Once all four fields are collected, close by saying an attorney from our firm will review their matter and reach out within 1 business day.
+` : `All intake info has been collected for this returning contact. Focus on their current question/request.`;
+
   const systemPrompt = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.
 Personality: ${agent.personality}
-${history.length > 0
-  ? `This is a RETURNING contact. You remember ${fromName}. Reference history naturally. Do NOT re-introduce yourself.`
-  : `This is a NEW contact. Introduce yourself briefly (one sentence max).`
+${isNewContact
+  ? `This is a NEW contact. Introduce yourself in one warm sentence, then follow the intake rule below.`
+  : `This is a RETURNING contact. You remember ${fromName}. Reference history naturally. Do NOT re-introduce yourself.`
 }
 ${historyContext}
+${intakeInstruction}
 RULES:
 - Write only the email body. No subject line. No markdown headers.
 - 3–5 short paragraphs. Be concise and direct.
@@ -126,10 +161,9 @@ RULES:
   );
   const data = await res.json() as any;
   return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim() ||
-    `Thank you for your message. We'll follow up shortly.\n\n— ${agent.name}`;
+    `Thank you for reaching out. To get you connected with one of our attorneys, I just need your full name, best phone number, preferred callback time, and a brief description of your matter. Please reply with those details and we'll be in touch within 1 business day.\n\n— ${agent.name} · CaseBuddy AI Law`;
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') return res.status(200).json({ ok: true, message: 'Email inbound webhook active' });
   if (req.method !== 'POST') return res.status(405).end();
@@ -148,8 +182,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const agentId = detectAgent(to);
     const intent  = classifyIntent(subject, text);
     const history = await getThreadHistory(fromEmail, agentId, 8);
+    const isNewContact = history.length === 0;
+    const missing = isNewContact ? missingIntakeFields(text, fromName) : [];
 
-    // Save inbound email
     await saveEmail({
       direction: 'inbound',
       from_address: fromEmail, from_name: fromName,
@@ -157,12 +192,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       subject, body: text.slice(0, 5000), intent,
     });
 
-    // Generate reply immediately (fast — stays within Vercel timeout)
-    const replyBody    = await generateReply(agentId, fromName, fromEmail, subject, text, intent, history);
+    const replyBody    = await generateReply(agentId, fromName, fromEmail, subject, text, intent, history, isNewContact, missing);
     const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
     const sendAt       = new Date(Date.now() + REPLY_DELAY_MS).toISOString();
 
-    // Save outbound as PENDING — cron will pick it up and send in 3 minutes
     await saveEmail({
       direction: 'outbound',
       from_address: `${agentId}@casebuddy.live`, from_name: AGENTS[agentId].name,
@@ -176,14 +209,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    // Also queue a firm owner CC copy
     if (FIRM_EMAIL) {
       await saveEmail({
         direction: 'outbound',
         from_address: `${agentId}@casebuddy.live`, from_name: AGENTS[agentId].name,
         to_address: FIRM_EMAIL, agent_id: agentId,
-        subject: `📬 ${history.length > 0 ? '[Returning]' : '[New]'} ${AGENTS[agentId].name} replied to ${fromName}`,
-        body: `Agent: ${AGENTS[agentId].name}\nFrom: ${fromName} <${fromEmail}>\nSubject: ${subject}\nIntent: ${intent}\n\n--- REPLY QUEUED (sends in 3 min) ---\n${replyBody}`,
+        subject: `📬 ${isNewContact ? '[New Intake]' : '[Returning]'} ${AGENTS[agentId].name} replied to ${fromName}`,
+        body: `Agent: ${AGENTS[agentId].name}\nFrom: ${fromName} <${fromEmail}>\nSubject: ${subject}\nIntent: ${intent}\nNew Contact: ${isNewContact}\nMissing Fields: ${missing.join(', ') || 'none'}\n\n--- REPLY QUEUED (sends in 3 min) ---\n${replyBody}`,
         intent,
         metadata: {
           status: 'pending',
@@ -194,13 +226,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Acknowledge immediately — cron handles delivery
     return res.status(200).json({
       ok: true,
       agent: agentId,
       intent,
       queued: true,
       send_at: sendAt,
+      isNewContact,
+      missingFields: missing,
       threadLength: history.length + 1,
     });
   } catch (err: any) {
