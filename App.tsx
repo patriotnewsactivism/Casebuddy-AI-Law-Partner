@@ -86,7 +86,7 @@ const NAV_GROUPS = [
     items: [
       { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
       { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
-      { path: '/app/intercom', icon: Phone, label: 'Intercom', badge: 'Live' },
+      { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
     ]
   },
