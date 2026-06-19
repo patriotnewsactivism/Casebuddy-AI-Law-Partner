@@ -79,7 +79,7 @@ WRAP UP FAST:
 - Then close: "Perfect, we'll be in touch. Thanks for calling."
 - DO NOT let the call drag past 5 exchanges if the facts are clear.
 
-${CORE_RULES}\`,
+${CORE_RULES}`,
     greeting: "CaseBuddy, Maya speaking — what's going on?",
   },
   lex: {
