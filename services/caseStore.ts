@@ -86,11 +86,18 @@ export const upsertCaseToCloud = async (c: Case): Promise<boolean> => {
   const sb = getSupabase();
   if (!sb) return false;
 
-  const { error } = await sb.from(CASES_TABLE).upsert(
-    { id: c.id, firm_id: getFirmId(), data: c },
-    { onConflict: 'id' }
-  );
-  return !error;
+  // Never throw: callers often fire this without awaiting, so a network-level
+  // rejection here would surface as an unhandled rejection and lose the case
+  // silently. Swallow to a boolean instead.
+  try {
+    const { error } = await sb.from(CASES_TABLE).upsert(
+      { id: c.id, firm_id: getFirmId(), data: c },
+      { onConflict: 'id' }
+    );
+    return !error;
+  } catch {
+    return false;
+  }
 };
 
 // ─── upsert batch (initial sync of localStorage cases) ───────────────────────
@@ -106,8 +113,12 @@ export const syncLocalCasesToCloud = async (cases: Case[]): Promise<boolean> => 
     data: c,
   }));
 
-  const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });
-  return !error;
+  try {
+    const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });
+    return !error;
+  } catch {
+    return false;
+  }
 };
 
 // ─── delete ───────────────────────────────────────────────────────────────────
