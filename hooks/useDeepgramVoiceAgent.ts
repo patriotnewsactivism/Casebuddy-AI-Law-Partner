@@ -24,6 +24,7 @@ const EOT_TIMEOUT_MS = 8000; // kept for reference, not used with nova-3
 // How quickly we fade the agent's voice out when the caller barges in. A short
 // ramp instead of a hard cut means her words are never abruptly clipped.
 const BARGE_FADE_MS = 90;
+const SPEAKING_RATE_DEFAULT = 1.05; // slightly more natural than 1.1
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
@@ -326,7 +327,7 @@ export function useDeepgramVoiceAgent(
         : opts.systemInstruction;
 
       // Speaking rate: slightly faster than default for a more natural, quick pace
-      const speakRate = opts.speakingRate ?? 1.1;
+      const speakRate = opts.speakingRate ?? SPEAKING_RATE_DEFAULT;
 
       ws.onopen = () => {
         const settings = {
