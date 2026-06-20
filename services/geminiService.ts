@@ -886,6 +886,31 @@ export const askCopilot = async (
   }, 3);
 };
 
+/**
+ * Chat with a specific AI employee in their own voice/persona. Powers the
+ * text-message path so you can message any team member, not just call them.
+ */
+export const chatWithAgent = async (
+  systemInstruction: string,
+  question: string,
+  history: { role: 'user' | 'model'; text: string }[],
+  caseContext?: string
+): Promise<string> => {
+  return retryWithBackoff(async () => {
+    const sys = caseContext
+      ? `${systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally when relevant):\n${caseContext}`
+      : systemInstruction;
+    const chat = ai.chats.create({
+      model: 'gemini-2.5-flash',
+      config: { systemInstruction: sys, temperature: 0.7 },
+      history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
+    });
+    const response = await withTimeout(chat.sendMessage({ message: question }), 30000);
+    if (!response.text) throw new Error('Empty response');
+    return response.text;
+  }, 3);
+};
+
 export async function* askCopilotStream(
   question: string,
   history: { role: 'user' | 'model'; text: string }[],

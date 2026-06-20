@@ -4,6 +4,7 @@ import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock,
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
+import { emailIntakeHandoff } from '../services/firmComms';
 import { IntakeScore } from '../types';
 
 // Public, link-shareable voice intake. A prospect opens the link, Maya picks up
@@ -88,6 +89,9 @@ const PublicIntake: React.FC = () => {
       const intake = await extractIntake(transcript);
       const score = await scoreIntake(intake);
       await submitIntake({ intake, score, transcript });
+      // Hand the case off to the routed specialist by email (best-effort — never
+      // blocks the prospect's confirmation screen).
+      void emailIntakeHandoff(intake, score);
       setResult(score);
       setPhase('result');
     } catch (e) {

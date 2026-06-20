@@ -1,16 +1,20 @@
 import React, { useContext, useState } from 'react';
-import { Phone, Sparkles, Scale } from 'lucide-react';
+import { Phone, Sparkles, Scale, MessageSquare } from 'lucide-react';
 import { OPERATIONAL_AGENTS, OperationalAgent } from '../agents/personas';
 import { getVoiceProfile } from '../agents/voiceProfiles';
 import { AppContext } from '../App';
 import VoiceRoom from './VoiceRoom';
+import AgentChat from './AgentChat';
 
 const FirmReception: React.FC = () => {
   const { activeCase } = useContext(AppContext);
-  const [activeAgent, setActiveAgent] = useState<OperationalAgent | null>(null);
+  const [session, setSession] = useState<{ agent: OperationalAgent; mode: 'call' | 'message' } | null>(null);
 
-  if (activeAgent) {
-    return <VoiceRoom agent={activeAgent} onBack={() => setActiveAgent(null)} />;
+  if (session?.mode === 'call') {
+    return <VoiceRoom agent={session.agent} onBack={() => setSession(null)} />;
+  }
+  if (session?.mode === 'message') {
+    return <AgentChat agent={session.agent} onBack={() => setSession(null)} />;
   }
 
   return (
@@ -37,17 +41,11 @@ const FirmReception: React.FC = () => {
         {OPERATIONAL_AGENTS.map(agent => {
           const profile = getVoiceProfile(agent.id);
           return (
-            <button
+            <div
               key={agent.id}
-              onClick={() => setActiveAgent(agent)}
-              className={`group text-left p-5 rounded-2xl border transition-all hover:scale-[1.02] hover:shadow-xl ${agent.bgClass} ${agent.borderClass}`}
+              className={`group flex flex-col p-5 rounded-2xl border transition-all hover:shadow-xl ${agent.bgClass} ${agent.borderClass}`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="text-4xl">{agent.emoji}</div>
-                <div className="w-9 h-9 rounded-full bg-green-600/90 group-hover:bg-green-500 flex items-center justify-center text-white shadow-lg transition-colors">
-                  <Phone size={16} />
-                </div>
-              </div>
+              <div className="text-4xl">{agent.emoji}</div>
               <h3 className={`mt-3 text-lg font-bold ${agent.colorClass}`}>{agent.name}</h3>
               <p className="text-sm text-slate-300 font-medium">{agent.title}</p>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed line-clamp-3">{agent.description}</p>
@@ -57,7 +55,21 @@ const FirmReception: React.FC = () => {
                   {profile.voiceLabel}
                 </p>
               )}
-            </button>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => setSession({ agent, mode: 'call' })}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-600/90 hover:bg-green-500 text-white text-sm font-semibold shadow transition-colors"
+                >
+                  <Phone size={15} /> Call
+                </button>
+                <button
+                  onClick={() => setSession({ agent, mode: 'message' })}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-700/70 hover:bg-slate-600 text-slate-100 text-sm font-semibold transition-colors"
+                >
+                  <MessageSquare size={15} /> Message
+                </button>
+              </div>
+            </div>
           );
         })}
       </div>
