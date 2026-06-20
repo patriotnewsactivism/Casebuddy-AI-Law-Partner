@@ -103,7 +103,8 @@ export function useDeepgramVoiceAgent(
   const clearPlayback = useCallback(() => {
     const outputCtx = outputCtxRef.current;
     const outGain = outGainRef.current;
-    const toStop = Array.from(sourcesRef.current);
+    const toStop: AudioBufferSourceNode[] = [];
+    sourcesRef.current.forEach(s => toStop.push(s));
     sourcesRef.current.clear();
     nextStartRef.current = 0;
     setAgentSpeaking(false);
