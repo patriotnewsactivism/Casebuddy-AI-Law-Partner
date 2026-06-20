@@ -1,8 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { User } from '@supabase/supabase-js';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
@@ -10,52 +9,62 @@ import {
   Cloud, CloudOff, Loader2, LogOut
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
-// Shell components — always mounted, must stay eager
-import OnboardingModal from './components/OnboardingModal';
+
+// ─── Eagerly loaded (needed on every page or at auth boundary) ────────────
+import ErrorBoundary from './components/ErrorBoundary';
+import FloatingVoiceButton from './components/FloatingVoiceButton';
 import ActiveCaseBar from './components/ActiveCaseBar';
 import CopilotSidebar from './components/CopilotSidebar';
-import RequireAuth from './components/RequireAuth';
 
-// Route-level pages — lazy-loaded so each page's JS only downloads on first visit
-const Dashboard = React.lazy(() => import('./components/Dashboard'));
-const CaseManager = React.lazy(() => import('./components/CaseManager'));
-const WitnessLab = React.lazy(() => import('./components/WitnessLab'));
-const StrategyRoom = React.lazy(() => import('./components/StrategyRoom'));
+// ─── Lazy-loaded pages ────────────────────────────────────────────────────
+const Dashboard        = React.lazy(() => import('./components/Dashboard'));
+const CaseManager      = React.lazy(() => import('./components/CaseManager'));
+const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
+const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
 const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
-const LandingPage = React.lazy(() => import('./components/LandingPage'));
-const PrivacyPolicy = React.lazy(() => import('./components/PrivacyPolicy'));
-const TermsOfService = React.lazy(() => import('./components/TermsOfService'));
-const Transcriber = React.lazy(() => import('./components/Transcriber'));
-const DraftingAssistant = React.lazy(() => import('./components/DraftingAssistant'));
-const SettingsPage = React.lazy(() => import('./components/Settings'));
-const DepositionPrep = React.lazy(() => import('./components/DepositionPrep'));
-const EvidenceVault = React.lazy(() => import('./components/EvidenceVault'));
-const JuryAnalyzer = React.lazy(() => import('./components/JuryAnalyzer'));
+const LandingPage      = React.lazy(() => import('./components/LandingPage'));
+const PrivacyPolicy    = React.lazy(() => import('./components/PrivacyPolicy'));
+const TermsOfService   = React.lazy(() => import('./components/TermsOfService'));
+const Transcriber      = React.lazy(() => import('./components/Transcriber'));
+const DraftingAssistant= React.lazy(() => import('./components/DraftingAssistant'));
+const SettingsPage     = React.lazy(() => import('./components/Settings'));
+const DepositionPrep   = React.lazy(() => import('./components/DepositionPrep'));
+const EvidenceVault    = React.lazy(() => import('./components/EvidenceVault'));
+const JuryAnalyzer     = React.lazy(() => import('./components/JuryAnalyzer'));
 const StatementBuilder = React.lazy(() => import('./components/StatementBuilder'));
 const VerdictPredictor = React.lazy(() => import('./components/VerdictPredictor'));
-const ClientUpdate = React.lazy(() => import('./components/ClientUpdate'));
-const LegalTeam = React.lazy(() => import('./components/LegalTeam'));
-const WitnessPrep = React.lazy(() => import('./components/WitnessPrep'));
-const JurySimulator = React.lazy(() => import('./components/JurySimulator'));
-const Pricing = React.lazy(() => import('./components/Pricing'));
-const Integrations = React.lazy(() => import('./components/Integrations'));
-const DeadlineTracker = React.lazy(() => import('./components/DeadlineTracker'));
-const IntakePage = React.lazy(() => import('./components/IntakePage'));
-const WarRoom = React.lazy(() => import('./components/WarRoom'));
-const FoiaCenter = React.lazy(() => import('./components/FoiaCenter'));
-const FirmReception = React.lazy(() => import('./components/FirmReception'));
-const IntakeInbox = React.lazy(() => import('./components/IntakeInbox'));
-const PublicIntake = React.lazy(() => import('./components/PublicIntake'));
+const ClientUpdate     = React.lazy(() => import('./components/ClientUpdate'));
+const LegalTeam        = React.lazy(() => import('./components/LegalTeam'));
+const WitnessPrep      = React.lazy(() => import('./components/WitnessPrep'));
+const JurySimulator    = React.lazy(() => import('./components/JurySimulator'));
+const Pricing          = React.lazy(() => import('./components/Pricing'));
+const OnboardingModal  = React.lazy(() => import('./components/OnboardingModal'));
+const Integrations     = React.lazy(() => import('./components/Integrations'));
+const DeadlineTracker  = React.lazy(() => import('./components/DeadlineTracker'));
+const IntakePage       = React.lazy(() => import('./components/IntakePage'));
+const WarRoom          = React.lazy(() => import('./components/WarRoom'));
+const FoiaCenter       = React.lazy(() => import('./components/FoiaCenter'));
+const FirmReception    = React.lazy(() => import('./components/FirmReception'));
+const IntakeInbox      = React.lazy(() => import('./components/IntakeInbox'));
+const PublicIntake     = React.lazy(() => import('./components/PublicIntake'));
 const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'));
-const UserGuide = React.lazy(() => import('./components/UserGuide'));
-const Login = React.lazy(() => import('./components/Login'));
-const ResetPassword = React.lazy(() => import('./components/ResetPassword'));
+const UserGuide        = React.lazy(() => import('./components/UserGuide'));
+const AuthPage         = React.lazy(() => import('./components/AuthPage'));
+
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
-import { useAuthSession, AuthStatus } from './hooks/useAuthSession';
-import { signOut as signOutUser } from './services/authStore';
+import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { onAuthStateChange, signOut, getSession } from './services/authService';
+import { isSupabaseConfigured } from './services/supabaseClient';
+import type { User } from '@supabase/supabase-js';
+
+// ─── Page-level loading spinner ──────────────────────────────────────────
+const PageSpinner = () => (
+  <div className="flex items-center justify-center py-32">
+    <Loader2 size={28} className="text-gold-500 animate-spin" />
+  </div>
+);
 
 const NAV_GROUPS = [
   {
@@ -207,8 +216,17 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
 
 const Layout = ({ children }: { children?: React.ReactNode }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { user } = React.useContext(AppContext);
   const location = useLocation();
-  const { user, signOut } = React.useContext(AppContext);
+
+  // Derive display name from user metadata, falling back to preferences then email
+  const prefs = loadPreferences();
+  const displayName = user?.user_metadata?.display_name || prefs.displayName || user?.email?.split('@')[0] || 'Attorney';
+  const titleLine = prefs.title || '';
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100">
@@ -219,25 +237,21 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
           <button className="md:hidden text-slate-400" onClick={() => setIsSidebarOpen(true)}>
             <Menu size={22} />
           </button>
-          <div className="flex items-center gap-3 ml-auto">
-            {user && (
-              <>
-                <div className="hidden sm:flex flex-col items-end">
-                  <span className="text-sm font-semibold text-white">{user.email}</span>
-                  <span className="text-xs text-slate-400">Signed in</span>
-                </div>
-                <div className="h-9 w-9 rounded-full bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-gold-400 font-bold text-sm shrink-0">
-                  {user.email?.[0]?.toUpperCase() ?? '?'}
-                </div>
-                <button
-                  onClick={signOut}
-                  title="Sign out"
-                  className="text-slate-400 hover:text-red-400 transition-colors shrink-0"
-                >
-                  <LogOut size={18} />
-                </button>
-              </>
-            )}
+          <div className="flex items-center gap-4 ml-auto">
+            <div className="hidden sm:flex flex-col items-end">
+              <span className="text-sm font-semibold text-white">{displayName}</span>
+              {titleLine && <span className="text-xs text-slate-400">{titleLine}</span>}
+            </div>
+            <div className="h-9 w-9 rounded-full bg-slate-700 border border-slate-600 overflow-hidden flex items-center justify-center text-gold-400 font-bold text-sm">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            <button
+              onClick={handleSignOut}
+              title="Sign out"
+              className="text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         </header>
 
@@ -252,7 +266,11 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
               transition={{ duration: 0.15, ease: 'easeOut' }}
               className="flex-1 p-4 sm:p-6 md:p-8"
             >
-              {children}
+              <ErrorBoundary label={location.pathname.split('/').pop() || 'Page'}>
+                <Suspense fallback={<PageSpinner />}>
+                  {children}
+                </Suspense>
+              </ErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </main>
@@ -263,40 +281,55 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   );
 };
 
-const ProtectedLayout = ({ children }: { children?: React.ReactNode }) => (
-  <RequireAuth>
-    <Layout>{children}</Layout>
-  </RequireAuth>
-);
+// ─── Auth Gate: redirects unauthenticated users to /login ────────────────
 
-const PageLoader = () => (
-  <div className="min-h-screen bg-[#020617] flex items-center justify-center">
-    <Loader2 size={32} className="text-gold-500 animate-spin" />
-  </div>
-);
+const AuthGate = ({ children }: { children: React.ReactNode }) => {
+  const { user, authLoading } = React.useContext(AppContext);
+
+  // When Supabase is not configured, skip auth entirely — enables local-only / demo usage
+  if (!isSupabaseConfigured) return <>{children}</>;
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 size={32} className="text-gold-500 animate-spin" />
+          <span className="text-slate-400 text-sm">Loading your firm...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
+// ─── Context ─────────────────────────────────────────────────────────────
 
 export const AppContext = React.createContext<{
   cases: Case[];
   activeCase: Case | null;
   setActiveCase: (c: Case) => void;
   addCase: (c: Case) => void;
+  updateCase: (c: Case) => void;
+  deleteCase: (id: string) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
   syncStatus: SyncStatus;
   user: User | null;
-  authStatus: AuthStatus;
-  signOut: () => Promise<void>;
+  authLoading: boolean;
 }>({
   cases: [],
   activeCase: null,
   setActiveCase: () => {},
   addCase: () => {},
+  updateCase: () => {},
+  deleteCase: () => {},
   theme: 'dark',
   setTheme: () => {},
   syncStatus: 'local-only',
   user: null,
-  authStatus: 'loading',
-  signOut: async () => {},
+  authLoading: true,
 });
 
 const ONBOARDING_KEY = 'casebuddy_onboarding_done';
@@ -315,7 +348,52 @@ const App = () => {
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
-  const { session, user, status: authStatus } = useAuthSession();
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // ─── Auth listener ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    // If Supabase is not configured the callback never fires — resolve immediately
+    // so the app does not spin forever on a blank loading screen.
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
+    const unsub = onAuthStateChange((u, _session) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    // Safety net: if auth check takes >5 s, unblock the UI anyway
+    const timeout = setTimeout(() => setAuthLoading(false), 5000);
+    return () => { unsub(); clearTimeout(timeout); };
+  }, []);
+
+  // ─── Fetch server-side API keys once authenticated ─────────────────────────
+  // The Gemini key lives server-side (GEMINI_API_KEY). Services fall back to
+  // window.__GEMINI_API_KEY, so we fetch it via the voice-keys endpoint and
+  // cache it on window so all services pick it up without any VITE_ env var.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const session = await getSession();
+        if (!session?.access_token) return;
+        const resp = await fetch('/api/ai/voice-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.geminiKey) (window as any).__GEMINI_API_KEY = data.geminiKey;
+          if (data.deepgramKey) (window as any).__DEEPGRAM_API_KEY = data.deepgramKey;
+          if (data.deepseekKey) (window as any).__DEEPSEEK_API_KEY = data.deepseekKey;
+        }
+      } catch { /* silent — services fall back to VITE_ env vars */ }
+    })();
+  }, [user]);
 
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);
@@ -331,28 +409,42 @@ const App = () => {
     const updated = [...cases, newCase];
     setCases(updated);
     saveCases(updated);
-    if (session) {
-      setSyncStatus('syncing');
-      upsertCaseToCloud(newCase).then(ok => setSyncStatus(ok ? 'synced' : 'error'));
-    }
+    upsertCaseToCloud(newCase);
     if (!activeCase) {
       setActiveCase(newCase);
     }
   };
 
-  // Initial cloud sync — only once signed in; RLS requires an authenticated
-  // session for the `cases` table, so there's nothing to fetch for guests.
-  useEffect(() => {
-    if (!session) {
-      setSyncStatus('local-only');
-      return;
+  const updateCase = (updatedCase: Case) => {
+    const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
+    setCases(updated);
+    saveCases(updated);
+    upsertCaseToCloud(updatedCase);
+    if (activeCase?.id === updatedCase.id) {
+      setActiveCaseState(updatedCase);
+      saveActiveCaseId(updatedCase.id);
     }
+  };
+
+  const deleteCase = (id: string) => {
+    const updated = cases.filter(c => c.id !== id);
+    setCases(updated);
+    saveCases(updated);
+    deleteCaseFromCloud(id);
+    if (activeCase?.id === id) {
+      const next = updated[0] ?? null;
+      setActiveCaseState(next);
+      if (next) saveActiveCaseId(next.id);
+    }
+  };
+
+  // Initial cloud sync
+  useEffect(() => {
     setSyncStatus('syncing');
     loadCasesWithSync((cloudCases, status) => {
       setSyncStatus(status);
       if (cloudCases.length > 0) {
         setCases(cloudCases);
-        // Restore active case from merged set
         const savedId = loadActiveCaseId();
         if (savedId) {
           const found = cloudCases.find(c => c.id === savedId);
@@ -360,86 +452,86 @@ const App = () => {
         }
       }
     });
-  }, [session]);
+  }, []);
 
   // Realtime updates from other devices
   useEffect(() => {
-    if (!session) return;
     const unsub = subscribeCases(updated => {
       setCases(updated);
       saveCases(updated);
       setSyncStatus('synced');
     });
     return unsub;
-  }, [session]);
+  }, []);
 
   // Keep localStorage + Supabase in sync on every cases change.
-  // hasMounted guard prevents re-uploading the cloud data we just fetched.
   const hasMounted = React.useRef(false);
   useEffect(() => {
     saveCases(cases);
-    if (hasMounted.current && session) {
-      syncLocalCasesToCloud(cases).then(ok => { if (!ok) setSyncStatus('error'); });
+    if (hasMounted.current) {
+      syncLocalCasesToCloud(cases);
     } else {
       hasMounted.current = true;
     }
-  }, [cases, session]);
+  }, [cases]);
 
   const handleCloseOnboarding = () => {
     localStorage.setItem(ONBOARDING_KEY, '1');
     setShowOnboarding(false);
   };
 
-  const handleSignOut = async () => {
-    await signOutUser();
-  };
-
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, theme, setTheme, syncStatus, user, authStatus, signOut: handleSignOut }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, syncStatus, user, authLoading }}>
       <BrowserRouter>
-        {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
+        {showOnboarding && user && (
+          <Suspense fallback={null}>
+            <OnboardingModal onClose={handleCloseOnboarding} />
+          </Suspense>
+        )}
 
-        <React.Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 size={32} className="text-gold-500 animate-spin" /></div>}>
           <Routes>
+            {/* Public routes */}
             <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/tos" element={<TermsOfService />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/start" element={<IntakePage />} />
             <Route path="/intake" element={<PublicIntake />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
 
-            <Route path="/app" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
-            <Route path="/app/intake-inbox" element={<ProtectedLayout><IntakeInbox /></ProtectedLayout>} />
-            <Route path="/app/firm-command" element={<ProtectedLayout><CaseOrchestrator /></ProtectedLayout>} />
-            <Route path="/app/cases" element={<ProtectedLayout><CaseManager /></ProtectedLayout>} />
-            <Route path="/app/practice" element={<ProtectedLayout><ArgumentPractice /></ProtectedLayout>} />
-            <Route path="/app/witness-lab" element={<ProtectedLayout><WitnessLab /></ProtectedLayout>} />
-            <Route path="/app/witnesses" element={<ProtectedLayout><WitnessPrep /></ProtectedLayout>} />
-            <Route path="/app/strategy" element={<ProtectedLayout><StrategyRoom /></ProtectedLayout>} />
-            <Route path="/app/transcriber" element={<ProtectedLayout><Transcriber /></ProtectedLayout>} />
-            <Route path="/app/docs" element={<ProtectedLayout><DraftingAssistant /></ProtectedLayout>} />
-            <Route path="/app/settings" element={<ProtectedLayout><SettingsPage /></ProtectedLayout>} />
-            <Route path="/app/deposition" element={<ProtectedLayout><DepositionPrep /></ProtectedLayout>} />
-            <Route path="/app/evidence" element={<ProtectedLayout><EvidenceVault /></ProtectedLayout>} />
-            <Route path="/app/jury" element={<ProtectedLayout><JuryAnalyzer /></ProtectedLayout>} />
-            <Route path="/app/jury-sim" element={<ProtectedLayout><JurySimulator /></ProtectedLayout>} />
-            <Route path="/app/statements" element={<ProtectedLayout><StatementBuilder /></ProtectedLayout>} />
-            <Route path="/app/verdict" element={<ProtectedLayout><VerdictPredictor /></ProtectedLayout>} />
-            <Route path="/app/client-update" element={<ProtectedLayout><ClientUpdate /></ProtectedLayout>} />
-            <Route path="/app/legal-team" element={<ProtectedLayout><LegalTeam /></ProtectedLayout>} />
-            <Route path="/app/integrations" element={<ProtectedLayout><Integrations /></ProtectedLayout>} />
-            <Route path="/app/deadlines" element={<ProtectedLayout><DeadlineTracker /></ProtectedLayout>} />
-            <Route path="/app/war-room" element={<ProtectedLayout><WarRoom /></ProtectedLayout>} />
-            <Route path="/app/foia" element={<ProtectedLayout><FoiaCenter /></ProtectedLayout>} />
-            <Route path="/app/firm" element={<ProtectedLayout><FirmReception /></ProtectedLayout>} />
-            <Route path="/app/guide" element={<ProtectedLayout><UserGuide /></ProtectedLayout>} />
+            {/* Protected routes — require authentication */}
+            <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
+            <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
+            <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
+            <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
+            <Route path="/app/practice" element={<AuthGate><Layout><ArgumentPractice /></Layout></AuthGate>} />
+            <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
+            <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
+            <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
+            <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
+            <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
+            <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
+            <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
+            <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
+            <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
+            <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
+            <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
+            <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
+            <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
+            <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
+            <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
+            <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
+            <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
+            <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
+            <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
+            <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </React.Suspense>
+        </Suspense>
       </BrowserRouter>
+      <FloatingVoiceButton />
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
   );

@@ -1,0 +1,62 @@
+/**
+ * Vercel Edge Function — Voice key exchange.
+ *
+ * Returns the Deepgram + Gemini API keys at RUNTIME (not baked into the JS
+ * bundle). The client must be authenticated — we verify the Supabase JWT.
+ *
+ * POST /api/ai/voice-keys
+ * Headers: { Authorization: Bearer <supabase_access_token> }
+ * Response: { deepgramKey, geminiKey }
+ */
+
+export const config = { runtime: 'edge' };
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+const json = (body: object, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  // Verify the caller is authenticated via Supabase JWT
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return json({ error: 'Unauthorized. Sign in first.' }, 401);
+  }
+
+  const token = authHeader.slice(7);
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) return json({ error: 'Supabase not configured.' }, 503);
+
+  // Validate the JWT with Supabase
+  try {
+    const userResp = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+      },
+    });
+    if (!userResp.ok) return json({ error: 'Invalid or expired session. Please sign in again.' }, 401);
+  } catch {
+    return json({ error: 'Could not verify authentication.' }, 500);
+  }
+
+  // Return the keys — these never appear in the JS bundle
+  const deepgramKey = (process.env.DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_KEY || '').trim();
+  const geminiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY || '').trim();
+
+  if (!deepgramKey && !geminiKey) {
+    return json({ error: 'No AI API keys configured on server.' }, 503);
+  }
+
+  return json({ deepgramKey, geminiKey });
+}

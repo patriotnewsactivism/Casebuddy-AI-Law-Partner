@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown } from 'lucide-react';
+import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2 } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
 import { consultSpecialist } from '../services/geminiService';
@@ -67,15 +67,16 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
   );
 };
 
-const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }: {
+interface ChatPanelProps {
   specialist: LegalSpecialist;
   session: ConsultationSession;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<void> | void;
   onReset: () => void;
   loading: boolean;
   onBack?: () => void;
   activeCase?: { title: string } | null;
-}) => {
+}
+const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -236,12 +237,13 @@ const ChatPanel = ({ specialist, session, onSend, onReset, loading, onBack, acti
   );
 };
 
-const SpecialistCard = ({ specialist, isActive, onClick, hasHistory }: {
+interface SpecialistCardProps {
   specialist: LegalSpecialist;
   isActive: boolean;
   onClick: () => void;
   hasHistory: boolean;
-}) => (
+}
+const SpecialistCard: React.FC<SpecialistCardProps> = ({ specialist, isActive, onClick, hasHistory }) => (
   <button onClick={onClick}
     className={`w-full text-left p-4 rounded-xl border transition-all duration-150 group ${
       isActive
@@ -346,6 +348,12 @@ const LegalTeam: React.FC = () => {
     setSessions(prev => ({ ...prev, [activeId]: { specialistId: activeId, messages: [] } }));
   };
 
+  const handleClearAllMemory = () => {
+    if (!window.confirm('Clear all consultation histories for all specialists? This cannot be undone.')) return;
+    setSessions({});
+    localStorage.removeItem(SESSIONS_KEY);
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="mb-4 sm:mb-6 shrink-0">
@@ -358,6 +366,13 @@ const LegalTeam: React.FC = () => {
             <p className="text-slate-400 mt-1 text-sm">Consult with AI lawyers in 12 practice areas.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleClearAllMemory}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-500/40 text-xs transition-colors"
+              title="Clear all specialist memories"
+            >
+              <Trash2 size={12} /> Clear All Memory
+            </button>
             {activeCase && (
               <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs">
                 <Briefcase size={12} className="text-gold-400" />

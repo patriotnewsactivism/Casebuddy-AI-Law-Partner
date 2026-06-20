@@ -47,9 +47,14 @@ const StatCard = ({ icon: Icon, title, value, subtext, subColor, valueColor, pul
   </div>
 );
 
-const AgentTeamCard = ({ agent }: { agent: typeof OPERATIONAL_AGENTS[0] }) => (
+const AgentTeamCard: React.FC<{ agent: typeof OPERATIONAL_AGENTS[0] }> = ({ agent }) => (
   <Link to={agent.route}
-    className={`group flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
+    className={`group relative flex flex-col items-center gap-1.5 sm:gap-2 p-2.5 sm:p-4 rounded-xl border transition-all hover:scale-105 ${agent.bgClass} ${agent.borderClass}`}>
+    {/* Always-on availability dot */}
+    <span className="absolute top-2 right-2 flex h-2 w-2">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400" />
+    </span>
     <div className="text-2xl sm:text-3xl">{agent.emoji}</div>
     <p className={`text-xs sm:text-sm font-bold text-center ${agent.colorClass}`}>{agent.name}</p>
     <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
@@ -313,10 +318,10 @@ const Dashboard = () => {
         {/* Left: Case Load chart */}
         <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col">
           <SectionHeader icon={Activity} title="Case Load Distribution" accent="text-blue-400" />
-          <div className="h-64 w-full flex-1">
+          <div className="h-64 w-full flex-1 min-h-[250px]">
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip
@@ -376,19 +381,27 @@ const Dashboard = () => {
       {/* Relevant Case Law */}
       <RelevantCases activeCase={activeCase} />
 
-      {/* Legacy Leads Pipeline */}
-      {leads.length > 0 && (
-        <div>
-          <SectionHeader
-            icon={ClipboardList}
-            title="Incoming Leads"
-            accent="text-violet-400"
-            action={
-              <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
-                View All <ArrowRight size={12} className="inline" />
-              </Link>
-            }
-          />
+      {/* Leads Pipeline — always visible */}
+      <div>
+        <SectionHeader
+          icon={ClipboardList}
+          title="Incoming Leads"
+          accent="text-violet-400"
+          action={
+            <Link to="/start" className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-semibold">
+              Share Intake Link <ArrowRight size={12} className="inline" />
+            </Link>
+          }
+        />
+        {leads.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
+            <p className="text-slate-400 text-sm mb-2">No leads yet.</p>
+            <p className="text-slate-500 text-xs mb-4">Share your public intake link to start receiving potential clients.</p>
+            <Link to="/intake" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors">
+              <ArrowRight size={14} /> View Public Intake Form
+            </Link>
+          </div>
+        ) : (
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
             {leads.map(lead => (
               <div
@@ -417,8 +430,8 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

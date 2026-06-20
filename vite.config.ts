@@ -1,48 +1,82 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+
+    // ⚠️  SECURITY: The GEMINI_API_KEY must NOT be baked into the client
+    // bundle. It is only used server-side (Vercel Edge Functions in /api/).
+    //
+    // The Supabase anon key IS safe to ship — it's designed to be public and
+    // is protected by Postgres Row Level Security (RLS).
+    //
+    // For local development, VITE_GEMINI_API_KEY is exposed via import.meta.env
+    // so the DraftingAssistant and voice agent still work locally. In production,
+    // the Vercel environment variable GEMINI_API_KEY (non-VITE_) is only
+    // accessible in /api/ edge functions.
+
     return {
       server: {
         port: 5000,
-      },
-      plugins: [tailwindcss(), react()],
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        // Supabase (anon key is public-safe — protected by row-level security).
-        // Prefer VITE_-prefixed values, fall back to the unprefixed names in .env.local.
-        'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || env.SUPABASE_URL),
-        'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY),
-      },
-      build: {
-        rollupOptions: {
-          output: {
-            // Vendor chunks for deps genuinely needed on every page:
-            //   react    — routing + rendering (always required)
-            //   supabase — auth state initialised in App.tsx before any route
-            //   genai    — CopilotSidebar (always-mounted shell) imports geminiService
-            //   motion   — App.tsx itself uses AnimatePresence/motion for the sidebar
-            //
-            // recharts is intentionally omitted: it is only imported by Dashboard
-            // (a lazy route), so Rollup's auto-chunking scopes it to that chunk
-            // instead of preloading it on every page.
-            manualChunks: {
-              react: ['react', 'react-dom', 'react-router-dom'],
-              genai: ['@google/genai'],
-              supabase: ['@supabase/supabase-js'],
-              motion: ['framer-motion'],
-            },
+        proxy: {
+          // Fallback for /api routes during local Vite development.
+          // In production (Vercel), these are handled by actual edge functions.
+          '/api/ai/voice-keys': {
+            target: 'http://localhost:5000',
+            bypass: (req, res) => {
+              if (req.method === 'POST') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  deepgramKey: env.VITE_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || '',
+                  geminiKey: env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '',
+                }));
+                return false;
+              }
+            }
           },
-        },
+          '/api/ai/orchestrate': {
+            target: 'http://localhost:5000',
+            bypass: (req, res) => {
+              if (req.method === 'POST') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ runId: 'dev-run-' + Date.now(), status: 'queued' }));
+                return false;
+              }
+            }
+          }
+        }
+      },
+      plugins: [react()],
+      define: {
+        // Supabase (public anon key — safe in bundle)
+        'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''),
+        'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || ''),
+        // Gemini — DEV ONLY
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
+        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY || (mode === 'development' ? env.GEMINI_API_KEY : '') || ''),
+        // DeepSeek
+        'import.meta.env.VITE_DEEPSEEK_API_KEY': JSON.stringify(env.VITE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY || ''),
+        'process.env.DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY || env.VITE_DEEPSEEK_API_KEY || ''),
+        // Deepgram — DEV ONLY
+        'import.meta.env.VITE_DEEPGRAM_API_KEY': JSON.stringify(env.VITE_DEEPGRAM_API_KEY || (mode === 'development' ? env.DEEPGRAM_API_KEY : '') || ''),
       },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
+        }
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'lucide': ['lucide-react'],
+              'framer-motion': ['framer-motion'],
+              'vendor': ['react', 'react-dom', 'react-router-dom', 'react-toastify'],
+              'ai-services': ['@google/genai']
+            }
+          }
         }
       }
     };

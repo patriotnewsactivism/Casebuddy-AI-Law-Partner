@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { AppContext } from '../App';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
-import { generateWarRoomBriefing, WarRoomBriefing, WarRoomTask } from '../services/geminiService';
+import { generateWarRoomBriefing } from '../services/geminiService';
+import { WarRoomBriefing, WarRoomTask } from '../types';
 import { toast } from 'react-toastify';
 
 const STORAGE_KEY = (caseId: string) => `warroom_briefing_${caseId}`;

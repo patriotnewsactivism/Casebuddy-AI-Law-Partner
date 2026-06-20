@@ -6,6 +6,33 @@ import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
 import { GoogleGenAI } from '@google/genai';
 
+// ── Supabase deadline sync ────────────────────────────────────────────────────
+const syncDeadlinesToCloud = async (deadlines: any[]) => {
+  try {
+    const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
+    if (!isSupabaseConfigured) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    const firmId = localStorage.getItem('casebuddy_firm_id') || 'default';
+    const rows = deadlines.map(d => ({
+      id: d.id,
+      firm_id: firmId,
+      case_title: d.caseTitle,
+      label: d.label,
+      type: d.type,
+      due_date: d.dueDate,
+      reminder_days: d.reminderDays || 7,
+      notes: d.notes || '',
+      completed: d.completed || false,
+    }));
+    if (rows.length > 0) {
+      await sb.from('agent_deadlines').upsert(rows, { onConflict: 'id' });
+    }
+  } catch { /* fail silently */ }
+};
+
+
+
 const SOL = OPERATIONAL_AGENTS.find(a => a.id === 'sol')!;
 const STORAGE_KEY = 'casebuddy_deadlines';
 
@@ -124,7 +151,31 @@ const DeadlineTracker: React.FC = () => {
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(deadlines)); } catch {}
+    syncDeadlinesToCloud(deadlines);
   }, [deadlines]);
+  // ── Sol background deadline watcher ─────────────────────────────────────────
+  // Runs on mount + every 6 hours to alert on overdue/imminent deadlines
+  useEffect(() => {
+    const checkDeadlines = () => {
+      const overdue = deadlines.filter(d => !d.completed && daysUntil(d.dueDate) < 0);
+      const urgent  = deadlines.filter(d => !d.completed && daysUntil(d.dueDate) >= 0 && daysUntil(d.dueDate) <= 3);
+      if (overdue.length > 0) {
+        toast.error(`⚠️ ${overdue.length} deadline${overdue.length > 1 ? 's' : ''} OVERDUE — ${overdue[0].label || overdue[0].caseTitle}`, { autoClose: 8000 });
+      } else if (urgent.length > 0) {
+        toast.warning(`⏰ ${urgent.length} deadline${urgent.length > 1 ? 's' : ''} due within 3 days — ${urgent[0].label || urgent[0].caseTitle}`, { autoClose: 6000 });
+      }
+    };
+
+    // Check immediately on load
+    if (deadlines.length > 0) checkDeadlines();
+
+    // Re-check every 6 hours
+    const interval = setInterval(checkDeadlines, 6 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
 
   const calculateSol = async () => {
     if (!solForm.jurisdiction.trim() || !solForm.claimType.trim()) {

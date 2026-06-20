@@ -3,11 +3,8 @@ import React, { useState, useContext, useRef, useEffect } from 'react';
 import { AppContext } from '../App';
 import { Juror, JuryDeliberation, JuryVerdict } from '../types';
 import { Users, Play, AlertCircle, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle, MessageSquare, Loader2, Info, Brain, Scale } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
 import { Link } from 'react-router-dom';
-
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+import { deepseekChat } from '../services/deepseek';
 
 // Generate diverse jury pool
 const generateJuryPool = (): Juror[] => {
@@ -123,25 +120,15 @@ Return a JSON array of deliberation statements in this format:
 ]
 `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                jurorId: { type: Type.STRING },
-                statement: { type: Type.STRING }
-              }
-            }
-          }
-        }
+      const text = await deepseekChat({
+        systemInstruction: 'You are simulating a jury deliberation. Return ONLY a valid JSON array, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+        maxTokens: 4000,
+        jsonMode: true,
       });
 
-      const deliberationData = JSON.parse(response.text || '[]');
+      const deliberationData = JSON.parse(text || '[]');
 
       // Animate deliberations appearing one by one
       for (let i = 0; i < deliberationData.length; i++) {
@@ -193,33 +180,15 @@ Return JSON with:
 - strengths: array of case strengths identified
 `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
-        config: {
-          thinkingConfig: { thinkingBudget: 2048 },
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              verdict: { type: Type.STRING, enum: ['guilty', 'not guilty', 'hung'] },
-              confidence: { type: Type.NUMBER },
-              voteTally: {
-                type: Type.OBJECT,
-                properties: {
-                  guilty: { type: Type.NUMBER },
-                  notGuilty: { type: Type.NUMBER }
-                }
-              },
-              reasoning: { type: Type.STRING },
-              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-              strengths: { type: Type.ARRAY, items: { type: Type.STRING } }
-            }
-          }
-        }
+      const text = await deepseekChat({
+        systemInstruction: 'You are a senior jury analyst. Return ONLY valid JSON, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 2000,
+        jsonMode: true,
       });
 
-      const verdictData = JSON.parse(response.text || '{}');
+      const verdictData = JSON.parse(text || '{}');
       setVerdict(verdictData);
       setPhase('verdict');
       setIsDeliberating(false);

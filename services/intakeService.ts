@@ -1,12 +1,16 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { getGeminiKey } from './runtimeKeys';
 import { IntakeData, IntakeScore } from '../types';
 import { LEGAL_SPECIALISTS } from '../agents/personas';
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
 
-const getApiKey = () =>
-  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
-
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+// Lazy proxy — reads the key fresh on every call so it works even if the key
+// was fetched after module load (e.g. after the voice session starts).
+const ai = new Proxy({} as InstanceType<typeof GoogleGenAI>, {
+  get(_target, prop) {
+    return (new GoogleGenAI({ apiKey: getGeminiKey() }) as any)[prop];
+  },
+});
 
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
 // manual review; anything under REVIEW is politely declined.

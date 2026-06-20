@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { FileText, Download, Copy, Loader, ChevronDown, Sparkles } from 'lucide-react';
+import { deepseekChat } from '../services/deepseek';
 
 const DOCUMENT_TYPES = [
   { id: 'complaint', label: 'Complaint / Petition', icon: '⚖️', desc: 'Initiating pleading to start a lawsuit' },
@@ -51,8 +52,7 @@ Draft the complete ${docLabel} now:`;
 };
 
 const DocumentCenter: React.FC = () => {
-  const { cases, activeCaseId } = useContext(AppContext);
-  const activeCase = cases?.find((c: any) => c.id === activeCaseId) || cases?.[0];
+  const { cases, activeCase } = useContext(AppContext);
 
   const [selectedDoc, setSelectedDoc] = useState('complaint');
   const [jurisdiction, setJurisdiction] = useState('');
@@ -66,20 +66,15 @@ const DocumentCenter: React.FC = () => {
     setLoading(true);
     setGeneratedDoc('');
     try {
-      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
       const prompt = buildPrompt(selectedDoc, selectedCase, customInstructions, jurisdiction);
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
-        }),
+      const text = await deepseekChat({
+        systemInstruction: 'You are an expert legal document drafter. Return only the document text, no markdown.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.4,
+        maxTokens: 4096,
       });
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Failed to generate document. Please try again.';
-      setGeneratedDoc(text);
+      setGeneratedDoc(text || 'Failed to generate document. Please try again.');
     } catch (e) {
       setGeneratedDoc('Error generating document. Please check your API configuration.');
     } finally {

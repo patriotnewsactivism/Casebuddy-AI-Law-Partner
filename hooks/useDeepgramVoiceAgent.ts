@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { playRingback, Ringback } from '../utils/phoneSound';
+import { getSession } from '../services/authService';
+import { setRuntimeKeys } from '../services/runtimeKeys';
 
 // Live voice via the Deepgram Voice Agent API:
-//   Deepgram Nova (ears) -> Gemini 2.5 Pro (brain, your key) -> Aura-2 (mouth)
+//   Deepgram Nova (ears) -> Gemini 2.5 Flash (brain) -> Aura-2 (mouth)
 // Single WebSocket at wss://agent.deepgram.com/v1/agent/converse.
+//
+// API keys are fetched at runtime from /api/ai/voice-keys (behind auth)
+// or /api/ai/voice-keys-public (no auth, for public intake page)
+// so they never appear in the JS bundle.
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
-// Minimum time the line "rings" before the agent picks up — even on a fast
-// connection, so it reads like a real phone call rather than an instant answer.
-const RING_MIN_MS = 2200;
 
 // Turn-taking. We listen with Flux, Deepgram's conversational model, because
 // Nova-3's turn detection cuts people off when they pause mid-thought. Flux lets
@@ -37,13 +39,23 @@ export interface VoiceTurn {
 }
 
 export interface UseDeepgramVoiceAgentOptions {
-  /** Aura-2 voice model id, e.g. "aura-2-helena-en". */
+  /** Aura-2 voice model id, e.g. "aura-2-thalia-en". */
   voiceModel: string;
   /** Gemini system prompt (persona). */
   systemInstruction: string;
   /** First line the agent speaks on connect. */
   greeting: string;
   caseContext?: string;
+  /**
+   * Set to true to use the public (no-auth) key endpoint.
+   * Use this for pages accessible without login (e.g. PublicIntake).
+   */
+  publicEndpoint?: boolean;
+  /**
+   * Playback speed multiplier for Aura-2 TTS. 1.0 = normal, 1.15 = slightly faster.
+   * Deepgram supports 0.5–1.5. Defaults to 1.1 for a natural, quick pace.
+   */
+  speakingRate?: number;
 }
 
 export interface UseDeepgramVoiceAgentResult {
@@ -58,10 +70,54 @@ export interface UseDeepgramVoiceAgentResult {
   stop: () => void;
 }
 
-const getDeepgramKey = () =>
-  import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '';
-const getGeminiKey = () =>
-  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
+/**
+ * Fetch API keys from the server at runtime (never baked into the bundle).
+ * Falls back to env vars for local development only.
+ */
+const fetchVoiceKeys = async (
+  publicEndpoint = false
+): Promise<{ deepgramKey: string; geminiKey: string }> => {
+  // Public intake path — no auth required
+  if (publicEndpoint) {
+    try {
+      const resp = await fetch('/api/ai/voice-keys-public', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.deepgramKey) return { deepgramKey: data.deepgramKey, geminiKey: data.geminiKey || '' };
+      }
+    } catch {
+      // Fall through to env var fallback below
+    }
+  } else {
+    // Authenticated path — verify Supabase session first
+    try {
+      const session = await getSession();
+      if (session?.access_token) {
+        const resp = await fetch('/api/ai/voice-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.deepgramKey && data.geminiKey) return data;
+        }
+      }
+    } catch {
+      // Fall through to env var fallback
+    }
+  }
+
+  // Local dev fallback — reads from import.meta.env (only available in dev builds)
+  const deepgramKey = (import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '').trim();
+  const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '').trim();
+  return { deepgramKey, geminiKey };
+};
 
 export function useDeepgramVoiceAgent(
   options: UseDeepgramVoiceAgentOptions
@@ -83,17 +139,9 @@ export function useDeepgramVoiceAgent(
   const nextStartRef = useRef(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const captionTimer = useRef<any>(null);
-  const ringRef = useRef<Ringback | null>(null);
-  const pickupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const optsRef = useRef(options);
   optsRef.current = options;
-
-  const clearRing = useCallback(() => {
-    if (pickupTimerRef.current) { clearTimeout(pickupTimerRef.current); pickupTimerRef.current = null; }
-    ringRef.current?.stop();
-    ringRef.current = null;
-  }, []);
 
   // Stop the agent's voice gracefully. Instead of hard-stopping every buffer
   // (which clips her mid-word and sounds jarring), ramp the gain down fast, then
@@ -125,7 +173,6 @@ export function useDeepgramVoiceAgent(
   }, []);
 
   const stop = useCallback(() => {
-    clearRing();
     try { processorRef.current?.disconnect(); } catch { /* noop */ }
     processorRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -147,7 +194,7 @@ export function useDeepgramVoiceAgent(
     setLiveCaption(null);
     setInputLevel(0);
     setAgentSpeaking(false);
-  }, [clearRing]);
+  }, []);
 
   const playAudioChunk = useCallback(async (buffer: ArrayBuffer) => {
     const outputCtx = outputCtxRef.current;
@@ -190,7 +237,6 @@ export function useDeepgramVoiceAgent(
   const handleServerMessage = useCallback((data: any) => {
     const type = data.type;
     if (type === 'UserStartedSpeaking') {
-      // Barge-in: stop the agent immediately so you can interrupt.
       clearPlayback();
       setActiveSpeaker('you');
       return;
@@ -215,35 +261,44 @@ export function useDeepgramVoiceAgent(
       return;
     }
     if (type === 'Error') {
+      console.error('[VoiceAgent] Error event:', JSON.stringify(data));
       setError(data.description || data.message || 'Voice agent error.');
       setStatus('error');
     }
   }, [clearPlayback]);
 
   const start = useCallback(async () => {
-    const dgKey = getDeepgramKey();
-    const geminiKey = getGeminiKey();
-    if (!dgKey) {
-      setError('Deepgram key not found. Set VITE_DEEPGRAM_API_KEY to enable live voice.');
-      setStatus('error');
-      return;
-    }
-    if (!geminiKey) {
-      setError('Gemini key not found. Set VITE_GEMINI_API_KEY to power the conversation.');
-      setStatus('error');
-      return;
-    }
-
     setError(null);
     setStatus('connecting');
     setTranscript([]);
 
-    // Starting the ring here — inside the click gesture — also unlocks audio
-    // output on iOS Safari before any of the setup below.
-    clearRing();
-    const ringback = playRingback();
-    ringRef.current = ringback;
-    const ringStartedAt = Date.now();
+    const opts = optsRef.current;
+
+    // Fetch keys from server (never baked into bundle)
+    let dgKey: string;
+    let geminiKey: string;
+    try {
+      const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
+      dgKey = keys.deepgramKey.trim();
+      geminiKey = keys.geminiKey.trim();
+      // Cache keys for use by intakeService and other client-side services
+      setRuntimeKeys({ deepgramKey: dgKey, geminiKey });
+    } catch {
+      setError('Could not retrieve voice credentials. Please try again.');
+      setStatus('error');
+      return;
+    }
+
+    if (!dgKey) {
+      setError('Voice service is not available right now. Please try again shortly.');
+      setStatus('error');
+      return;
+    }
+    if (!geminiKey) {
+      setError('AI service is not available right now. Please try again shortly.');
+      setStatus('error');
+      return;
+    }
 
     try {
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_RATE });
@@ -266,26 +321,18 @@ export function useDeepgramVoiceAgent(
         throw new Error('Microphone access denied. Allow mic access (and use HTTPS) to talk with the team.');
       }
 
-      // Browser-safe auth: pass the key via the Sec-WebSocket-Protocol subprotocols.
-      const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey]);
+      const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey.trim()]);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
-      const opts = optsRef.current;
       const prompt = opts.caseContext
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
 
-      // "Picks up" the line: stop the ring, hand the agent its configuration
-      // (which makes it speak the greeting), and open the mic. Held until the
-      // socket is actually open AND the minimum ring time has elapsed, so a
-      // fast connection still feels like a real call instead of an instant answer.
-      const pickUp = () => {
-        if (pickupTimerRef.current) { clearTimeout(pickupTimerRef.current); pickupTimerRef.current = null; }
-        ringback.stop();
-        if (ringRef.current === ringback) ringRef.current = null;
-        if (ws.readyState !== WebSocket.OPEN) return;
+      // Speaking rate: slightly faster than default for a more natural, quick pace
+      const speakRate = opts.speakingRate ?? 1.1;
 
+      ws.onopen = () => {
         const settings = {
           type: 'Settings',
           audio: {
@@ -307,21 +354,23 @@ export function useDeepgramVoiceAgent(
               },
             },
             think: {
-              provider: { type: 'google' },
-              endpoint: {
-                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse',
-                headers: { 'x-goog-api-key': geminiKey },
-              },
+              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.6 },
               prompt,
             },
-            speak: { provider: { type: 'deepgram', model: opts.voiceModel } },
+            speak: {
+              provider: {
+                type: 'deepgram',
+                model: opts.voiceModel,
+                // speed: slightly faster than default, keeps voice natural without sounding rushed
+                speed: speakRate,
+              },
+            },
             greeting: opts.greeting,
           },
         };
         ws.send(JSON.stringify(settings));
         setStatus('live');
 
-        // Stream mic audio up as raw linear16 PCM frames.
         const source = inputCtx.createMediaStreamSource(micStream);
         const processor = inputCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
@@ -341,12 +390,6 @@ export function useDeepgramVoiceAgent(
         processor.connect(inputCtx.destination);
       };
 
-      ws.onopen = () => {
-        const remaining = Math.max(0, RING_MIN_MS - (Date.now() - ringStartedAt));
-        if (remaining === 0) pickUp();
-        else pickupTimerRef.current = setTimeout(pickUp, remaining);
-      };
-
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           playAudioChunk(event.data);
@@ -356,23 +399,20 @@ export function useDeepgramVoiceAgent(
       };
 
       ws.onerror = () => {
-        clearRing();
         setError('The voice line hit an error. Please try again.');
         setStatus('error');
       };
       ws.onclose = () => {
-        clearRing();
         if (status !== 'error') stop();
       };
     } catch (e) {
-      clearRing();
       const message = e instanceof Error ? e.message : 'Could not connect the voice line.';
       setError(message);
       setStatus('error');
       stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearRing, handleServerMessage, playAudioChunk, stop]);
+  }, [handleServerMessage, playAudioChunk, stop]);
 
   useEffect(() => () => stop(), [stop]);
 

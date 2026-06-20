@@ -9,8 +9,6 @@
 -- signed-in user's firm_id JWT claim so one firm can never see another's.
 
 -- ── cases ────────────────────────────────────────────────────────────────
--- Replace the open "anyone with the anon key" policy with one that requires
--- a signed-in user whose firm_id (in their JWT user_metadata) matches the row.
 drop policy if exists "cases_anon_all" on public.cases;
 
 create policy "cases_same_firm_authenticated"
@@ -20,10 +18,6 @@ create policy "cases_same_firm_authenticated"
   with check (firm_id = (auth.jwt() -> 'user_metadata' ->> 'firm_id'));
 
 -- ── intake_cases ─────────────────────────────────────────────────────────
--- Prospects must still be able to submit an intake anonymously (that's the
--- whole point of the public intake link) — leave INSERT open. Reading and
--- updating prospect data (names, contact info, case summaries) must require
--- a signed-in attorney.
 drop policy if exists "read intakes" on public.intake_cases;
 create policy "read intakes"
   on public.intake_cases for select
@@ -36,3 +30,7 @@ create policy "update intake status"
   to authenticated
   using (true)
   with check (true);
+
+-- Note: the original "anon can submit intake" INSERT policy on intake_cases
+-- is deliberately left untouched/open so the public intake link continues
+-- to work for anonymous prospects.

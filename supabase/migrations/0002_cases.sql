@@ -10,6 +10,21 @@ create table if not exists public.cases (
   data jsonb not null
 );
 
+-- Function to handle updated_at
+create or replace function public.handle_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- Trigger for cases
+create trigger set_updated_at
+before update on public.cases
+for each row
+execute function public.handle_updated_at();
+
 -- Indexes
 create index if not exists cases_firm_id_idx on public.cases (firm_id);
 create index if not exists cases_updated_at_idx on public.cases (updated_at desc);

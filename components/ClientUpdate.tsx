@@ -2,9 +2,11 @@ import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateClientUpdate } from '../services/geminiService';
 import { sendCaseUpdateEmail } from '../services/integrationService';
-import { Mail, Loader, Copy, Download, RefreshCw, Check, Send } from 'lucide-react';
+import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer } from 'lucide-react';
+import { printAsPdf, letterToPdfHtml } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const SIERRA = OPERATIONAL_AGENTS.find(a => a.id === 'sierra')!;
@@ -100,6 +102,16 @@ const ClientUpdate = () => {
     URL.revokeObjectURL(url);
   };
 
+  const printLetterAsPdf = () => {
+    if (!letter || !activeCase) return;
+    const html = letterToPdfHtml({
+      to: clientName,
+      re: activeCase.title,
+      body: letter.fullLetter
+    });
+    printAsPdf(`Letter to ${clientName}`, html);
+  };
+
   const sendEmail = async () => {
     if (!letter || !activeCase || !clientEmail.trim()) return;
     setSending(true);
@@ -134,6 +146,7 @@ const ClientUpdate = () => {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <AgentHeader agent={SIERRA} compact />
+      <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">
         <Mail className="text-gold-500" size={32} />
         <div>
@@ -219,6 +232,10 @@ const ClientUpdate = () => {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${copied ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
                   >
                     {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+                  </button>
+                  <button onClick={printLetterAsPdf}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">
+                    <Printer size={14} /> PDF
                   </button>
                   <button onClick={downloadLetter}
                     className="flex items-center gap-2 px-3 py-2 bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold rounded-lg text-sm"

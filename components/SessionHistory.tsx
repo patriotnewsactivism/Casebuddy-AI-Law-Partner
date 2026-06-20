@@ -31,7 +31,7 @@ const SessionHistory = () => {
     if (window.confirm('Delete this session? This cannot be undone.')) {
       const updated = sessions.filter(s => s.id !== sessionId);
       setSessions(updated);
-      localStorage.setItem('lexsim_trial_sessions', JSON.stringify(updated));
+      localStorage.setItem('casebuddy_trial_sessions', JSON.stringify(updated));
       if (selectedSession?.id === sessionId) {
         setSelectedSession(null);
       }
@@ -71,7 +71,7 @@ const SessionHistory = () => {
       .join('\n\n');
 
     const content = `
-LexSim Trial Session Transcript
+CaseBuddy Trial Session Transcript
 ================================
 
 Case: ${session.caseTitle}

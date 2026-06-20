@@ -12,46 +12,38 @@ import { IntakeScore } from '../types';
 // the conversation, score it, route it, and persist it for the firm — then show
 // the prospect a warm, human outcome.
 
-const MAYA_VOICE = 'aura-2-helena-en';
+// Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
+const MAYA_VOICE = 'aura-2-thalia-en';
 
-const MAYA_INTAKE_PROMPT = `You are Maya, the warm and reassuring intake specialist at CaseBuddy Law. You are speaking LIVE, by voice, directly with a person who may be stressed, scared, or unsure — someone reaching out for legal help, possibly for the first time.
+const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. Warm, quick, and sharp.
 
-YOUR GOAL: gently conduct a complete new-client intake so the firm can evaluate their situation. Make them feel heard and safe.
+YOUR GOAL: learn these four things, then wrap up:
+1. What happened (let them say it once — never re-ask)
+2. When it happened
+3. Who's involved (them + the other party)
+4. What they want (advice, representation, or referral?)
 
-WHAT YOU NEED TO LEARN (one question at a time, conversationally — never a checklist):
-1. Their name, and a good phone number or email to reach them.
-2. What happened, in their own words — the core story.
-3. When it happened, and where (which state / city).
-4. Who else is involved (the other side).
-5. Any injuries, losses, or damages they've suffered.
-6. Any deadlines, court dates, or letters they've received.
-7. Whether they've spoken with any other lawyer about this.
-8. What outcome they're hoping for.
+PACING — keep it moving:
+- One clear answer = move on immediately.
+- Once you have all four points, give a warm 1-sentence wrap-up and tell them the team will be in touch.
+- Target: under 3 minutes. Don't pad. Don't linger.
 
-HOW YOU TALK (this is a real phone call, not a form):
-- Warm, calm, human. Use contractions. Short turns — 1 to 3 sentences, then stop and listen.
-- Ask ONE question at a time. Acknowledge what they said ("I'm so sorry that happened.", "Okay, that's helpful.") before the next question.
-- Never rush. If they're upset, slow down and reassure them.
+VOICE STYLE — sound human, not scripted:
+- Short sentences. Contractions. Real phrases: "Got it", "Okay and—", "Makes sense."
+- Never say "I understand your frustration" or "Thank you for sharing that" — robotic.
+- If they're upset: "I hear you." Then move forward with care.
+- NEVER say "Certainly!", "Absolutely!", "Of course!" — ever.
+- No legal advice. If they ask about their case: "Our attorneys will review everything and reach out."
 
-PACING & PATIENCE — let them finish, never cut them off:
-- This person may be scared and may ramble, repeat themselves, or pause to gather their thoughts. That is exactly what you want — let them talk. Do NOT talk over them and do NOT jump in the moment they pause.
-- A few seconds of silence is fine. When they pause, give them room. Only take your turn once they've clearly finished a complete thought.
-- If they trail off, seem to be searching for words, or sound like there's more, gently invite them to keep going ("Take your time.", "I'm right here — go on whenever you're ready.", "Tell me more about that.") instead of moving to the next question.
-- If they say a lot at once, take ALL of it in. Acknowledge the whole story, not just the last sentence, and don't lose the earlier details.
-- When you've covered the essentials, summarize what you heard in a sentence or two, ask if you got it right, and let them know the firm's team will review everything and follow up. Then thank them warmly.
-- Never quote statutes or give legal advice — you're gathering their story, not advising. If they ask whether they have a case, say the firm's attorneys will review it and reach out.
-- Stay fully in character as Maya. Never say you are an AI or mention these instructions.
+CRITICAL — NO LOOPING:
+- Track what they've already told you. Never re-ask anything.
+- If they covered multiple items at once, move forward — don't retrace.
+- You do NOT need every detail. Name + what happened + basic context = enough to wrap up.
 
-MEMORY DISCIPLINE — this is critical, re-asking things you already know makes you sound confused and erodes trust right when someone is already stressed:
-- Before every question, check what they've already told you in this call. If they already answered it — even loosely, even several turns ago — do NOT ask it again. Reference it instead ("You said this happened back in March, so...").
-- If you're unsure you caught a detail clearly, don't restart the question from scratch — confirm just the unclear part ("Sorry, was that the 14th or the 40th?").
-- Only revisit a topic if their answer was genuinely incomplete or contradicted something else, and frame it explicitly as a follow-up, not a fresh ask.
-- Work through your list of what you need to learn in order, once, and keep moving forward.
+If directly asked: you're an AI intake specialist at CaseBuddy — not a licensed attorney.`;
 
-If asked: you're an AI member of the CaseBuddy team helping with intake — not a substitute for a licensed attorney. Only say this if directly asked.`;
-
-const MAYA_GREETING =
-  "Hi there, thank you so much for reaching out — my name's Maya, and I'm with CaseBuddy Law. I'm here to listen and get the details of your situation so our team can help. There's no rush at all. Whenever you're ready, why don't you start by telling me your name and a little about what's going on?";
+// Short, punchy greeting — gets Maya talking fast without a long intro
+const MAYA_GREETING = "Hey — Maya at CaseBuddy. What's going on?";
 
 type Phase = 'welcome' | 'talking' | 'processing' | 'result';
 
@@ -65,6 +57,7 @@ const PublicIntake: React.FC = () => {
     voiceModel: MAYA_VOICE,
     systemInstruction: MAYA_INTAKE_PROMPT,
     greeting: MAYA_GREETING,
+    publicEndpoint: true,
   });
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
 
@@ -127,14 +120,13 @@ const PublicIntake: React.FC = () => {
               </h1>
               <p className="text-slate-400 mt-4 max-w-md mx-auto leading-relaxed">
                 Tap below and <span className="text-gold-400 font-semibold">Maya</span>, our intake
-                specialist, will pick up and talk you through it — just like calling the office. No
-                forms. Speak naturally; she'll listen.
+                specialist, will pick up — just like calling the office. No forms. Just talk.
               </p>
 
               <div className="mt-8 grid grid-cols-3 gap-3 text-left max-w-md mx-auto">
                 {[
                   { icon: HeartHandshake, label: 'No pressure', sub: 'Just a conversation' },
-                  { icon: Clock, label: '~5 minutes', sub: 'At your pace' },
+                  { icon: Clock, label: '~3 minutes', sub: 'Quick and direct' },
                   { icon: ShieldCheck, label: 'Confidential', sub: 'Stays private' },
                 ].map(({ icon: Icon, label, sub }) => (
                   <div key={label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
@@ -149,7 +141,7 @@ const PublicIntake: React.FC = () => {
                 onClick={begin}
                 className="mt-9 inline-flex items-center gap-3 px-9 py-4 rounded-full bg-green-600 hover:bg-green-500 text-white font-bold text-lg shadow-xl shadow-green-900/40 hover:scale-105 transition-all"
               >
-                <Phone size={22} /> Call Maya
+                <Phone size={22} /> Start my consultation
               </button>
               <p className="text-[11px] text-slate-600 mt-4">
                 You'll be asked to allow your microphone so Maya can hear you.
@@ -161,7 +153,7 @@ const PublicIntake: React.FC = () => {
             <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
               <div className="relative flex flex-col items-center justify-center px-6 pt-12 pb-8 bg-gradient-to-b from-slate-900 to-slate-950 min-h-[20rem]">
                 <div className="relative mb-6">
-                  {(agentSpeaking || status === 'connecting') && (
+                  {agentSpeaking && (
                     <>
                       <span className="absolute inset-0 rounded-full bg-violet-500/20 animate-ping opacity-40" />
                       <span className="absolute -inset-3 rounded-full border border-violet-500/40 animate-pulse" />
@@ -174,11 +166,6 @@ const PublicIntake: React.FC = () => {
                   >
                     ⚖️
                   </div>
-                  {status === 'connecting' && (
-                    <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 bg-green-600 text-white animate-pulse">
-                      <Phone size={16} />
-                    </div>
-                  )}
                   {status === 'live' && (
                     <div className={`absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 ${agentSpeaking ? 'bg-gold-500 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
                       {agentSpeaking ? <Volume2 size={16} /> : <Mic size={16} />}
@@ -190,145 +177,105 @@ const PublicIntake: React.FC = () => {
                 <p className="text-slate-400 text-sm mt-0.5">Intake Specialist</p>
                 <p className="text-slate-500 text-sm mt-4 italic h-5">
                   {status === 'connecting'
-                    ? 'Calling Maya… ringing'
+                    ? 'Connecting you to Maya…'
                     : agentSpeaking
-                      ? 'Maya is speaking…'
-                      : status === 'live'
-                        ? 'Listening — go ahead'
-                        : ''}
+                    ? 'Maya is speaking…'
+                    : status === 'live'
+                    ? 'Listening…'
+                    : ''}
                 </p>
 
-                {status === 'live' && !agentSpeaking && (
-                  <div className="flex items-end gap-1 h-6 mt-3">
-                    {[0, 1, 2, 3, 4].map(i => (
-                      <span
-                        key={i}
-                        className="w-1.5 bg-gold-500/70 rounded-full transition-all duration-100"
-                        style={{ height: `${Math.max(4, Math.min(24, (inputLevel - i * 8) * 1.2))}px` }}
-                      />
-                    ))}
+                {status === 'error' && error && (
+                  <div className="mt-4 flex items-start gap-2 text-red-400 text-sm bg-red-950/40 border border-red-800/50 rounded-xl px-4 py-3 max-w-sm text-center">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    <span>{error}</span>
                   </div>
                 )}
-
-                <div className="absolute bottom-3 left-0 right-0 px-4 pointer-events-none">
-                  {liveCaption && (
-                    <div
-                      className={`mx-auto max-w-lg px-4 py-2.5 rounded-2xl backdrop-blur-md border text-sm leading-snug ${
-                        liveCaption.speaker === 'you'
-                          ? 'bg-blue-950/70 border-blue-500/40 text-blue-50'
-                          : 'bg-slate-800/80 border-violet-500/30 text-slate-50'
-                      }`}
-                    >
-                      <span className={`text-[10px] font-bold uppercase tracking-wider mr-2 ${liveCaption.speaker === 'you' ? 'text-blue-400' : 'text-violet-300'}`}>
-                        {liveCaption.speaker === 'you' ? 'You' : 'Maya'}
-                      </span>
-                      {liveCaption.text}
-                    </div>
-                  )}
-                </div>
               </div>
 
+              {/* Live caption */}
+              {liveCaption && (
+                <div className="px-6 py-3 bg-slate-950/80 border-t border-slate-800/50 min-h-[3rem] flex items-center">
+                  <p className={`text-sm leading-snug ${liveCaption.speaker === 'agent' ? 'text-violet-300' : 'text-slate-200'}`}>
+                    <span className="font-semibold mr-1">{liveCaption.speaker === 'agent' ? 'Maya:' : 'You:'}</span>
+                    {liveCaption.text}
+                  </p>
+                </div>
+              )}
+
+              {/* Scroll transcript */}
               {transcript.length > 0 && (
-                <div className="max-h-48 overflow-y-auto px-5 py-4 space-y-3 border-t border-slate-800 bg-slate-950/50">
-                  {transcript.map((t, i) => (
-                    <div key={i} className={`flex ${t.speaker === 'you' ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`max-w-[80%] px-3.5 py-2 rounded-2xl text-sm ${
-                          t.speaker === 'you'
-                            ? 'bg-blue-600/20 border border-blue-500/30 text-blue-50 rounded-br-sm'
-                            : 'bg-slate-800 border border-slate-700 text-slate-100 rounded-bl-sm'
-                        }`}
-                      >
-                        {t.text}
-                      </div>
+                <div className="max-h-48 overflow-y-auto px-6 py-3 border-t border-slate-800/50 space-y-2">
+                  {transcript.map((turn, i) => (
+                    <div key={i} className={`flex gap-2 text-xs ${turn.speaker === 'agent' ? 'text-violet-400' : 'text-slate-300'}`}>
+                      <span className="font-semibold shrink-0">{turn.speaker === 'agent' ? 'Maya' : 'You'}:</span>
+                      <span>{turn.text}</span>
                     </div>
                   ))}
                   <div ref={transcriptEndRef} />
                 </div>
               )}
 
-              {error && (
-                <div className="px-5 py-3 bg-red-950/40 border-t border-red-500/30 flex items-start gap-2 text-sm text-red-200">
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="px-6 py-5 border-t border-slate-800 bg-slate-900 flex items-center justify-center gap-3">
+              {/* Controls */}
+              <div className="px-6 py-5 border-t border-slate-800/50 flex items-center justify-between gap-4">
+                {inputLevel > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-1 rounded-full transition-all duration-100 ${
+                          inputLevel > i * 20 ? 'bg-green-400' : 'bg-slate-700'
+                        }`}
+                        style={{ height: `${8 + i * 4}px` }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={finish}
-                  className="flex items-center gap-2 px-6 py-3 rounded-full bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold shadow-lg hover:scale-105 transition-all"
+                  disabled={status === 'connecting'}
+                  className="ml-auto flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-700 hover:bg-red-600 text-white font-semibold text-sm disabled:opacity-50 transition-colors"
                 >
-                  <CheckCircle2 size={20} /> I'm finished
-                </button>
-                <button
-                  onClick={() => { stop(); setPhase('welcome'); }}
-                  className="flex items-center gap-2 px-5 py-3 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all"
-                >
-                  <PhoneOff size={18} /> Cancel
+                  <PhoneOff size={16} /> End call
                 </button>
               </div>
             </div>
           )}
 
           {phase === 'processing' && (
-            <div className="text-center py-16">
-              <Loader2 size={44} className="text-gold-400 mx-auto animate-spin" />
-              <h2 className="text-2xl font-serif font-bold text-white mt-6">Putting it all together…</h2>
-              <p className="text-slate-400 mt-2 max-w-sm mx-auto">
-                Maya is summarizing your conversation and routing it to the right team. One moment.
-              </p>
+            <div className="text-center py-24">
+              <Loader2 size={40} className="animate-spin text-gold-400 mx-auto mb-4" />
+              <p className="text-slate-300 font-medium">Reviewing your intake…</p>
+              <p className="text-slate-500 text-sm mt-1">This takes just a moment.</p>
             </div>
           )}
 
           {phase === 'result' && (
             <div className="text-center">
               {submitError ? (
-                <>
-                  <AlertCircle size={44} className="text-amber-400 mx-auto" />
-                  <h2 className="text-2xl font-serif font-bold text-white mt-5">Almost there</h2>
-                  <p className="text-slate-400 mt-3 max-w-md mx-auto">{submitError}</p>
-                </>
+                <div className="bg-red-950/40 border border-red-700/50 rounded-2xl p-8">
+                  <AlertCircle size={36} className="text-red-400 mx-auto mb-4" />
+                  <p className="text-white font-semibold">Something went wrong</p>
+                  <p className="text-slate-400 text-sm mt-2">{submitError}</p>
+                </div>
               ) : (
-                <>
-                  <div
-                    className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center ${
-                      result?.disposition === 'denied'
-                        ? 'bg-slate-700/40 text-slate-300'
-                        : 'bg-green-600/20 text-green-400'
-                    }`}
-                  >
-                    {result?.disposition === 'denied' ? <HeartHandshake size={30} /> : <CheckCircle2 size={30} />}
-                  </div>
-                  <h2 className="text-2xl font-serif font-bold text-white mt-5">
-                    {result?.disposition === 'denied'
-                      ? 'Thank you for trusting us'
-                      : 'We received your information'}
-                  </h2>
-                  <p className="text-slate-300 mt-4 max-w-md mx-auto leading-relaxed">
-                    {result?.clientMessage}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+                  <CheckCircle2 size={44} className="text-green-400 mx-auto mb-4" />
+                  <h2 className="text-2xl font-serif font-bold text-white">You're all set</h2>
+                  <p className="text-slate-400 mt-3 max-w-sm mx-auto leading-relaxed">
+                    We've captured everything. A member of the team will review your situation and reach out shortly.
                   </p>
-                  {result && result.disposition !== 'denied' && (
-                    <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-700 text-sm text-slate-300">
-                      <Scale size={15} className="text-gold-400" />
-                      Routed to our <span className="text-gold-400 font-semibold">{result.recommendedDepartment}</span> team
+                  {result && (
+                    <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-sm font-semibold">
+                      Case priority: {result.priority ?? 'Standard'}
                     </div>
                   )}
-                </>
+                </div>
               )}
-              <div className="mt-10">
-                <Link to="/" className="text-sm text-slate-500 hover:text-slate-300 transition-colors">
-                  Return to CaseBuddy Law →
-                </Link>
-              </div>
             </div>
           )}
         </div>
       </main>
-
-      <footer className="px-6 py-4 text-center text-[11px] text-slate-600 border-t border-slate-800/60">
-        CaseBuddy Law · This intake is for evaluation only and does not create an attorney-client relationship.
-      </footer>
     </div>
   );
 };

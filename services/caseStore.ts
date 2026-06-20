@@ -12,7 +12,7 @@
  * share the firm_id (e.g. via the Settings page) to share cases.
  */
 
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 import { Case } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { saveCases, loadCases } from '../utils/storage';
@@ -36,10 +36,11 @@ export const setFirmId = (id: string) => {
 };
 
 /**
- * Bridges the local firm_id into the signed-in user's account metadata so it
- * appears as a JWT claim (auth.jwt() -> 'user_metadata' ->> 'firm_id'), which
- * is what the Postgres RLS policies on `cases` check against. Without this,
- * an authenticated user has no provable link to a firm_id at all.
+ * Bridges the localStorage firm_id into the signed-in user's Supabase
+ * user_metadata so it's available as a JWT claim for Postgres RLS policies
+ * (see supabase/migrations/0003_auth_hardening.sql). Without this, an
+ * authenticated user has no firm_id claim and firm-scoped RLS would match
+ * nothing.
  */
 export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!user) return;
@@ -53,7 +54,6 @@ export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!sb) return;
   const { error } = await sb.auth.updateUser({ data: { firm_id: getFirmId() } });
   if (!error) {
-    // JWT claims are baked in at sign-in; refresh so the new firm_id is usable immediately.
     await sb.auth.refreshSession();
   }
 };
@@ -91,7 +91,7 @@ export const upsertCaseToCloud = async (c: Case): Promise<boolean> => {
   // silently. Swallow to a boolean instead.
   try {
     const { error } = await sb.from(CASES_TABLE).upsert(
-      { id: c.id, firm_id: getFirmId(), data: c, updated_at: new Date().toISOString() },
+      { id: c.id, firm_id: getFirmId(), data: c },
       { onConflict: 'id' }
     );
     return !error;
@@ -111,7 +111,6 @@ export const syncLocalCasesToCloud = async (cases: Case[]): Promise<boolean> => 
     id: c.id,
     firm_id: getFirmId(),
     data: c,
-    updated_at: new Date().toISOString(),
   }));
 
   try {

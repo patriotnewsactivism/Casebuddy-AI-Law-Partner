@@ -37,6 +37,7 @@ export interface Case {
   nextCourtDate: string;
   summary: string;
   winProbability: number;
+  updatedAt?: string;
 }
 
 // ── Intake pipeline ──────────────────────────────────────────────────────────
@@ -170,4 +171,107 @@ export interface Transcription {
   timestamp: number;
   tags?: string[];
   notes?: string;
+}
+
+// ── Evidence (used in EvidenceTimeline) ──────────────────────────────────────
+export interface Evidence {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  dateObtained: string;
+  exhibitNumber?: string;
+  source?: string;
+  status?: string;
+  tags?: string[];
+  notes?: string;
+}
+
+// ── TimelineEvent (used in EvidenceTimeline) ─────────────────────────────────
+export interface TimelineEvent {
+  id: string;
+  date: string;
+  title: string;
+  description: string;
+  type?: string;
+  time?: string;
+  importance: 'low' | 'medium' | 'high' | 'critical';
+  tags?: string[];
+  linkedEvidence?: string[];
+  linkedWitnesses?: string[];
+}
+
+// ── Juror (used in MockJury) ─────────────────────────────────────────────────
+export interface Juror {
+  id: string;
+  name: string;
+  age: number;
+  occupation: string;
+  education: string;
+  avatar: string;
+  background?: string;
+  biases?: string[];
+  persuasionLevel?: number;
+  leaningScore?: number;
+}
+
+// ── JuryDeliberation (used in MockJury) ─────────────────────────────────────
+export interface JuryDeliberation {
+  jurorId: string;
+  statement: string;
+  sentiment?: string;
+}
+
+// ── JuryVerdict (used in MockJury) ──────────────────────────────────────────
+export interface JuryVerdict {
+  verdict: 'guilty' | 'not guilty' | 'hung';
+  confidence: number;
+  voteTally: { guilty: number; notGuilty: number };
+  reasoning: string;
+  strengths: string[];
+  weaknesses: string[];
+}
+
+// ── TrialSession (used in SessionHistory) ───────────────────────────────────
+export interface TrialSession {
+  id: string;
+  caseId?: string;
+  caseTitle?: string;
+  phase: string;
+  mode: string;
+  date: number | string;
+  duration: number;
+  score?: number;
+  transcript: Message[];
+  audioUrl?: string;
+  feedback?: string;
+  metrics?: {
+    objectionsReceived?: number;
+    fallaciesCommitted?: number;
+    avgRhetoricalScore?: number;
+    wordCount?: number;
+    fillerWordsCount?: number;
+  };
+}
+
+// ── War Room ─────────────────────────────────────────────────────────────────
+export interface WarRoomTask {
+  id: string;
+  agent: string;
+  category: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'working' | 'done' | 'error';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  done: boolean;
+  content?: string;
+}
+
+export interface WarRoomBriefing {
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  estimatedTrialReadiness: number;
+  topPriority: string;
+  keyRisks: string[];
+  summary: string;
+  tasks: WarRoomTask[];
 }

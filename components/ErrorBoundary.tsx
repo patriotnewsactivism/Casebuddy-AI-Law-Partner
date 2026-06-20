@@ -1,140 +1,94 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import React, { Component, type ReactNode } from 'react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
+  label?: string;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
+  reloading: boolean;
 }
 
-/**
- * Error Boundary component to catch React component errors
- * and prevent the entire app from crashing
- */
+const isChunkLoadError = (error: Error) =>
+  error?.name === 'ChunkLoadError' ||
+  /loading chunk/i.test(error?.message ?? '') ||
+  /failed to fetch dynamically imported module/i.test(error?.message ?? '') ||
+  /dynamically imported module/i.test(error?.message ?? '');
+
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    };
+    this.state = { hasError: false, error: null, reloading: false };
+    this.handleRetry = this.handleRetry.bind(this);
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    // Update state so the next render will show the fallback UI
-    return {
-      hasError: true,
-      error,
-      errorInfo: null,
-    };
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log error details for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error(`[ErrorBoundary] ${this.props.label ?? 'Component'} crashed:`, error, info.componentStack);
 
-    this.setState({
-      error,
-      errorInfo,
-    });
-
-    // You could also log the error to an error reporting service here
-    // Example: logErrorToService(error, errorInfo);
+    // Chunk load error = stale HTML referencing old hashed assets after a deploy.
+    // Auto-reload once — the fresh HTML will reference the correct chunks.
+    if (isChunkLoadError(error)) {
+      const reloadedKey = '__cb_chunk_reloaded';
+      if (!sessionStorage.getItem(reloadedKey)) {
+        sessionStorage.setItem(reloadedKey, '1');
+        this.setState({ reloading: true });
+        // Small delay so React finishes the current render cycle
+        setTimeout(() => window.location.reload(), 300);
+      }
+    }
   }
 
-  handleReset = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    });
-  };
-
-  handleGoHome = () => {
-    window.location.href = '/';
-  };
+  handleRetry() {
+    this.setState({ hasError: false, error: null, reloading: false });
+  }
 
   render() {
-    if (this.state.hasError) {
-      // Custom fallback UI
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
-      // Default fallback UI
+    if (this.state.reloading) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-          <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-lg p-8">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center">
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-1">Something went wrong</h1>
-                <p className="text-slate-400">
-                  We encountered an unexpected error. Don't worry, your data is safe.
-                </p>
-              </div>
-            </div>
-
-            {process.env.NODE_ENV === 'development' && this.state.error && (
-              <div className="mb-6 bg-slate-950 border border-red-500/30 rounded p-4">
-                <h2 className="text-sm font-semibold text-red-400 mb-2">Error Details (Development Only):</h2>
-                <pre className="text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap">
-                  {this.state.error.toString()}
-                </pre>
-                {this.state.errorInfo && (
-                  <details className="mt-2">
-                    <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-300">
-                      Component Stack
-                    </summary>
-                    <pre className="text-xs text-slate-400 mt-2 overflow-x-auto whitespace-pre-wrap">
-                      {this.state.errorInfo.componentStack}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={this.handleReset}
-                className="flex items-center gap-2 px-4 py-2 bg-gold-500 hover:bg-gold-600 text-slate-950 rounded-lg font-medium transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Try Again
-              </button>
-              <button
-                onClick={this.handleGoHome}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
-              >
-                <Home className="w-4 h-4" />
-                Go Home
-              </button>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-slate-800">
-              <p className="text-sm text-slate-400">
-                If this problem persists, please try:
-              </p>
-              <ul className="mt-2 space-y-1 text-sm text-slate-300">
-                <li>• Refreshing the page</li>
-                <li>• Clearing your browser cache</li>
-                <li>• Checking your internet connection</li>
-                <li>• Contacting support if the issue continues</li>
-              </ul>
-            </div>
-          </div>
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+          <div className="w-10 h-10 rounded-full border-2 border-gold-500/40 border-t-gold-500 animate-spin mb-4" />
+          <p className="text-sm text-slate-400">Updating to the latest version…</p>
         </div>
       );
     }
 
+    if (this.state.hasError) {
+      const label = this.props.label ?? 'This section';
+      const isChunk = isChunkLoadError(this.state.error!);
+      return (
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-4">
+            <AlertCircle size={28} className="text-red-400" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">
+            {isChunk ? 'New version available' : `${label} hit an error`}
+          </h3>
+          <p className="text-sm text-slate-400 max-w-sm mb-1">
+            {isChunk
+              ? 'The app was just updated. Refresh to load the latest version.'
+              : this.state.error?.message || 'Something unexpected happened.'}
+          </p>
+          {!isChunk && (
+            <p className="text-xs text-slate-500 mb-5">
+              If this keeps happening, check your API keys in Settings.
+            </p>
+          )}
+          <button
+            onClick={isChunk ? () => window.location.reload() : this.handleRetry}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600 text-white text-sm font-medium transition-colors mt-4"
+          >
+            <RotateCcw size={15} /> {isChunk ? 'Refresh now' : 'Try Again'}
+          </button>
+        </div>
+      );
+    }
     return this.props.children;
   }
 }

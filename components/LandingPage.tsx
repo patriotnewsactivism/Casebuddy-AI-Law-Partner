@@ -5,7 +5,7 @@ import {
   Scale, Mic, Users, BrainCircuit, TrendingUp, CheckCircle, Zap, Shield,
   Star, ArrowRight, Menu, X, FileAudio, Gavel, UserCheck, ClipboardList,
   FileText, Mail, Archive, BookOpen, ChevronRight, PhoneCall, Network,
-  Inbox, BarChart3
+  Inbox, BarChart3, Lock, AlertTriangle
 } from 'lucide-react';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 
@@ -138,30 +138,6 @@ const PIPELINE_STEPS = [
     border: 'border-orange-500/20',
     title: 'All 8 agents deploy automatically',
     body: 'Accept a lead and CaseBuddy creates the case file and fires all 8 AI agents in parallel. In minutes you have legal research, a motion strategy, a jury analysis, a draft document set, and a client letter — ready to go.',
-  },
-];
-
-const TESTIMONIALS = [
-  {
-    name: 'Sarah Mitchell',
-    role: 'Criminal Defense Attorney',
-    firm: 'Mitchell & Associates',
-    quote: 'CaseBuddy\'s AI jury simulation saved us $15,000 in jury consultant fees and helped us win a difficult case. The 12 AI lawyers let me quickly consult on criminal procedure I haven\'t touched in years.',
-    rating: 5,
-  },
-  {
-    name: 'David Chen',
-    role: 'Senior Litigator',
-    firm: 'Chen Law Group',
-    quote: 'The live voice simulation is like having a sparring partner 24/7. The witness prep packages are exceptional — I walked into cross-examination better prepared than I\'ve ever been.',
-    rating: 5,
-  },
-  {
-    name: 'Maria Rodriguez',
-    role: 'Trial Attorney',
-    firm: 'Rodriguez Legal',
-    quote: 'I use CaseBuddy before every trial. The verdict predictor, the jury simulator, the strategy analysis — this is what BigLaw clients pay consultants six figures for.',
-    rating: 5,
   },
 ];
 
@@ -451,30 +427,6 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── Testimonials ─────────────────────────────────────────────────── */}
-      <section id="testimonials" className="py-12 sm:py-24 bg-gradient-to-b from-transparent via-slate-900/20 to-transparent">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8 sm:mb-14">
-            <p className="text-gold-500 text-xs font-bold uppercase tracking-widest mb-3">Social Proof</p>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif mb-4">Trusted by Winning Attorneys</h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
-            {TESTIMONIALS.map((t, i) => (
-              <div key={i} className="card-premium p-5 sm:p-7 flex flex-col">
-                <StarRating rating={t.rating} />
-                <p className="text-slate-300 my-5 leading-relaxed flex-1 italic text-sm">"{t.quote}"</p>
-                <div className="border-t border-white/5 pt-4">
-                  <p className="font-semibold text-white text-sm">{t.name}</p>
-                  <p className="text-gold-500 text-xs mt-0.5">{t.role}</p>
-                  <p className="text-slate-600 text-xs mt-0.5">{t.firm}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Pricing Preview ───────────────────────────────────────────────── */}
       <section className="py-12 sm:py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -542,6 +494,32 @@ const LandingPage = () => {
               </Link>
             </div>
             <p className="mt-5 text-xs text-slate-600">14-day free trial · No credit card required · Cancel anytime</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Trust & Security ─────────────────────────────────────────── */}
+      <section className="py-16 sm:py-20 border-t border-white/5">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl sm:text-3xl font-serif font-bold mb-8">
+            Built for <span className="text-gradient-gold">Legal Professionals</span>
+          </h2>
+          <div className="grid sm:grid-cols-3 gap-6">
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <Shield size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">Your Data, Your Control</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">Data stored locally or in your private Supabase instance. Export or delete all data anytime. No vendor lock-in.</p>
+            </div>
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <Lock size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">Secure by Design</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">API keys server-side, encrypted auth via Supabase, Row Level Security. Your cases are private to your firm.</p>
+            </div>
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <AlertTriangle size={28} className="text-gold-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold mb-2">AI-Assisted, Not AI-Replaced</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">CaseBuddy is a tool, not a lawyer. AI outputs require attorney review. Clear disclaimers on every AI-generated work product.</p>
+            </div>
           </div>
         </div>
       </section>
