@@ -12,6 +12,21 @@ const OUTPUT_RATE = 24000;
 // connection, so it reads like a real phone call rather than an instant answer.
 const RING_MIN_MS = 2200;
 
+// Turn-taking. We listen with Flux, Deepgram's conversational model, because
+// Nova-3's turn detection cuts people off when they pause mid-thought. Flux lets
+// us tune end-of-turn detection so a stressed, long-winded caller can gather
+// their thoughts (or fully tell their story) without the agent jumping in.
+//   eot_threshold    — higher = more certain the caller is done before we respond
+//                      (fewer false "your turn" interruptions). Range 0.5–0.9.
+//   eot_timeout_ms   — max silence we'll wait through before taking the turn.
+//                      Raised well above the default so natural pauses are fine.
+const LISTEN_MODEL = 'flux-general-en';
+const EOT_THRESHOLD = 0.8;
+const EOT_TIMEOUT_MS = 8000;
+// How quickly we fade the agent's voice out when the caller barges in. A short
+// ramp instead of a hard cut means her words are never abruptly clipped.
+const BARGE_FADE_MS = 90;
+
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
 
@@ -80,11 +95,32 @@ export function useDeepgramVoiceAgent(
     ringRef.current = null;
   }, []);
 
+  // Stop the agent's voice gracefully. Instead of hard-stopping every buffer
+  // (which clips her mid-word and sounds jarring), ramp the gain down fast, then
+  // stop the now-silent sources. The gain is restored to full for the next turn
+  // in playAudioChunk, so a brief false barge-in (a cough, an "mm-hmm") never
+  // leaves her permanently muted.
   const clearPlayback = useCallback(() => {
-    sourcesRef.current.forEach(s => { try { s.stop(); } catch { /* noop */ } });
+    const outputCtx = outputCtxRef.current;
+    const outGain = outGainRef.current;
+    const toStop = Array.from(sourcesRef.current);
     sourcesRef.current.clear();
     nextStartRef.current = 0;
     setAgentSpeaking(false);
+
+    if (outputCtx && outGain) {
+      const now = outputCtx.currentTime;
+      try {
+        outGain.gain.cancelScheduledValues(now);
+        outGain.gain.setValueAtTime(outGain.gain.value, now);
+        outGain.gain.linearRampToValueAtTime(0.0001, now + BARGE_FADE_MS / 1000);
+      } catch { /* noop */ }
+      setTimeout(() => {
+        toStop.forEach(s => { try { s.stop(); } catch { /* noop */ } });
+      }, BARGE_FADE_MS + 20);
+    } else {
+      toStop.forEach(s => { try { s.stop(); } catch { /* noop */ } });
+    }
   }, []);
 
   const stop = useCallback(() => {
@@ -123,6 +159,15 @@ export function useDeepgramVoiceAgent(
     const audioBuffer = outputCtx.createBuffer(1, int16.length, OUTPUT_RATE);
     const channel = audioBuffer.getChannelData(0);
     for (let i = 0; i < int16.length; i++) channel[i] = int16[i] / 32768;
+
+    // Start of a fresh agent turn — restore full volume in case a prior barge-in
+    // faded it out, so she's never left muted by an earlier false interruption.
+    if (sourcesRef.current.size === 0) {
+      try {
+        outGain.gain.cancelScheduledValues(outputCtx.currentTime);
+        outGain.gain.setValueAtTime(1, outputCtx.currentTime);
+      } catch { /* noop */ }
+    }
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
@@ -248,7 +293,18 @@ export function useDeepgramVoiceAgent(
           },
           agent: {
             language: 'en',
-            listen: { provider: { type: 'deepgram', model: 'nova-3' } },
+            listen: {
+              provider: {
+                type: 'deepgram',
+                model: LISTEN_MODEL,
+                encoding: 'linear16',
+                sample_rate: INPUT_RATE,
+                // Be patient: don't take the turn until we're confident the
+                // caller is done, and tolerate long thinking pauses.
+                eot_threshold: EOT_THRESHOLD,
+                eot_timeout_ms: EOT_TIMEOUT_MS,
+              },
+            },
             think: {
               provider: { type: 'google' },
               endpoint: {
