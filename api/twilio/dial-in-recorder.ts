@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+function xmlSafe(url: string): string {
+  return url.replace(/&/g, '&amp;');
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'text/xml');
 
@@ -12,14 +16,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const callSid = String(body.CallSid || query.CallSid || '');
 
   const FROM     = process.env.TWILIO_CALLER_ID || process.env.TWILIO_PHONE_NUMBER || '';
-  const BASE_URL = 'https://casebuddy.live/api/twilio/dial-in-recorder';
+  const BASE     = 'https://casebuddy.live/api/twilio/dial-in-recorder';
 
   console.log(`[recorder] step=${step} digits="${digits}" stored="${stored}" callSid=${callSid}`);
 
-  // ── STEP: dial ── connect and record immediately ──────────────────────────
+  // ── DIAL: connect and record ───────────────────────────────────────────────
   if (step === 'dial' && stored) {
     const target = stored.startsWith('1') ? `+${stored}` : `+1${stored}`;
-    console.log(`[recorder] Dialing ${target} from ${FROM}`);
+    console.log(`[recorder] DIALING ${target} from ${FROM}`);
     return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">Connecting your call now. Recording will begin when the other party answers.</Say>
@@ -28,14 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         recordingStatusCallback="https://casebuddy.live/api/twilio/recording-complete"
         recordingStatusCallbackMethod="POST"
         recordingStatusCallbackEvent="completed"
-        action="${BASE_URL}?step=done"
+        action="${xmlSafe(`${BASE}?step=done`)}"
         timeout="30">
     <Number>${target}</Number>
   </Dial>
 </Response>`);
   }
 
-  // ── STEP: done ── call ended ───────────────────────────────────────────────
+  // ── DONE: call ended ───────────────────────────────────────────────────────
   if (step === 'done') {
     return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -43,11 +47,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 </Response>`);
   }
 
-  // ── STEP: 2 ── received digits, read back and confirm ─────────────────────
+  // ── STEP 2: confirm the number ────────────────────────────────────────────
   if (step === '2' && digits.length >= 7) {
     const num       = digits.slice(0, 10);
     const formatted = `${num.slice(0,3)}, ${num.slice(3,6)}, ${num.slice(6,10)}`;
-    const dialUrl   = `${BASE_URL}?step=dial&stored=${encodeURIComponent(num)}`;
+    // CRITICAL: encode & as &amp; in XML attribute values
+    const dialUrl   = xmlSafe(`${BASE}?step=dial&stored=${num}`);
     return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${dialUrl}" method="POST" timeout="8">
@@ -57,20 +62,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 </Response>`);
   }
 
-  // Step 2 but digits too short — re-prompt
+  // Step 2 but digits too short
   if (step === '2') {
     return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">I didn't get a complete number. Please try again.</Say>
-  <Redirect method="POST">${BASE_URL}</Redirect>
+  <Redirect method="POST">${BASE}</Redirect>
 </Response>`);
   }
 
-  // ── STEP: 1 ── collect 10 digits, fires automatically, NO pound needed ────
+  // ── STEP 1: collect 10 digits — fires automatically, NO pound key ─────────
   return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${BASE_URL}?step=2" method="POST" numDigits="10" timeout="15">
-    <Say voice="Polly.Joanna">Enter the 10 digit number you want to call. Do not press pound. Start with the area code.</Say>
+  <Gather action="${xmlSafe(`${BASE}?step=2`)}" method="POST" numDigits="10" timeout="15">
+    <Say voice="Polly.Joanna">Enter the 10 digit number to call. Area code first. Do not press pound.</Say>
   </Gather>
   <Say voice="Polly.Joanna">No number entered. Goodbye.</Say>
 </Response>`);
