@@ -13,11 +13,7 @@
   NODE_VERSION = "22"
 
 # The app uses BrowserRouter, so every client-side route must fall back to
-# index.html (mirrors the rewrite in vercel.json). Leave /api/* alone.
-[[redirects]]
-  from = "/api/*"
-  status = 404
-
+# index.html (mirrors the rewrite in vercel.json).
 [[redirects]]
   from = "/*"
   to = "/index.html"
