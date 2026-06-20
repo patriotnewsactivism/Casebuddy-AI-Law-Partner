@@ -14,17 +14,13 @@ const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
 
-// Turn-taking. We listen with Flux, Deepgram's conversational model, because
-// Nova-3's turn detection cuts people off when they pause mid-thought. Flux lets
-// us tune end-of-turn detection so a stressed, long-winded caller can gather
-// their thoughts (or fully tell their story) without the agent jumping in.
-//   eot_threshold    — higher = more certain the caller is done before we respond
-//                      (fewer false "your turn" interruptions). Range 0.5–0.9.
-//   eot_timeout_ms   — max silence we'll wait through before taking the turn.
-//                      Raised well above the default so natural pauses are fine.
-const LISTEN_MODEL = 'flux-general-en';
-const EOT_THRESHOLD = 0.8;
-const EOT_TIMEOUT_MS = 8000;
+// Turn-taking. We listen with Nova-3, Deepgram's latest STT model.
+// utterance_end_ms: 1500ms of silence signals end-of-turn — long enough that
+// a stressed caller can pause mid-thought without the agent jumping in.
+// vad_events: true enables voice-activity detection events for smoother barge-in.
+const LISTEN_MODEL = 'nova-3';
+const EOT_THRESHOLD = 0.8;   // kept for reference, not used with nova-3
+const EOT_TIMEOUT_MS = 8000; // kept for reference, not used with nova-3
 // How quickly we fade the agent's voice out when the caller barges in. A short
 // ramp instead of a hard cut means her words are never abruptly clipped.
 const BARGE_FADE_MS = 90;
@@ -347,10 +343,10 @@ export function useDeepgramVoiceAgent(
                 model: LISTEN_MODEL,
                 encoding: 'linear16',
                 sample_rate: INPUT_RATE,
-                // Be patient: don't take the turn until we're confident the
-                // caller is done, and tolerate long thinking pauses.
-                eot_threshold: EOT_THRESHOLD,
-                eot_timeout_ms: EOT_TIMEOUT_MS,
+                // Nova-3: standard end-of-utterance detection
+                // (eot_threshold / eot_timeout_ms are Flux-specific params)
+                utterance_end_ms: 1500,
+                vad_events: true,
               },
             },
             think: {
