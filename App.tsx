@@ -331,7 +331,10 @@ const App = () => {
     const updated = [...cases, newCase];
     setCases(updated);
     saveCases(updated);
-    upsertCaseToCloud(newCase);
+    if (session) {
+      setSyncStatus('syncing');
+      upsertCaseToCloud(newCase).then(ok => setSyncStatus(ok ? 'synced' : 'error'));
+    }
     if (!activeCase) {
       setActiveCase(newCase);
     }
@@ -376,7 +379,7 @@ const App = () => {
   useEffect(() => {
     saveCases(cases);
     if (hasMounted.current && session) {
-      syncLocalCasesToCloud(cases);
+      syncLocalCasesToCloud(cases).then(ok => { if (!ok) setSyncStatus('error'); });
     } else {
       hasMounted.current = true;
     }
