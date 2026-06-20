@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -8,7 +9,7 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 5000,
       },
-      plugins: [react()],
+      plugins: [tailwindcss(), react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
@@ -21,12 +22,18 @@ export default defineConfig(({ mode }) => {
       build: {
         rollupOptions: {
           output: {
-            // Split heavy vendors into their own chunks so the initial load is
-            // smaller and long-term caching is better.
+            // Vendor chunks for deps genuinely needed on every page:
+            //   react    — routing + rendering (always required)
+            //   supabase — auth state initialised in App.tsx before any route
+            //   genai    — CopilotSidebar (always-mounted shell) imports geminiService
+            //   motion   — App.tsx itself uses AnimatePresence/motion for the sidebar
+            //
+            // recharts is intentionally omitted: it is only imported by Dashboard
+            // (a lazy route), so Rollup's auto-chunking scopes it to that chunk
+            // instead of preloading it on every page.
             manualChunks: {
               react: ['react', 'react-dom', 'react-router-dom'],
               genai: ['@google/genai'],
-              charts: ['recharts'],
               supabase: ['@supabase/supabase-js'],
               motion: ['framer-motion'],
             },

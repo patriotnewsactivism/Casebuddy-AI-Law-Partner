@@ -1,5 +1,31 @@
 /* CaseBuddy — Premium Design System */
 
+@import "tailwindcss";
+
+/* ─── Theme tokens (replaces the cdn.tailwindcss.com runtime config) ──────── */
+@theme {
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-serif: Merriweather, Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --color-gold-50: #fdfbe6;
+  --color-gold-100: #faf3c0;
+  --color-gold-200: #f5e880;
+  --color-gold-300: #f0d848;
+  --color-gold-400: #e8c217;
+  --color-gold-500: #d4af37;
+  --color-gold-600: #b4941f;
+  --color-gold-700: #8f6c18;
+  --color-gold-800: #6b4f14;
+  --color-gold-900: #46340d;
+  --color-gold-950: #251b07;
+
+  --color-slate-850: #172033;
+  --color-slate-925: #0b1220;
+
+  --shadow-gold: 0 0 20px rgba(212, 175, 55, 0.3);
+}
+
 /* ─── Base ─────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -228,6 +254,7 @@ input:focus, textarea:focus, select:focus {
 
 .animate-fade-in  { animation: fadeIn 0.4s ease-out }
 .animate-slide-up { animation: slideUp 0.35s ease-out }
+.animate-float    { animation: float 6s ease-in-out infinite }
 
 /* ─── Print styles (for PDF export) ────────────────────────────────────── */
 @media print {

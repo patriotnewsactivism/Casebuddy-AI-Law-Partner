@@ -10,43 +10,46 @@ import {
   Cloud, CloudOff, Loader2, LogOut
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
-import Dashboard from './components/Dashboard';
-import CaseManager from './components/CaseManager';
-import WitnessLab from './components/WitnessLab';
-import StrategyRoom from './components/StrategyRoom';
-import ArgumentPractice from './components/ArgumentPractice';
-import LandingPage from './components/LandingPage';
-import PrivacyPolicy from './components/PrivacyPolicy';
-import TermsOfService from './components/TermsOfService';
-import Transcriber from './components/Transcriber';
-import DraftingAssistant from './components/DraftingAssistant';
-import SettingsPage from './components/Settings';
-import DepositionPrep from './components/DepositionPrep';
-import EvidenceVault from './components/EvidenceVault';
-import JuryAnalyzer from './components/JuryAnalyzer';
-import StatementBuilder from './components/StatementBuilder';
-import VerdictPredictor from './components/VerdictPredictor';
-import ClientUpdate from './components/ClientUpdate';
-import LegalTeam from './components/LegalTeam';
-import WitnessPrep from './components/WitnessPrep';
-import JurySimulator from './components/JurySimulator';
-import Pricing from './components/Pricing';
+// Shell components — always mounted, must stay eager
 import OnboardingModal from './components/OnboardingModal';
-import Integrations from './components/Integrations';
-import DeadlineTracker from './components/DeadlineTracker';
 import ActiveCaseBar from './components/ActiveCaseBar';
-import IntakePage from './components/IntakePage';
-import WarRoom from './components/WarRoom';
 import CopilotSidebar from './components/CopilotSidebar';
-import FoiaCenter from './components/FoiaCenter';
-import FirmReception from './components/FirmReception';
-import IntakeInbox from './components/IntakeInbox';
-import PublicIntake from './components/PublicIntake';
-import CaseOrchestrator from './components/CaseOrchestrator';
-import UserGuide from './components/UserGuide';
-import Login from './components/Login';
-import ResetPassword from './components/ResetPassword';
 import RequireAuth from './components/RequireAuth';
+
+// Route-level pages — lazy-loaded so each page's JS only downloads on first visit
+const Dashboard = React.lazy(() => import('./components/Dashboard'));
+const CaseManager = React.lazy(() => import('./components/CaseManager'));
+const WitnessLab = React.lazy(() => import('./components/WitnessLab'));
+const StrategyRoom = React.lazy(() => import('./components/StrategyRoom'));
+const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
+const LandingPage = React.lazy(() => import('./components/LandingPage'));
+const PrivacyPolicy = React.lazy(() => import('./components/PrivacyPolicy'));
+const TermsOfService = React.lazy(() => import('./components/TermsOfService'));
+const Transcriber = React.lazy(() => import('./components/Transcriber'));
+const DraftingAssistant = React.lazy(() => import('./components/DraftingAssistant'));
+const SettingsPage = React.lazy(() => import('./components/Settings'));
+const DepositionPrep = React.lazy(() => import('./components/DepositionPrep'));
+const EvidenceVault = React.lazy(() => import('./components/EvidenceVault'));
+const JuryAnalyzer = React.lazy(() => import('./components/JuryAnalyzer'));
+const StatementBuilder = React.lazy(() => import('./components/StatementBuilder'));
+const VerdictPredictor = React.lazy(() => import('./components/VerdictPredictor'));
+const ClientUpdate = React.lazy(() => import('./components/ClientUpdate'));
+const LegalTeam = React.lazy(() => import('./components/LegalTeam'));
+const WitnessPrep = React.lazy(() => import('./components/WitnessPrep'));
+const JurySimulator = React.lazy(() => import('./components/JurySimulator'));
+const Pricing = React.lazy(() => import('./components/Pricing'));
+const Integrations = React.lazy(() => import('./components/Integrations'));
+const DeadlineTracker = React.lazy(() => import('./components/DeadlineTracker'));
+const IntakePage = React.lazy(() => import('./components/IntakePage'));
+const WarRoom = React.lazy(() => import('./components/WarRoom'));
+const FoiaCenter = React.lazy(() => import('./components/FoiaCenter'));
+const FirmReception = React.lazy(() => import('./components/FirmReception'));
+const IntakeInbox = React.lazy(() => import('./components/IntakeInbox'));
+const PublicIntake = React.lazy(() => import('./components/PublicIntake'));
+const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'));
+const UserGuide = React.lazy(() => import('./components/UserGuide'));
+const Login = React.lazy(() => import('./components/Login'));
+const ResetPassword = React.lazy(() => import('./components/ResetPassword'));
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
@@ -266,6 +269,12 @@ const ProtectedLayout = ({ children }: { children?: React.ReactNode }) => (
   </RequireAuth>
 );
 
+const PageLoader = () => (
+  <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+    <Loader2 size={32} className="text-gold-500 animate-spin" />
+  </div>
+);
+
 export const AppContext = React.createContext<{
   cases: Case[];
   activeCase: Case | null;
@@ -387,44 +396,46 @@ const App = () => {
       <BrowserRouter>
         {showOnboarding && <OnboardingModal onClose={handleCloseOnboarding} />}
 
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/tos" element={<TermsOfService />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/start" element={<IntakePage />} />
-          <Route path="/intake" element={<PublicIntake />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+        <React.Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/tos" element={<TermsOfService />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/start" element={<IntakePage />} />
+            <Route path="/intake" element={<PublicIntake />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route path="/app" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
-          <Route path="/app/intake-inbox" element={<ProtectedLayout><IntakeInbox /></ProtectedLayout>} />
-          <Route path="/app/firm-command" element={<ProtectedLayout><CaseOrchestrator /></ProtectedLayout>} />
-          <Route path="/app/cases" element={<ProtectedLayout><CaseManager /></ProtectedLayout>} />
-          <Route path="/app/practice" element={<ProtectedLayout><ArgumentPractice /></ProtectedLayout>} />
-          <Route path="/app/witness-lab" element={<ProtectedLayout><WitnessLab /></ProtectedLayout>} />
-          <Route path="/app/witnesses" element={<ProtectedLayout><WitnessPrep /></ProtectedLayout>} />
-          <Route path="/app/strategy" element={<ProtectedLayout><StrategyRoom /></ProtectedLayout>} />
-          <Route path="/app/transcriber" element={<ProtectedLayout><Transcriber /></ProtectedLayout>} />
-          <Route path="/app/docs" element={<ProtectedLayout><DraftingAssistant /></ProtectedLayout>} />
-          <Route path="/app/settings" element={<ProtectedLayout><SettingsPage /></ProtectedLayout>} />
-          <Route path="/app/deposition" element={<ProtectedLayout><DepositionPrep /></ProtectedLayout>} />
-          <Route path="/app/evidence" element={<ProtectedLayout><EvidenceVault /></ProtectedLayout>} />
-          <Route path="/app/jury" element={<ProtectedLayout><JuryAnalyzer /></ProtectedLayout>} />
-          <Route path="/app/jury-sim" element={<ProtectedLayout><JurySimulator /></ProtectedLayout>} />
-          <Route path="/app/statements" element={<ProtectedLayout><StatementBuilder /></ProtectedLayout>} />
-          <Route path="/app/verdict" element={<ProtectedLayout><VerdictPredictor /></ProtectedLayout>} />
-          <Route path="/app/client-update" element={<ProtectedLayout><ClientUpdate /></ProtectedLayout>} />
-          <Route path="/app/legal-team" element={<ProtectedLayout><LegalTeam /></ProtectedLayout>} />
-          <Route path="/app/integrations" element={<ProtectedLayout><Integrations /></ProtectedLayout>} />
-          <Route path="/app/deadlines" element={<ProtectedLayout><DeadlineTracker /></ProtectedLayout>} />
-          <Route path="/app/war-room" element={<ProtectedLayout><WarRoom /></ProtectedLayout>} />
-          <Route path="/app/foia" element={<ProtectedLayout><FoiaCenter /></ProtectedLayout>} />
-          <Route path="/app/firm" element={<ProtectedLayout><FirmReception /></ProtectedLayout>} />
-          <Route path="/app/guide" element={<ProtectedLayout><UserGuide /></ProtectedLayout>} />
+            <Route path="/app" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
+            <Route path="/app/intake-inbox" element={<ProtectedLayout><IntakeInbox /></ProtectedLayout>} />
+            <Route path="/app/firm-command" element={<ProtectedLayout><CaseOrchestrator /></ProtectedLayout>} />
+            <Route path="/app/cases" element={<ProtectedLayout><CaseManager /></ProtectedLayout>} />
+            <Route path="/app/practice" element={<ProtectedLayout><ArgumentPractice /></ProtectedLayout>} />
+            <Route path="/app/witness-lab" element={<ProtectedLayout><WitnessLab /></ProtectedLayout>} />
+            <Route path="/app/witnesses" element={<ProtectedLayout><WitnessPrep /></ProtectedLayout>} />
+            <Route path="/app/strategy" element={<ProtectedLayout><StrategyRoom /></ProtectedLayout>} />
+            <Route path="/app/transcriber" element={<ProtectedLayout><Transcriber /></ProtectedLayout>} />
+            <Route path="/app/docs" element={<ProtectedLayout><DraftingAssistant /></ProtectedLayout>} />
+            <Route path="/app/settings" element={<ProtectedLayout><SettingsPage /></ProtectedLayout>} />
+            <Route path="/app/deposition" element={<ProtectedLayout><DepositionPrep /></ProtectedLayout>} />
+            <Route path="/app/evidence" element={<ProtectedLayout><EvidenceVault /></ProtectedLayout>} />
+            <Route path="/app/jury" element={<ProtectedLayout><JuryAnalyzer /></ProtectedLayout>} />
+            <Route path="/app/jury-sim" element={<ProtectedLayout><JurySimulator /></ProtectedLayout>} />
+            <Route path="/app/statements" element={<ProtectedLayout><StatementBuilder /></ProtectedLayout>} />
+            <Route path="/app/verdict" element={<ProtectedLayout><VerdictPredictor /></ProtectedLayout>} />
+            <Route path="/app/client-update" element={<ProtectedLayout><ClientUpdate /></ProtectedLayout>} />
+            <Route path="/app/legal-team" element={<ProtectedLayout><LegalTeam /></ProtectedLayout>} />
+            <Route path="/app/integrations" element={<ProtectedLayout><Integrations /></ProtectedLayout>} />
+            <Route path="/app/deadlines" element={<ProtectedLayout><DeadlineTracker /></ProtectedLayout>} />
+            <Route path="/app/war-room" element={<ProtectedLayout><WarRoom /></ProtectedLayout>} />
+            <Route path="/app/foia" element={<ProtectedLayout><FoiaCenter /></ProtectedLayout>} />
+            <Route path="/app/firm" element={<ProtectedLayout><FirmReception /></ProtectedLayout>} />
+            <Route path="/app/guide" element={<ProtectedLayout><UserGuide /></ProtectedLayout>} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </React.Suspense>
       </BrowserRouter>
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
