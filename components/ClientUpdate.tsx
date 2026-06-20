@@ -110,9 +110,9 @@ const ClientUpdate = () => {
     } catch (e: any) {
       const msg = e?.message || '';
       if (msg.toLowerCase().includes('not configured')) {
-        toast.warn('SendGrid not configured — add VITE_SENDGRID_API_KEY to .env.local to enable email sending');
+        toast.warn('Email isn\'t configured yet — add SENDGRID_API_KEY (or RESEND_API_KEY) in your Vercel project to enable sending.');
       } else {
-        toast.error('Email failed. Check your SendGrid configuration.');
+        toast.error(msg || 'Email failed to send. Please try again.');
       }
     } finally {
       setSending(false);

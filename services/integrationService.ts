@@ -124,26 +124,88 @@ export const startDeepgramLiveSession = (onTranscript: (text: string) => void): 
   };
 };
 
-// ─── SendGrid (email) ─────────────────────────────────────────────────────────
+// ─── Email (SendGrid primary, Resend fallback — via /api/email/send) ──────────
+// The provider API keys are server-side only. Each message is sent FROM an AI
+// employee's firm address (firstname@casebuddy.live) and silently archived to
+// the partner's inbox by the backend.
 
-export const sendEmail = async (to: string, subject: string, htmlBody: string, fromName = 'CaseBuddy'): Promise<void> => {
-  requireKey('VITE_SENDGRID_API_KEY', 'SendGrid');
-  const res = await fetch('/api/sendgrid/send', {
+import { agentIdentity, FIRM_ARCHIVE_BCC } from '../agents/firmEmail';
+
+export interface SendEmailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  /** Which AI employee sends it (e.g. "sierra", "maya"); defaults to the firm. */
+  fromAgentId?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+  replyTo?: string;
+}
+
+export const sendEmail = async (opts: SendEmailOptions): Promise<{ provider: string }> => {
+  const from = agentIdentity(opts.fromAgentId);
+  const res = await fetch('/api/email/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, subject, htmlBody, fromName }),
+    body: JSON.stringify({
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      fromEmail: from.email,
+      fromName: from.name,
+      cc: opts.cc,
+      bcc: opts.bcc,
+      replyTo: opts.replyTo,
+    }),
   });
-  if (!res.ok) throw new Error('Email send failed');
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({} as any));
+    throw new Error(detail.error || 'Email send failed');
+  }
+  return res.json();
 };
 
-export const sendCaseUpdateEmail = async (clientEmail: string, clientName: string, caseTitle: string, letterContent: string): Promise<void> => {
-  const html = `<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; color: #1a1a1a; line-height: 1.6;">
-    <h2 style="color: #333; border-bottom: 2px solid #c9a84c; padding-bottom: 8px;">Case Update — ${caseTitle}</h2>
-    <pre style="font-family: Georgia, serif; white-space: pre-wrap;">${letterContent}</pre>
+const emailShell = (title: string, bodyHtml: string, footer: string): string => `
+  <div style="font-family: Georgia, serif; max-width: 620px; margin: 0 auto; color: #1a1a1a; line-height: 1.6;">
+    <h2 style="color: #333; border-bottom: 2px solid #c9a84c; padding-bottom: 8px;">${title}</h2>
+    ${bodyHtml}
     <hr style="margin-top: 32px; border-color: #eee;" />
-    <p style="font-size: 11px; color: #999;">Sent via CaseBuddy AI · This communication is attorney-client privileged and confidential.</p>
+    <p style="font-size: 11px; color: #999;">${footer}</p>
   </div>`;
-  await sendEmail(clientEmail, `Case Update: ${caseTitle}`, html);
+
+export const sendCaseUpdateEmail = async (clientEmail: string, clientName: string, caseTitle: string, letterContent: string): Promise<void> => {
+  const html = emailShell(
+    `Case Update — ${caseTitle}`,
+    `<pre style="font-family: Georgia, serif; white-space: pre-wrap; font-size: 14px;">${letterContent}</pre>`,
+    'Sent via CaseBuddy Law · This communication is attorney-client privileged and confidential.'
+  );
+  // Goes out as Sierra, the firm's client-relations secretary.
+  await sendEmail({ to: clientEmail, subject: `Case Update: ${caseTitle}`, html, fromAgentId: 'sierra' });
+};
+
+/**
+ * Internal firm email — one AI employee writing to another (and/or the firm
+ * line). Used by the orchestration layer so the staff hand work off on the
+ * record. The partner is always BCC'd by the backend.
+ */
+export const sendFirmEmail = async (opts: {
+  fromAgentId: string;
+  toAgentIds?: string[];          // resolved to firm addresses
+  toEmails?: string[];            // or explicit addresses
+  subject: string;
+  bodyHtml: string;
+  footer?: string;
+}): Promise<{ provider: string }> => {
+  const to = [
+    ...(opts.toAgentIds || []).map(id => agentIdentity(id).email),
+    ...(opts.toEmails || []),
+  ];
+  const html = emailShell(
+    opts.subject,
+    opts.bodyHtml,
+    opts.footer || `Internal correspondence · CaseBuddy Law · Archived to ${FIRM_ARCHIVE_BCC}`
+  );
+  return sendEmail({ to, subject: opts.subject, html, fromAgentId: opts.fromAgentId });
 };
 
 // ─── Cal.com (booking) ────────────────────────────────────────────────────────
