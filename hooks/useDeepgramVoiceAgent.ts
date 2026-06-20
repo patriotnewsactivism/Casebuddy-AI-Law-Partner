@@ -341,12 +341,7 @@ export function useDeepgramVoiceAgent(
               provider: {
                 type: 'deepgram',
                 model: LISTEN_MODEL,
-                encoding: 'linear16',
-                sample_rate: INPUT_RATE,
-                // Nova-3: standard end-of-utterance detection [build: 2026-06-20]
-                // (eot_threshold / eot_timeout_ms are Flux-specific params)
-                utterance_end_ms: 1500,
-                vad_events: true,
+                // encoding + sample_rate are set in audio.input above, not here
               },
             },
             think: {
