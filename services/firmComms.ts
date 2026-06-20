@@ -79,10 +79,12 @@ const intakeReportHtml = (intake: IntakeData, score: IntakeScore): string => {
 export const emailIntakeHandoff = async (intake: IntakeData, score: IntakeScore): Promise<boolean> => {
   try {
     const specialist = getSpecialistById(score.recommendedAgentId);
-    const to = [
+    // Dedupe: when there's no routed specialist, both entries are FIRM_EMAIL and
+    // the send path doesn't dedupe recipients — which would double-send.
+    const to = Array.from(new Set([
       specialist ? agentEmail(specialist.id) : FIRM_EMAIL,
       FIRM_EMAIL,
-    ];
+    ]));
     const greetingName = specialist ? specialist.name.split(' ')[0] : 'team';
     const html = `
       <div style="font-family:Georgia,serif;max-width:640px;margin:0 auto;color:#1a1a1a;line-height:1.6;">

@@ -59,7 +59,7 @@ const AgentChat: React.FC<{ agent: OperationalAgent; onBack: () => void }> = ({ 
     <div className="max-w-2xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
       {/* Header */}
       <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
-        <button onClick={onBack} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 transition-colors">
+        <button onClick={onBack} aria-label="Back to firm reception" className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 transition-colors">
           <ArrowLeft size={18} />
         </button>
         <div className={`text-3xl w-12 h-12 rounded-full flex items-center justify-center ${agent.bgClass} ${agent.borderClass} border`}>
@@ -115,12 +115,14 @@ const AgentChat: React.FC<{ agent: OperationalAgent; onBack: () => void }> = ({ 
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
+            aria-label={`Message ${agent.name}`}
             placeholder={`Message ${agent.name}…`}
             className="flex-1 resize-none bg-slate-900 border border-slate-700 focus:border-gold-500/60 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 outline-none max-h-32"
           />
           <button
             onClick={send}
             disabled={!input.trim() || sending}
+            aria-label="Send message"
             className="p-3 rounded-xl bg-gold-500 hover:bg-gold-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 transition-colors"
           >
             <Send size={18} />
