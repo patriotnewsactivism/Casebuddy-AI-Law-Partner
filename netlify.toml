@@ -1,0 +1,24 @@
+# Netlify build config. Vercel is the primary target (see vercel.json) and
+# ignores this file; this exists so the Netlify mirror deploys succeed too.
+#
+# The toolchain (Vite 6, @vitejs/plugin-react 5, Tailwind v4 with its native
+# oxide binary) requires a modern Node — Netlify's default lagged behind and
+# failed the build, so pin it to match local/Vercel.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The app uses BrowserRouter, so every client-side route must fall back to
+# index.html (mirrors the rewrite in vercel.json). Leave /api/* alone.
+[[redirects]]
+  from = "/api/*"
+  status = 404
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
