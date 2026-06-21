@@ -10,6 +10,7 @@ import { handleError, handleSuccess } from '../utils/errorHandler';
 import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
@@ -155,6 +156,7 @@ const CaseManager = () => {
 
   return (
     <div className="space-y-5">
+      <Breadcrumb items={[{ label: 'Case Management' }, { label: 'Case Files' }]} />
       <AgentHeader agent={MAYA} compact />
       <div className="flex flex-col lg:flex-row gap-8">
       {/* Case List Sidebar */}

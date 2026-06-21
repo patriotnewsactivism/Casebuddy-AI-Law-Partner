@@ -1,5 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { Phone, Sparkles, Scale, MessageSquare } from 'lucide-react';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS, OperationalAgent } from '../agents/personas';
 import { getVoiceProfile } from '../agents/voiceProfiles';
 import { AppContext } from '../App';
@@ -19,6 +20,7 @@ const FirmReception: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      <Breadcrumb items={[{ label: 'Intake & Clients' }, { label: 'Voice Intake (Maya)' }]} />
       <div className="text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-xs font-bold uppercase tracking-wider mb-4">
           <Sparkles size={13} /> Live Voice

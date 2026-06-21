@@ -2,15 +2,18 @@ import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { generateClientUpdate } from '../services/geminiService';
 import { sendCaseUpdateEmail } from '../services/integrationService';
-import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer } from 'lucide-react';
+import { Mail, Loader, Copy, Download, RefreshCw, Check, Send, Printer, FileText, UserPlus } from 'lucide-react';
 import { printAsPdf, letterToPdfHtml } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
 import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { deepseekChat } from '../services/deepseek';
 
 const SIERRA = OPERATIONAL_AGENTS.find(a => a.id === 'sierra')!;
+
+type CommTab = 'updates' | 'engagement';
 
 const UPDATE_TYPES = [
   { value: 'status-update', label: 'Status Update', desc: 'General case progress report' },
@@ -33,8 +36,168 @@ interface SavedLetter {
   timestamp: number;
 }
 
+/* ─── Engagement Letter Sub-tab ────────────────────────────────────────── */
+
+const EngagementLetterTab: React.FC = () => {
+  const { activeCase } = useContext(AppContext);
+  const [clientName, setClientName] = useState('');
+  const [caseType, setCaseType] = useState('');
+  const [feeArrangement, setFeeArrangement] = useState('Hourly');
+  const [hourlyRate, setHourlyRate] = useState('');
+  const [retainer, setRetainer] = useState('');
+  const [contingencyPct, setContingencyPct] = useState('');
+  const [jurisdiction, setJurisdiction] = useState('');
+  const [engagementLetter, setEngagementLetter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const FEE_ARRANGEMENTS = ['Hourly', 'Contingency', 'Flat Fee', 'Hybrid', 'Pro Bono', 'TBD'];
+
+  const generate = async () => {
+    if (!clientName.trim()) { toast.error('Enter client name.'); return; }
+    setLoading(true);
+    try {
+      const prompt = `Draft a professional attorney-client engagement letter:\n\nClient: ${clientName}\nCase Type: ${caseType || activeCase?.title || 'General'}\nMatter: ${activeCase?.summary || activeCase?.title || 'To be determined'}\nFee Arrangement: ${feeArrangement}\n${feeArrangement === 'Hourly' || feeArrangement === 'Hybrid' ? `Hourly Rate: $${hourlyRate || 'TBD'}/hr\nRetainer: $${retainer || 'TBD'}` : ''}\n${feeArrangement === 'Contingency' || feeArrangement === 'Hybrid' ? `Contingency: ${contingencyPct || 'TBD'}%` : ''}\nJurisdiction: ${jurisdiction || 'To be determined'}\n\nInclude: scope of representation, fee agreement, billing procedures, client obligations, file retention policy, termination clause, and signature blocks. Use professional legal letterhead format with [ATTORNEY NAME] and [FIRM NAME] placeholders.`;
+
+      const text = await deepseekChat({
+        systemInstruction: 'You are a legal document expert. Draft only the letter text, professionally formatted.',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 3000,
+      });
+      setEngagementLetter(text || 'Error generating letter.');
+      toast.success('Engagement letter generated!');
+    } catch {
+      toast.error('Generation failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyLetter = () => {
+    navigator.clipboard.writeText(engagementLetter);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success('Letter copied!');
+  };
+
+  const printLetter = () => {
+    const html = letterToPdfHtml({
+      to: clientName,
+      re: activeCase?.title || 'Engagement Letter',
+      body: engagementLetter,
+    });
+    printAsPdf(`Engagement Letter - ${clientName}`, html);
+  };
+
+  return (
+    <div className="grid lg:grid-cols-5 gap-6">
+      <div className="lg:col-span-2 space-y-5">
+        <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-4">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <UserPlus size={18} className="text-gold-400" /> Engagement Details
+          </h2>
+          <div>
+            <label className="text-sm text-slate-400 block mb-1">Client Name *</label>
+            <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. James Miller"
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm text-slate-400 block mb-1">Case / Matter Type</label>
+            <input value={caseType} onChange={e => setCaseType(e.target.value)} placeholder={activeCase?.title || 'e.g. Personal Injury'}
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm text-slate-400 block mb-1">Jurisdiction</label>
+            <input value={jurisdiction} onChange={e => setJurisdiction(e.target.value)} placeholder="e.g. Cook County, IL"
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm text-slate-400 block mb-2">Fee Arrangement</label>
+            <div className="grid grid-cols-3 gap-2">
+              {FEE_ARRANGEMENTS.map(f => (
+                <button key={f} onClick={() => setFeeArrangement(f)}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${feeArrangement === f ? 'bg-gold-500/20 border-gold-500/50 text-gold-300' : 'border-slate-600 text-slate-400 hover:border-slate-500'}`}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+          {(feeArrangement === 'Hourly' || feeArrangement === 'Hybrid') && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-slate-400 block mb-1">Hourly Rate ($)</label>
+                <input value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} type="number" placeholder="350"
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+              </div>
+              <div>
+                <label className="text-sm text-slate-400 block mb-1">Retainer ($)</label>
+                <input value={retainer} onChange={e => setRetainer(e.target.value)} type="number" placeholder="5000"
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+              </div>
+            </div>
+          )}
+          {(feeArrangement === 'Contingency' || feeArrangement === 'Hybrid') && (
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">Contingency (%)</label>
+              <input value={contingencyPct} onChange={e => setContingencyPct(e.target.value)} type="number" placeholder="33"
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-gold-500 text-sm" />
+            </div>
+          )}
+          <button onClick={generate} disabled={loading || !clientName.trim()}
+            className="w-full flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-600 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-bold py-3 rounded-lg transition-colors">
+            {loading ? <><Loader className="animate-spin" size={18} /> Drafting...</> : <><FileText size={18} /> Generate Engagement Letter</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="lg:col-span-3">
+        {engagementLetter ? (
+          <div className="bg-slate-800/60 border border-slate-700 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <p className="text-white font-bold">Engagement Letter</p>
+              <div className="flex gap-2">
+                <button onClick={copyLetter}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${copied ? 'bg-green-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>
+                  {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+                </button>
+                <button onClick={printLetter}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">
+                  <Printer size={14} /> PDF
+                </button>
+              </div>
+            </div>
+            <div className="p-6 sm:p-8">
+              <div className="bg-white rounded-xl p-6 sm:p-10 shadow-xl max-w-2xl mx-auto">
+                <div className="border-b border-gray-200 pb-6 mb-6">
+                  <p className="text-gray-800 font-serif text-xl font-bold">ENGAGEMENT LETTER</p>
+                  <p className="text-gray-500 text-sm mt-1 font-mono">ATTORNEY-CLIENT AGREEMENT</p>
+                </div>
+                <div className="font-mono text-gray-800 whitespace-pre-wrap text-sm leading-relaxed">
+                  {engagementLetter}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-80 bg-slate-800/30 border border-slate-700 rounded-xl">
+            <div className="text-center">
+              <FileText className="mx-auto mb-3 text-slate-600" size={48} />
+              <p className="text-slate-400">Your engagement letter will appear here.</p>
+              <p className="text-slate-500 text-sm mt-1">Fill in the details and click Generate.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ─── Main Component ───────────────────────────────────────────────────── */
+
 const ClientUpdate = () => {
   const { activeCase } = useContext(AppContext);
+  const [activeTab, setActiveTab] = useState<CommTab>('updates');
   const [updateType, setUpdateType] = useState('status-update');
   const [clientName, setClientName] = useState('');
   const [recentDevelopments, setRecentDevelopments] = useState('');
@@ -152,12 +315,27 @@ const ClientUpdate = () => {
       <div className="flex items-center gap-3">
         <Mail className="text-gold-500" size={32} />
         <div>
-          <h1 className="text-3xl font-bold text-white font-serif">Client Update Generator</h1>
-          <p className="text-slate-400 text-sm">Professional client correspondence for {activeCase.title}</p>
+          <h1 className="text-3xl font-bold text-white font-serif">Client Communications</h1>
+          <p className="text-slate-400 text-sm">Professional correspondence for {activeCase.title}</p>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-5 gap-6">
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1 bg-slate-800/60 border border-slate-700 rounded-xl w-fit">
+        {([
+          { key: 'updates' as CommTab, label: 'Client Updates', icon: Mail },
+          { key: 'engagement' as CommTab, label: 'Engagement Letter', icon: FileText },
+        ]).map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.key ? 'bg-gold-500/20 border border-gold-500/40 text-gold-300' : 'text-slate-400 hover:text-slate-200'}`}>
+            <tab.icon size={15} /> {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'engagement' && <EngagementLetterTab />}
+
+      {activeTab === 'updates' && <div className="grid lg:grid-cols-5 gap-6">
         {/* Form */}
         <div className="lg:col-span-2 space-y-5">
           <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-5">
@@ -308,7 +486,7 @@ const ClientUpdate = () => {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 };

@@ -7,6 +7,7 @@ import { Mic, MicOff, Activity, Volume2, AlertTriangle, BarChart2, Lightbulb, Al
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration, Blob } from "@google/genai";
 import { getTrialSimSystemInstruction } from '../services/geminiService';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
@@ -355,6 +356,7 @@ const TrialSim = () => {
 
   const renderSetup = () => (
     <div className="max-w-5xl mx-auto space-y-8 p-4">
+       <Breadcrumb items={[{ label: 'Trial Preparation' }, { label: 'Trial Simulator' }]} />
        <AgentHeader agent={REX} compact />
        <div className="text-center mb-12">
           <h1 className="text-4xl font-serif font-bold text-white mb-4">Trial Simulator</h1>
