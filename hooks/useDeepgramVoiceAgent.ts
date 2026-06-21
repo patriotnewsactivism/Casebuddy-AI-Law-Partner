@@ -12,6 +12,7 @@ import { setRuntimeKeys } from '../services/runtimeKeys';
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
+const UTTERANCE_END_MS = 1800; // ms of silence before Maya responds — long enough for natural pauses
 const OUTPUT_RATE = 24000;
 
 // Turn-taking. We listen with Nova-3, Deepgram's latest STT model.
@@ -23,8 +24,8 @@ const EOT_THRESHOLD = 0.8;   // kept for reference, not used with nova-3
 const EOT_TIMEOUT_MS = 8000; // kept for reference, not used with nova-3
 // How quickly we fade the agent's voice out when the caller barges in. A short
 // ramp instead of a hard cut means her words are never abruptly clipped.
-const BARGE_FADE_MS = 90;
-const SPEAKING_RATE_DEFAULT = 1.05; // slightly more natural than 1.1
+const BARGE_FADE_MS = 140; // slightly longer fade — never clips her mid-word
+const SPEAKING_RATE_DEFAULT = 0.92; // natural human pace — not rushed // slightly more natural than 1.1
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
