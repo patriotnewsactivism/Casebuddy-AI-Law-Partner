@@ -1,8 +1,8 @@
-# What's New in LexSim - Major Update! 🎉
+# What's New in CaseBuddy - Major Update! 🎉
 
 ## Overview
 
-LexSim has been transformed from a basic prototype into a **world-class legal trial preparation platform** with features no competitor offers. This update includes **3 game-changing features** plus critical infrastructure improvements.
+CaseBuddy has been transformed from a basic prototype into a **world-class legal trial preparation platform** with features no competitor offers. This update includes **3 game-changing features** plus critical infrastructure improvements.
 
 ---
 
@@ -331,7 +331,7 @@ npm run dev
 
 ---
 
-## 🎯 What Makes LexSim Unique
+## 🎯 What Makes CaseBuddy Unique
 
 ### Features NO Competitor Has:
 1. ✅ **AI Jury Simulation** with deliberation

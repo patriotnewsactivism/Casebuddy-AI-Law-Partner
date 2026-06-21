@@ -5,6 +5,7 @@ import { simulateJurorReaction, runJuryDeliberation } from '../services/geminiSe
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const jules = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
@@ -191,6 +192,7 @@ const JurySimulator: React.FC = () => {
     return (
       <div className="space-y-6">
         <AgentHeader agent={jules} />
+      <AIDisclaimer variant="full" className="mb-4" />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">

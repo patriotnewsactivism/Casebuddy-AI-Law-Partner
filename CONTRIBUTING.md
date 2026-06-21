@@ -1,6 +1,6 @@
-# Contributing to LexSim
+# Contributing to CaseBuddy
 
-Thank you for your interest in contributing to LexSim! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to CaseBuddy! This document provides guidelines and information for contributors.
 
 ## Getting Started
 
@@ -125,4 +125,4 @@ By contributing, you agree that your contributions will be licensed under the sa
 
 ---
 
-Thank you for contributing to LexSim!
+Thank you for contributing to CaseBuddy!

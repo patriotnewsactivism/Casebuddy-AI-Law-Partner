@@ -1,10 +1,11 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download } from 'lucide-react';
+import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download, Printer } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -25,7 +26,12 @@ interface MayaAssessment {
   greeting: string;
   summary: string;
   nextSteps: string[];
-  urgencyAssessment: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  strengths?: string[];
+  concerns?: string[];
+  specialist?: string;
+  recommendation?: 'proceed' | 'schedule-consult' | 'refer-out' | 'decline';
+  score?: number;
 }
 
 interface Lead {
@@ -284,35 +290,29 @@ const IntakePage: React.FC = () => {
       const apiKey = (process.env.API_KEY as string) || '';
       const ai = new GoogleGenAI({ apiKey });
 
-      // ── Maya System Prompt v2.0 (Fixed — June 20, 2026) ─────────────────────
-      // Rules: no hallucination, summarize-first, one question max,
-      //        honest context-loss acknowledgment, no filler phrases.
-      const prompt = `MAYA SYSTEM PROMPT v2.0 — CaseBuddy Law Intake Specialist
+      const prompt = `You are Maya, intake specialist at CaseBuddy AI Law Firm. Fast, direct, warm — like a real legal intake coordinator. Get the key facts quickly.
 
-You are Maya, the AI intake specialist for CaseBuddy Law. Your job is to review the client's intake form and generate a structured, professional assessment. You operate under strict rules:
+Intake:
+- Name: ${form.name}
+- Email: ${form.email}
+- Phone: ${form.phone || 'Not provided'}
+- Matter: ${form.matterType}
+- Description: ${form.description}
+- Court date: ${form.courtDate || 'None specified'}
+- How soon they need help: ${form.urgency}
 
-CRITICAL RULES (non-negotiable):
-1. NEVER HALLUCINATE — only reference information actually present in the intake form. If something is missing, say so honestly. Do not invent names, dates, facts, or legal conclusions.
-2. SUMMARIZE FIRST — your greeting and summary must reflect ONLY what the client actually told you. Do not add details they did not provide.
-3. NO FILLER PHRASES — do not start with "Absolutely!", "Great question!", "Certainly!" or similar. Be direct, warm, and human.
-4. ONE CONCERN AT A TIME — nextSteps should be prioritized and concrete. Do not overwhelm the client.
-5. HONEST UNCERTAINTY — if the legal matter is unclear or ambiguous from the description, say so in the summary. Ask for clarification rather than guessing.
-6. URGENCY IS REAL — if a court date is listed, flag it prominently. If urgency is "immediately," treat it as a genuine emergency.
+IMPORTANT: Only reference facts the client actually stated. Do not invent, infer, or embellish.
 
-Client intake data:
-- Name: \${form.name}
-- Email: \${form.email}
-- Phone: \${form.phone || 'Not provided'}
-- Type of legal matter: \${form.matterType}
-- Description: \${form.description}
-- Court date (if any): \${form.courtDate || 'None specified'}
-- How soon they need help: \${form.urgency}
-
-Return a JSON object with exactly these fields:
-- greeting: A warm, direct 1-2 sentence greeting addressing the client by first name. Acknowledge their specific situation using ONLY details they provided. No generic phrases.
-- summary: A 2-3 sentence professional summary of the client's legal matter. Reference only what they told you. If any key detail is missing or unclear, note it plainly.
-- nextSteps: An array of 3-5 concrete, prioritized action items the client should take. Start with the most time-sensitive. Be specific, not generic.
-- urgencyAssessment: A 1-2 sentence honest assessment of urgency and any time-sensitive concerns. If a court date is present, lead with that. If the matter is unclear, say so and ask one clarifying question.`;
+Respond in JSON with these exact keys:
+- greeting: 1 short sentence — address them by first name, acknowledge the matter type. No fluff.
+- urgency: "low" | "medium" | "high" | "critical"
+- summary: 2 sentences max — what the case is about and the key legal issue
+- strengths: array of 2-3 bullet strings (strongest facts from what they described)
+- concerns: array of 1-2 bullet strings (biggest risks or information gaps)
+- nextSteps: array of 3 concrete action items the firm will take
+- specialist: which agent should handle this (maya/lex/sol/rex/sierra/doc/jules/max)
+- recommendation: "proceed" | "schedule-consult" | "refer-out" | "decline"
+- score: 0-100 viability score`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -404,6 +404,17 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const saveAsPdf = () => {
+    if (!letter) return;
+    const safeName = (form.name || 'Client').replace(/[^a-z0-9]+/gi, ' ').trim();
+    const html = textToPdfHtml(
+      'Engagement Letter',
+      `Prepared for ${safeName} — ${form.matterType || 'General Inquiry'}`,
+      letter,
+    );
+    printAsPdf(`Engagement Letter — ${safeName}`, html);
   };
 
   /* ── label helper ── */
@@ -648,7 +659,7 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
                   <Clock size={16} className="text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">Urgency Assessment</h3>
-                    <p className="text-slate-300 text-sm leading-relaxed">{assessment.urgencyAssessment}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{assessment.urgency}</p>
                   </div>
                 </div>
 
@@ -730,6 +741,12 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
                     >
                       <Download size={15} /> Download
+                    </button>
+                    <button
+                      onClick={saveAsPdf}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
+                    >
+                      <Printer size={15} /> Save as PDF
                     </button>
                     <button
                       onClick={generateLetter}

@@ -79,10 +79,12 @@ export default defineConfig(({ mode }) => {
               'lucide': ['lucide-react'],
               'framer-motion': ['framer-motion'],
               'vendor': ['react', 'react-dom', 'react-router-dom', 'react-toastify'],
-              'ai-services': ['@google/genai']
-            }
-          }
-        }
-      }
+              'ai-services': ['@google/genai'],
+              recharts: ['recharts'],
+              supabase: ['@supabase/supabase-js'],
+            },
+          },
+        },
+      },
     };
 });

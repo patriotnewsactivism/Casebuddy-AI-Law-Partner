@@ -113,11 +113,31 @@ Include: scope of representation, fee agreement, billing procedures, client obli
     }
   };
 
-  const handleSubmit = () => {
-    // Save to localStorage
-    const intakes = JSON.parse(localStorage.getItem('casebuddy_intakes') || '[]');
+  const handleSubmit = async () => {
+    // ── Primary: save to Supabase cloud ─────────────────────────────────
+    try {
+      const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
+      const sb = getSupabase();
+      if (sb && isSupabaseConfigured) {
+        await sb.from('intake_cases').insert([{
+          full_name: `${form.firstName} ${form.lastName}`.trim() || 'Prospective Client',
+          contact: form.email || form.phone || '',
+          matter_type: form.caseType || 'General Inquiry',
+          jurisdiction: form.jurisdiction || '',
+          summary: form.incidentDescription || '',
+          status: 'new',
+          disposition: 'review',
+          urgency: 'medium',
+          intake: form,
+        }]);
+      }
+    } catch (err) {
+      console.warn('[ClientIntake] Supabase save failed, using local backup:', err);
+    }
+    // ── Emergency backup only ─────────────────────────────────────────────
+    const intakes = JSON.parse(localStorage.getItem('casebuddy_intakes_backup') || '[]');
     intakes.push({ ...form, id: Date.now().toString(), submittedAt: new Date().toISOString() });
-    localStorage.setItem('casebuddy_intakes', JSON.stringify(intakes));
+    localStorage.setItem('casebuddy_intakes_backup', JSON.stringify(intakes));
     setSubmitted(true);
   };
 

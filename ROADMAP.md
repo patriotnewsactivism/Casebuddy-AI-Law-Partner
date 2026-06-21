@@ -1,6 +1,6 @@
-# LexSim Implementation Roadmap
+# CaseBuddy Implementation Roadmap
 
-This document outlines the features needed to make LexSim the premier AI-powered trial preparation platform.
+This document outlines the features needed to make CaseBuddy the premier AI-powered trial preparation platform.
 
 ## Current Status
 
@@ -48,12 +48,12 @@ These features are essential for basic usability and should be implemented first
 ```typescript
 // Example implementation
 useEffect(() => {
-  const saved = localStorage.getItem('lexsim_cases');
+  const saved = localStorage.getItem('casebuddy_cases');
   if (saved) setCases(JSON.parse(saved));
 }, []);
 
 useEffect(() => {
-  localStorage.setItem('lexsim_cases', JSON.stringify(cases));
+  localStorage.setItem('casebuddy_cases', JSON.stringify(cases));
 }, [cases]);
 ```
 
@@ -100,7 +100,7 @@ useEffect(() => {
 
 ## 🚀 TIER 2: Differentiating Features (Stand Out)
 
-These features make LexSim unique compared to generic legal tech.
+These features make CaseBuddy unique compared to generic legal tech.
 
 ### 2.1 Evidence Organization System ⭐⭐⭐⭐⭐
 **What**: Visual evidence timeline and exhibit management
@@ -218,7 +218,7 @@ These features make LexSim unique compared to generic legal tech.
 
 ## 🌟 TIER 3: Advanced Innovations (Industry Leading)
 
-These features would make LexSim truly cutting-edge.
+These features would make CaseBuddy truly cutting-edge.
 
 ### 3.1 Real Case Law Integration ⭐⭐⭐⭐⭐
 **What**: AI searches and cites relevant case law
@@ -553,7 +553,7 @@ Features for law firms and security-conscious users.
 - [ ] Performance analytics dashboard
 - [ ] Opponent intelligence database
 
-**Deliverable**: LexSim is now unique in the market
+**Deliverable**: CaseBuddy is now unique in the market
 
 ### Phase 3: Professional Tools (Weeks 7-10)
 **Goal**: Make it indispensable for practicing attorneys
@@ -594,7 +594,7 @@ Features for law firms and security-conscious users.
 
 ---
 
-## 🎓 Unique Features Only LexSim Has
+## 🎓 Unique Features Only CaseBuddy Has
 
 To truly stand out, focus on these innovations:
 
@@ -665,7 +665,7 @@ AI generates word-for-word scripts for nervous attorneys.
 
 ## 🏁 Conclusion
 
-LexSim has strong foundations. To become world-class:
+CaseBuddy has strong foundations. To become world-class:
 
 1. **Fix data persistence** (critical bug)
 2. **Add session recording** (essential for learning)
@@ -675,4 +675,4 @@ LexSim has strong foundations. To become world-class:
 
 Focus on features attorneys actually need, not what's technically cool. Talk to users constantly.
 
-The combination of voice AI + legal expertise + practical tools could make LexSim a $10M+ business.
+The combination of voice AI + legal expertise + practical tools could make CaseBuddy a $10M+ business.

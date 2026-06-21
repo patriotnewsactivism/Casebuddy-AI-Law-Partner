@@ -5,6 +5,7 @@ import { generateWitnessPrepPackage } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError, handleSuccess } from '../utils/errorHandler';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const rex = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
@@ -257,6 +258,7 @@ const WitnessPrep: React.FC = () => {
   return (
     <div className="space-y-6">
       <AgentHeader agent={rex} />
+      <AIDisclaimer variant="full" className="mb-4" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Input form */}

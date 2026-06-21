@@ -279,6 +279,57 @@ const MailRoom: React.FC = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(emails)); } catch {}
   }, [emails]);
 
+  // ── Live Supabase email sync ──────────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = React.useState<'idle'|'syncing'|'ok'|'error'>('idle');
+
+  const syncFromSupabase = React.useCallback(async () => {
+    try {
+      setSyncStatus('syncing');
+      const sbUrl  = import.meta.env.VITE_SUPABASE_URL;
+      const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!sbUrl || !sbAnon) { setSyncStatus('idle'); return; }
+
+      const res = await fetch(
+        `${sbUrl}/rest/v1/firm_emails?order=received_at.desc&limit=100`,
+        { headers: { apikey: sbAnon, Authorization: `Bearer ${sbAnon}` } }
+      );
+      if (!res.ok) { setSyncStatus('error'); return; }
+      const rows: any[] = await res.json();
+
+      const mapped: Email[] = rows.map(r => ({
+        id: r.id,
+        from: r.from_address,
+        fromName: r.from_name || r.from_address,
+        to: r.to_address,
+        subject: r.subject,
+        body: r.body,
+        timestamp: r.received_at,
+        read: r.read ?? (r.direction === 'outbound'),
+        starred: r.starred ?? false,
+        folder: r.direction === 'outbound' ? 'sent' : 'inbox',
+        tag: r.intent !== 'general' ? r.intent : undefined,
+        aiSummary: r.metadata?.aiSummary,
+      }));
+
+      if (mapped.length > 0) {
+        setEmails(prev => {
+          const ids = new Set(mapped.map(m => m.id));
+          const local = prev.filter(e => !ids.has(e.id) && e.id.startsWith('seed-'));
+          return [...mapped, ...local];
+        });
+      }
+      setSyncStatus('ok');
+    } catch { setSyncStatus('error'); }
+  }, []);
+
+  React.useEffect(() => {
+    syncFromSupabase();
+    const interval = setInterval(syncFromSupabase, 30000);
+    return () => clearInterval(interval);
+  }, [syncFromSupabase]);
+
+
+
   // Call timer
   useEffect(() => {
     if (!activeCall || activeCall.status !== 'connected') return;
@@ -319,9 +370,22 @@ const MailRoom: React.FC = () => {
     if (!email.read) markRead(email.id);
   };
 
-  const sendEmail = () => {
+  const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) return;
     const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent);
+    // Send via real API if available
+    try {
+      await fetch('/api/mail/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: compose.fromAgent,
+          to: compose.to,
+          subject: compose.subject,
+          body: compose.body,
+        }),
+      });
+    } catch { /* fall through to local display */ }
     const newEmail: Email = {
       id: `sent-${Date.now()}`,
       from: `${compose.fromAgent}@casebuddy.live`,
@@ -492,6 +556,14 @@ Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('
                 {urgentCount}
               </span>
             )}
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-500">
+              {syncStatus === 'syncing' && '⟳ Syncing…'}
+              {syncStatus === 'ok' && '✓ Live'}
+              {syncStatus === 'error' && '⚠ Offline'}
+            </span>
+            <button onClick={syncFromSupabase} className="text-xs text-slate-500 hover:text-white transition-colors">Refresh</button>
           </div>
           <button
             onClick={() => { setComposing(true); setSelected(null); }}

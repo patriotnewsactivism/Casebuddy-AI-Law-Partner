@@ -53,7 +53,7 @@ export interface UseDeepgramVoiceAgentOptions {
   publicEndpoint?: boolean;
   /**
    * Playback speed multiplier for Aura-2 TTS. 1.0 = normal, 1.15 = slightly faster.
-   * Deepgram supports 0.5–1.5. Defaults to 1.1 for a natural, quick pace.
+   * Deepgram supports 0.5–1.5. Defaults to 1.0 for the most natural, human sound.
    */
   speakingRate?: number;
 }
@@ -139,6 +139,7 @@ export function useDeepgramVoiceAgent(
   const nextStartRef = useRef(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const captionTimer = useRef<any>(null);
+  const bargeInTimer = useRef<any>(null);
 
   const optsRef = useRef(options);
   optsRef.current = options;
@@ -185,6 +186,7 @@ export function useDeepgramVoiceAgent(
     sourcesRef.current.clear();
     nextStartRef.current = 0;
     clearTimeout(captionTimer.current);
+    clearTimeout(bargeInTimer.current);
     if (wsRef.current) {
       try { wsRef.current.close(); } catch { /* noop */ }
       wsRef.current = null;
@@ -204,9 +206,27 @@ export function useDeepgramVoiceAgent(
 
     const int16 = new Int16Array(buffer);
     if (int16.length === 0) return;
+
+    // Check if this is the first chunk of a new utterance (no sources queued)
+    const isFirstChunk = sourcesRef.current.size === 0;
+
     const audioBuffer = outputCtx.createBuffer(1, int16.length, OUTPUT_RATE);
     const channel = audioBuffer.getChannelData(0);
-    for (let i = 0; i < int16.length; i++) channel[i] = int16[i] / 32768;
+
+    if (isFirstChunk) {
+      // Only fade-in the very first chunk of a new utterance (6ms)
+      // to prevent the initial pop/click. Mid-stream chunks play raw
+      // so the voice stays smooth and continuous — no pulsing.
+      const FADE_IN = Math.min(Math.floor(OUTPUT_RATE * 0.006), Math.floor(int16.length / 4));
+      for (let i = 0; i < int16.length; i++) {
+        let sample = int16[i] / 32768;
+        if (i < FADE_IN) sample *= i / FADE_IN;
+        channel[i] = sample;
+      }
+    } else {
+      // Mid-stream chunks: straight PCM, no processing — keeps voice smooth
+      for (let i = 0; i < int16.length; i++) channel[i] = int16[i] / 32768;
+    }
 
     // Start of a fresh agent turn — restore full volume in case a prior barge-in
     // faded it out, so she's never left muted by an earlier false interruption.
@@ -219,14 +239,19 @@ export function useDeepgramVoiceAgent(
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
-    nextStartRef.current = Math.max(nextStartRef.current, outputCtx.currentTime);
+    // Small look-ahead buffer (30ms) on first chunk only so it doesn't
+    // start right on the audio context edge — prevents initial clipping.
+    const now = outputCtx.currentTime + (isFirstChunk ? 0.03 : 0);
+    nextStartRef.current = Math.max(nextStartRef.current, now);
     const src = outputCtx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(outGain);
     src.addEventListener('ended', () => {
       sourcesRef.current.delete(src);
       if (sourcesRef.current.size === 0) {
-        setTimeout(() => { if (sourcesRef.current.size === 0) setAgentSpeaking(false); }, 120);
+        // Wait 350ms before declaring silence — prevents choppy gaps
+        // between TTS chunks from prematurely ending the speaking state.
+        setTimeout(() => { if (sourcesRef.current.size === 0) setAgentSpeaking(false); }, 350);
       }
     });
     src.start(nextStartRef.current);
@@ -237,11 +262,17 @@ export function useDeepgramVoiceAgent(
   const handleServerMessage = useCallback((data: any) => {
     const type = data.type;
     if (type === 'UserStartedSpeaking') {
-      clearPlayback();
-      setActiveSpeaker('you');
+      // Debounce barge-in by 150ms — prevents ambient noise / false VAD
+      // triggers from killing the agent's audio mid-sentence.
+      clearTimeout(bargeInTimer.current);
+      bargeInTimer.current = setTimeout(() => {
+        clearPlayback();
+        setActiveSpeaker('you');
+      }, 150);
       return;
     }
     if (type === 'AgentStartedSpeaking') {
+      clearTimeout(bargeInTimer.current);
       setAgentSpeaking(true);
       setActiveSpeaker('agent');
       return;
@@ -329,8 +360,8 @@ export function useDeepgramVoiceAgent(
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
 
-      // Speaking rate: slightly faster than default for a more natural, quick pace
-      const speakRate = opts.speakingRate ?? 1.1;
+      // Speaking rate: natural human pace — 1.0 sounds the most realistic
+      const speakRate = opts.speakingRate ?? 1.0;
 
       ws.onopen = () => {
         const settings = {
@@ -354,14 +385,14 @@ export function useDeepgramVoiceAgent(
               },
             },
             think: {
-              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.6 },
+              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
               prompt,
             },
             speak: {
               provider: {
                 type: 'deepgram',
                 model: opts.voiceModel,
-                // speed: slightly faster than default, keeps voice natural without sounding rushed
+                // speed: 1.0 = natural human pace, no rush
                 speed: speakRate,
               },
             },
