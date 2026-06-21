@@ -4,6 +4,7 @@ import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock,
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
+import { emailIntakeHandoff } from '../services/firmComms';
 import { IntakeScore } from '../types';
 
 // Public, link-shareable voice intake. A prospect opens the link, Maya picks up
@@ -22,12 +23,11 @@ YOUR GOAL: learn these four things naturally through conversation:
 3. Who's involved (them + the other party)
 4. What they're looking for (advice, representation, or a referral?)
 
-PACING — conversational, not scripted:
-- This should feel like a real phone call with a real person, not a questionnaire.
-- Let them talk. Don't cut them off. When they finish a thought, acknowledge it, then guide to the next thing naturally.
-- If they cover multiple points at once — great, don't circle back.
-- Once you have what you need, wrap up warmly. Don't just abruptly end.
-- Target: 2-4 minutes. Natural, not rushed.
+PACING — efficient, but NEVER cut them off:
+- Let them finish completely before you respond. If they pause to think, wait — silence is fine. Only take your turn once they've clearly finished a thought.
+- If they're mid-story or on a roll, stay quiet and let them keep going. A scared or upset person may ramble — that's good, let them. Capture all of it; don't rush them to the next question.
+- Once a point is genuinely answered, move on — don't pad or re-ask. But "move on" means after they're done talking, not over them.
+- Once you have all four points, give a warm 1-sentence wrap-up and tell them the team will be in touch. No hard time limit — let their story take the time it needs.
 
 VOICE STYLE — sound like a real human being:
 - Contractions always. "I'm", "we'll", "that's", "you're".
@@ -87,6 +87,9 @@ const PublicIntake: React.FC = () => {
       const intake = await extractIntake(transcript);
       const score = await scoreIntake(intake);
       await submitIntake({ intake, score, transcript });
+      // Hand the case off to the routed specialist by email (best-effort — never
+      // blocks the prospect's confirmation screen).
+      void emailIntakeHandoff(intake, score);
       setResult(score);
       setPhase('result');
     } catch (e) {
@@ -269,7 +272,7 @@ const PublicIntake: React.FC = () => {
                   </p>
                   {result && (
                     <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-sm font-semibold">
-                      Case priority: {result.priority ?? 'Standard'}
+                      Case priority: {result.urgency ?? 'Standard'}
                     </div>
                   )}
                 </div>

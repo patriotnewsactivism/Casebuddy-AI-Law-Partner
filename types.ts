@@ -49,13 +49,29 @@ export interface IntakeData {
   contact: string;          // phone or email, however they gave it
   matterType: string;       // e.g. "Personal Injury", "Family Law"
   jurisdiction: string;     // state / court, if known
-  summary: string;          // plain-language description of what happened
+  summary: string;          // one-line plain-language description (used on cards)
   incidentDate: string;     // when it happened (free text ok)
   opposingParties: string;  // who they're up against
   deadlines: string;        // any known deadlines / court dates
   injuriesOrDamages: string;
   desiredOutcome: string;
   priorCounsel: string;     // have they spoken to other lawyers?
+
+  // ── Detailed report (optional; populated by the richer extractor) ──────────
+  // Every field below must be grounded in what the caller actually said. When a
+  // detail wasn't covered, it's left empty rather than guessed — gaps live in
+  // `openQuestions` so the firm follows up instead of the model inventing facts.
+  detailedNarrative?: string;                 // full factual write-up of the matter
+  keyFacts?: string[];                        // concrete facts the client stated
+  timeline?: { date: string; event: string }[]; // chronology as described
+  parties?: { name: string; role: string }[];    // people/entities + their role
+  witnesses?: string;                         // anyone who saw or can speak to it
+  evidenceMentioned?: string;                 // docs, photos, texts, records named
+  financialImpact?: string;                   // bills, lost wages, property loss
+  priorLegalActions?: string;                 // police reports, claims, suits filed
+  clientQuotes?: string[];                    // short verbatim quotes, client's words
+  openQuestions?: string[];                   // important unknowns to follow up on
+  emotionalState?: string;                    // how the caller presented (for the human)
 }
 
 export type IntakeDisposition = 'accepted' | 'review' | 'denied';
@@ -76,6 +92,7 @@ export type IntakeStatus = 'new' | 'accepted' | 'denied' | 'routed';
 export interface IntakeCase {
   id: string;
   created_at: string;
+  firm_id?: string;
   full_name: string;
   contact: string;
   matter_type: string;

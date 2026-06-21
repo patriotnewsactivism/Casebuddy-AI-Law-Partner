@@ -44,7 +44,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ agent, onBack }) => {
 
   const statusLine =
     status === 'connecting'
-      ? `Connecting to ${agent.name}…`
+      ? `Calling ${agent.name}… ringing`
       : status === 'error'
         ? 'Line dropped'
         : agentSpeaking
@@ -67,7 +67,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ agent, onBack }) => {
         <div className="relative flex flex-col items-center justify-center px-6 pt-12 pb-8 bg-gradient-to-b from-slate-900 to-slate-950 min-h-[22rem]">
           {/* Avatar */}
           <div className="relative mb-6">
-            {agentSpeaking && (
+            {(agentSpeaking || status === 'connecting') && (
               <>
                 <span className={`absolute inset-0 rounded-full ${agent.bgClass} animate-ping opacity-40`} />
                 <span className={`absolute -inset-3 rounded-full border ${agent.borderClass} animate-pulse`} />
@@ -80,6 +80,11 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ agent, onBack }) => {
             >
               {agent.emoji}
             </div>
+            {status === 'connecting' && (
+              <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 bg-green-600 text-white animate-pulse">
+                <Phone size={16} />
+              </div>
+            )}
             {status === 'live' && (
               <div className={`absolute -bottom-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border-2 border-slate-900 ${agentSpeaking ? 'bg-gold-500 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
                 {agentSpeaking ? <Volume2 size={16} /> : <Mic size={16} />}

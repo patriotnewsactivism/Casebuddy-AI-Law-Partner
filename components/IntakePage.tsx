@@ -26,7 +26,12 @@ interface MayaAssessment {
   greeting: string;
   summary: string;
   nextSteps: string[];
-  urgencyAssessment: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  strengths?: string[];
+  concerns?: string[];
+  specialist?: string;
+  recommendation?: 'proceed' | 'schedule-consult' | 'refer-out' | 'decline';
+  score?: number;
 }
 
 interface Lead {
@@ -293,19 +298,21 @@ Intake:
 - Phone: ${form.phone || 'Not provided'}
 - Matter: ${form.matterType}
 - Description: ${form.description}
-- Jurisdiction: ${form.jurisdiction || 'Not provided'}
+- Court date: ${form.courtDate || 'None specified'}
+- How soon they need help: ${form.urgency}
+
+IMPORTANT: Only reference facts the client actually stated. Do not invent, infer, or embellish.
 
 Respond in JSON with these exact keys:
-- greeting: 1 short sentence max — address them by first name, acknowledge the matter type. No fluff.
+- greeting: 1 short sentence — address them by first name, acknowledge the matter type. No fluff.
 - urgency: "low" | "medium" | "high" | "critical"
 - summary: 2 sentences max — what the case is about and the key legal issue
-- strengths: array of 2-3 bullet strings (strongest facts)
-- concerns: array of 1-2 bullet strings (biggest risks or gaps)
-- nextSteps: array of 3 action items the firm will take
+- strengths: array of 2-3 bullet strings (strongest facts from what they described)
+- concerns: array of 1-2 bullet strings (biggest risks or information gaps)
+- nextSteps: array of 3 concrete action items the firm will take
 - specialist: which agent should handle this (maya/lex/sol/rex/sierra/doc/jules/max)
 - recommendation: "proceed" | "schedule-consult" | "refer-out" | "decline"
 - score: 0-100 viability score`;
-
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -652,7 +659,7 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
                   <Clock size={16} className="text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">Urgency Assessment</h3>
-                    <p className="text-slate-300 text-sm leading-relaxed">{assessment.urgencyAssessment}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{assessment.urgency}</p>
                   </div>
                 </div>
 
