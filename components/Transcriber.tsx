@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import { transcribeAudio, performOCR, analyzeTranscription } from '../services/geminiService';
 import { transcribeWithDeeepgram, startDeepgramLiveSession } from '../services/integrationService';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
@@ -317,6 +318,7 @@ const Transcriber = () => {
   return (
     <div className="min-h-screen bg-slate-900 p-4 sm:p-6 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
+        <Breadcrumb items={[{ label: 'AI & Tools' }, { label: 'Transcriber & OCR' }]} />
         <AgentHeader agent={MAX} compact />
         {/* Header */}
         <div>

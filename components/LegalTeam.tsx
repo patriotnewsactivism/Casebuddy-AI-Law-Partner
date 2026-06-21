@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useContext } from 'react';
 import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2 } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { consultSpecialist } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
@@ -357,6 +358,7 @@ const LegalTeam: React.FC = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="mb-4 sm:mb-6 shrink-0">
+        <Breadcrumb items={[{ label: 'AI & Tools' }, { label: 'AI Lawyers' }]} />
         <div className="flex items-start justify-between gap-2 sm:gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white font-serif flex items-center gap-2 sm:gap-3">

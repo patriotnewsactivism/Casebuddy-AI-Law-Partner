@@ -53,7 +53,7 @@ export const OPERATIONAL_AGENTS: OperationalAgent[] = [
     bgClass: 'bg-blue-500/10',
     borderClass: 'border-blue-500/30',
     emoji: '📚',
-    route: '/app/strategy',
+    route: '/app/war-room',
     capabilities: ['Case law research', 'Statute analysis', 'Regulatory research', 'Citation support'],
   },
   {

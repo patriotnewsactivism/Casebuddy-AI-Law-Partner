@@ -5,6 +5,7 @@ import { simulateJurorReaction, runJuryDeliberation } from '../services/geminiSe
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const jules = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
@@ -187,9 +188,12 @@ const JurySimulator: React.FC = () => {
     if (!activeCase) setCaseContext('');
   };
 
+  const breadcrumb = <Breadcrumb items={[{ label: 'Trial Preparation' }, { label: 'Jury Simulator' }]} />;
+
   if (phase === 'setup') {
     return (
       <div className="space-y-6">
+        {breadcrumb}
         <AgentHeader agent={jules} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -253,6 +257,7 @@ const JurySimulator: React.FC = () => {
   if (phase === 'deliberation') {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 space-y-4">
+        {breadcrumb}
         <Loader2 size={40} className="animate-spin text-cyan-400" />
         <p className="text-slate-300 text-lg font-semibold">Jury is deliberating…</p>
         <p className="text-slate-500 text-sm">Simulating realistic jury room discussion</p>
@@ -267,6 +272,7 @@ const JurySimulator: React.FC = () => {
 
     return (
       <div className="space-y-6">
+        {breadcrumb}
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white font-serif flex items-center gap-2">
             <Gavel className="text-cyan-400" />

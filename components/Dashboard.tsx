@@ -58,6 +58,20 @@ const AgentTeamCard: React.FC<{ agent: typeof OPERATIONAL_AGENTS[0] }> = ({ agen
     <div className="text-2xl sm:text-3xl">{agent.emoji}</div>
     <p className={`text-xs sm:text-sm font-bold text-center ${agent.colorClass}`}>{agent.name}</p>
     <p className="text-xs text-slate-500 text-center leading-tight hidden sm:block">{agent.role}</p>
+    {/* Hover tooltip with description & capabilities */}
+    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50">
+      <div className="bg-slate-950 border border-slate-700 rounded-xl p-3 shadow-xl text-left">
+        <p className={`text-xs font-bold ${agent.colorClass} mb-1`}>{agent.name} — {agent.role}</p>
+        <p className="text-[11px] text-slate-400 leading-relaxed mb-2">{agent.description.slice(0, 120)}…</p>
+        <div className="flex flex-wrap gap-1">
+          {agent.capabilities.slice(0, 3).map(cap => (
+            <span key={cap} className="text-[10px] bg-slate-800 border border-slate-700 text-slate-300 px-1.5 py-0.5 rounded">
+              {cap}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
   </Link>
 );
 

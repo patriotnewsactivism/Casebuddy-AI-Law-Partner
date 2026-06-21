@@ -9,6 +9,7 @@ import { AppContext } from '../App';
 import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
 import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
 import { getSpecialistById } from '../agents/personas';
+import Breadcrumb from './Breadcrumb';
 
 const intakeUrl = () => `${window.location.origin}/intake`;
 
@@ -354,6 +355,7 @@ const IntakeInbox: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Intake & Clients' }, { label: 'Intake Inbox' }]} />
       <div className="flex items-center gap-3">
         <div className="w-11 h-11 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
           <Inbox size={22} className="text-violet-300" />
