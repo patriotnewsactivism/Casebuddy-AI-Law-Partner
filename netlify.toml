@@ -9,26 +9,24 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Map /api/* → Netlify functions
 [[redirects]]
   from = "/api/ai/voice-keys-public"
-  to = "/.netlify/functions/ai/voice-keys-public"
+  to = "/.netlify/functions/voice-keys-public"
   status = 200
   force = true
 
 [[redirects]]
   from = "/api/ai/voice-keys"
-  to = "/.netlify/functions/ai/voice-keys"
+  to = "/.netlify/functions/voice-keys"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  from = "/api/ai/gemini"
+  to = "/.netlify/functions/gemini-chat"
   status = 200
   force = true
 
-# SPA catch-all — must be last
 [[redirects]]
   from = "/*"
   to = "/index.html"
