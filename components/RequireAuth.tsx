@@ -6,14 +6,14 @@ import { isSupabaseConfigured } from '../services/supabaseClient';
 
 /** Gates the internal /app/* tool behind a signed-in Supabase session. */
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
-  const { authStatus } = useContext(AppContext);
+  const { user, authLoading } = useContext(AppContext);
   const location = useLocation();
 
   // No Supabase project configured at all — there's no backend to authenticate
   // against, so fail open rather than locking the app out entirely.
   if (!isSupabaseConfigured) return <>{children}</>;
 
-  if (authStatus === 'loading') {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#020617]">
         <Loader2 className="animate-spin text-gold-500" size={32} />
@@ -21,7 +21,7 @@ const RequireAuth = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (authStatus === 'unauthenticated') {
+  if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

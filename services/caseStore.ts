@@ -36,25 +36,48 @@ export const setFirmId = (id: string) => {
 };
 
 /**
- * Bridges the localStorage firm_id into the signed-in user's Supabase
- * user_metadata so it's available as a JWT claim for Postgres RLS policies
- * (see supabase/migrations/0003_auth_hardening.sql). Without this, an
- * authenticated user has no firm_id claim and firm-scoped RLS would match
- * nothing.
+ * Ensures the signed-in user has a row in `firm_memberships` so that
+ * firm-scoped RLS policies (migration 0005) can resolve their firm_id.
+ *
+ * Security model: firm_memberships has no UPDATE policy, so once a user
+ * claims a firm_id it is immutable from the client — preventing the
+ * user_metadata escalation attack from migration 0003.
+ *
+ * Flow:
+ *  1. Fetch the user's existing membership. If found, sync localStorage to
+ *     match (membership is source of truth after first claim).
+ *  2. If no membership, INSERT one using the firm_id from localStorage.
+ *     The PRIMARY KEY on user_id prevents double-claiming.
  */
 export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!user) return;
-  const metaFirmId = user.user_metadata?.firm_id as string | undefined;
-  if (metaFirmId) {
-    setFirmId(metaFirmId);
-    return;
-  }
-
   const sb = getSupabase();
   if (!sb) return;
-  const { error } = await sb.auth.updateUser({ data: { firm_id: getFirmId() } });
-  if (!error) {
-    await sb.auth.refreshSession();
+
+  try {
+    const { data: membership } = await sb
+      .from('firm_memberships')
+      .select('firm_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (membership?.firm_id) {
+      // Existing membership is the source of truth — sync localStorage.
+      setFirmId(membership.firm_id);
+      return;
+    }
+
+    // No membership yet — claim this device's firm_id.
+    const { error } = await sb
+      .from('firm_memberships')
+      .insert({ user_id: user.id, firm_id: getFirmId() });
+
+    // 23505 = unique_violation means another tab beat us to it — not an error.
+    if (error && error.code !== '23505') {
+      console.warn('[caseStore] firm membership claim failed:', error.message);
+    }
+  } catch {
+    // Best-effort: if Supabase is unreachable, localStorage firm_id is used.
   }
 };
 

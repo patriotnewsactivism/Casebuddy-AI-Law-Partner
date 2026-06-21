@@ -268,7 +268,7 @@ const PublicIntake: React.FC = () => {
                   </p>
                   {result && (
                     <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-sm font-semibold">
-                      Case priority: {result.priority ?? 'Standard'}
+                      Case priority: {result.urgency ?? 'Standard'}
                     </div>
                   )}
                 </div>

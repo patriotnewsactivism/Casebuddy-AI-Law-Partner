@@ -92,6 +92,7 @@ export type IntakeStatus = 'new' | 'accepted' | 'denied' | 'routed';
 export interface IntakeCase {
   id: string;
   created_at: string;
+  firm_id?: string;
   full_name: string;
   contact: string;
   matter_type: string;

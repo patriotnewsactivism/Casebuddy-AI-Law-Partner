@@ -7,7 +7,7 @@ import { signIn, signUp, sendPasswordResetEmail, isAuthAvailable } from '../serv
 type Mode = 'signin' | 'signup' | 'forgot';
 
 const Login: React.FC = () => {
-  const { authStatus } = useContext(AppContext);
+  const { user, authLoading } = useContext(AppContext);
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as any)?.from?.pathname || '/app';
@@ -20,8 +20,8 @@ const Login: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (authStatus === 'authenticated') navigate(from, { replace: true });
-  }, [authStatus, from, navigate]);
+    if (!authLoading && user) navigate(from, { replace: true });
+  }, [authLoading, user, from, navigate]);
 
   const resetMessages = () => {
     setError(null);
