@@ -7,6 +7,7 @@ import { printAsPdf, letterToPdfHtml } from '../utils/pdfExport';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const SIERRA = OPERATIONAL_AGENTS.find(a => a.id === 'sierra')!;
@@ -145,6 +146,7 @@ const ClientUpdate = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Intake & Clients' }, { label: 'Client Communications' }]} />
       <AgentHeader agent={SIERRA} compact />
       <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">

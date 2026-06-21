@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AppContext } from '../App';
 import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X, Scale, Loader2, Gavel } from 'lucide-react';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
 import { GoogleGenAI } from '@google/genai';
@@ -296,6 +297,7 @@ Return ONLY a JSON object with exactly these string fields:
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Case Management' }, { label: 'Deadlines & Calendar' }]} />
       <AgentHeader agent={SOL} compact />
 
       {/* Header */}

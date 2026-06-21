@@ -5,6 +5,7 @@ import { generateWitnessResponse, generateWitnessCoaching } from '../services/ge
 import { Message, Witness } from '../types';
 import { Send, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 
@@ -107,6 +108,7 @@ const WitnessLab = () => {
 
   return (
     <div className="space-y-4">
+      <Breadcrumb items={[{ label: 'Trial Preparation' }, { label: 'Witness Lab' }]} />
       <AgentHeader agent={REX} compact />
       <div className="h-[calc(100vh-10rem)] flex gap-4">
       {/* Left Sidebar: Witness Selection */}

@@ -5,6 +5,7 @@ import { ClipboardList, Loader, ChevronDown, ChevronUp, Copy, Download, Plus, Tr
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 
@@ -177,6 +178,7 @@ const DepositionPrep = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Trial Preparation' }, { label: 'Deposition Prep' }]} />
       <AgentHeader agent={REX} compact />
       <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">

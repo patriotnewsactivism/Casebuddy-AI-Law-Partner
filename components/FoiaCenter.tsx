@@ -6,6 +6,7 @@ import {
 import { GoogleGenAI } from "@google/genai";
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
 
@@ -325,6 +326,7 @@ Output ONLY the follow-up letter.`;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Case Management' }, { label: 'FOIA & Records' }]} />
       <AgentHeader agent={MAX} compact />
       <AIDisclaimer variant="full" className="mt-4" />
 

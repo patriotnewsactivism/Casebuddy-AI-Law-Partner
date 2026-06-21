@@ -351,7 +351,7 @@ const Dashboard = () => {
               { to: '/app/intake-inbox', label: 'Intake Inbox', icon: ClipboardList, cls: 'bg-violet-500/10 border-violet-500/30 text-violet-200 hover:bg-violet-500/20', iconCls: 'text-violet-400' },
               { to: '/app/legal-team', label: 'Consult AI Lawyers', icon: Scale, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-gold-400' },
               { to: '/app/practice', label: 'Trial Simulator', icon: Mic, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-gold-500' },
-              { to: '/app/strategy', label: 'Strategy & Tactics', icon: TrendingUp, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-purple-400' },
+              { to: '/app/war-room', label: 'Command Center', icon: TrendingUp, cls: 'bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-800', iconCls: 'text-purple-400' },
             ].map(a => (
               <Link key={a.to} to={a.to} className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-colors text-left group ${a.cls}`}>
                 <span className="text-sm font-medium">{a.label}</span>

@@ -20,7 +20,7 @@ import CopilotSidebar from './components/CopilotSidebar';
 const Dashboard        = React.lazy(() => import('./components/Dashboard'));
 const CaseManager      = React.lazy(() => import('./components/CaseManager'));
 const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
-const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
+// StrategyRoom merged into WarRoom (Command Center) — /app/strategy redirects to /app/war-room
 const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
 const LandingPage      = React.lazy(() => import('./components/LandingPage'));
 const PrivacyPolicy    = React.lazy(() => import('./components/PrivacyPolicy'));
@@ -68,25 +68,31 @@ const PageSpinner = () => (
 
 const NAV_GROUPS = [
   {
-    label: 'Case Management',
+    label: 'Overview',
     items: [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
-      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
       { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
-      { path: '/app/cases', icon: Gavel, label: 'Case Files' },
-      { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/war-room', icon: Shield, label: 'War Room' },
     ]
   },
   {
-    label: 'Legal Team',
+    label: 'Intake & Clients',
     items: [
-      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
-      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
+      { path: '/app/firm', icon: PhoneCall, label: 'Voice Intake (Maya)', badge: 'Voice' },
+      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
+      { path: '/app/client-update', icon: Mail, label: 'Client Communications' },
     ]
   },
   {
-    label: 'Courtroom Prep',
+    label: 'Case Management',
+    items: [
+      { path: '/app/cases', icon: Gavel, label: 'Case Files' },
+      { path: '/app/evidence', icon: Archive, label: 'Evidence & Docs' },
+      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadlines & Calendar' },
+      { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
+    ]
+  },
+  {
+    label: 'Trial Preparation',
     items: [
       { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
       { path: '/app/witness-lab', icon: Users, label: 'Witness Lab' },
@@ -97,21 +103,19 @@ const NAV_GROUPS = [
     ]
   },
   {
-    label: 'Drafting & Strategy',
+    label: 'Drafting Center',
     items: [
-      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
       { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
-      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
+      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
       { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
     ]
   },
   {
-    label: 'Tools',
+    label: 'AI & Tools',
     items: [
+      { path: '/app/war-room', icon: Shield, label: 'Command Center' },
+      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
-      { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
-      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
-      { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
       { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
@@ -508,7 +512,7 @@ const App = () => {
             <Route path="/app/practice" element={<AuthGate><Layout><ArgumentPractice /></Layout></AuthGate>} />
             <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
             <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
-            <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
+            <Route path="/app/strategy" element={<Navigate to="/app/war-room" replace />} />
             <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
             <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
             <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />

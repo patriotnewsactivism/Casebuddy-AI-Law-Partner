@@ -4,6 +4,7 @@ import { AppContext } from '../App';
 import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2, FileDown } from 'lucide-react';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 import { deepseekChat } from '../services/deepseek';
@@ -243,6 +244,7 @@ Generate the complete document ready for attorney review.`;
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: 'Drafting Center' }, { label: 'Drafting Assistant' }]} />
       <AgentHeader agent={DOC} compact />
       <div>
         <h1 className="text-3xl font-bold text-white font-serif">Drafting Assistant</h1>

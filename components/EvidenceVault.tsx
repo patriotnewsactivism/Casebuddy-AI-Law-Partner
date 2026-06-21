@@ -4,6 +4,7 @@ import { analyzeEvidence } from '../services/geminiService';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
@@ -113,6 +114,7 @@ const EvidenceVault = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Case Management' }, { label: 'Evidence & Docs' }]} />
       <AgentHeader agent={MAX} compact />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

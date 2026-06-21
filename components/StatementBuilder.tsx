@@ -5,6 +5,7 @@ import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
@@ -167,6 +168,7 @@ const StatementBuilder = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Drafting Center' }, { label: 'Statement Builder' }]} />
       <AgentHeader agent={DOC} compact />
       <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">

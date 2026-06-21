@@ -5,6 +5,7 @@ import { UserCheck, Loader, Trash2, AlertTriangle, CheckCircle, XCircle, HelpCir
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
+import Breadcrumb from './Breadcrumb';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const JULES = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
@@ -131,6 +132,7 @@ const JuryAnalyzer = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <Breadcrumb items={[{ label: 'Trial Preparation' }, { label: 'Jury Analyzer' }]} />
       <AgentHeader agent={JULES} compact />
       <AIDisclaimer variant="full" className="mt-4" />
       <div className="flex items-center gap-3">
