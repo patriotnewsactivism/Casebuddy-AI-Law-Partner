@@ -345,9 +345,11 @@ export function useDeepgramVoiceAgent(
                 model: LISTEN_MODEL,
                 // encoding + sample_rate are set in audio.input above, not here
               },
+              // Wait 1800ms of silence before Maya responds — natural human pause
+              utterance_end_ms: UTTERANCE_END_MS,
             },
             think: {
-              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.6 },
+              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.82 },
               prompt,
             },
             speak: {
