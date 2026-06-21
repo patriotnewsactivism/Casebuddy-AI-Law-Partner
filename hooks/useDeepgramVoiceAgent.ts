@@ -12,20 +12,21 @@ import { setRuntimeKeys } from '../services/runtimeKeys';
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
-const UTTERANCE_END_MS = 1800; // ms of silence before Maya responds — long enough for natural pauses
+const UTTERANCE_END_MS = 1500; // ms of silence before agent responds — balanced: patient enough for natural pauses, responsive enough to not feel laggy
 const OUTPUT_RATE = 24000;
 
 // Turn-taking. We listen with Nova-3, Deepgram's latest STT model.
-// utterance_end_ms: 1500ms of silence signals end-of-turn — long enough that
-// a stressed caller can pause mid-thought without the agent jumping in.
-// vad_events: true enables voice-activity detection events for smoother barge-in.
 const LISTEN_MODEL = 'nova-3';
-const EOT_THRESHOLD = 0.8;   // kept for reference, not used with nova-3
-const EOT_TIMEOUT_MS = 8000; // kept for reference, not used with nova-3
 // How quickly we fade the agent's voice out when the caller barges in. A short
-// ramp instead of a hard cut means her words are never abruptly clipped.
-const BARGE_FADE_MS = 140; // slightly longer fade — never clips her mid-word
-const SPEAKING_RATE_DEFAULT = 0.92; // natural human pace — not rushed // slightly more natural than 1.1
+// ramp instead of a hard cut means words are never abruptly clipped.
+const BARGE_FADE_MS = 140;
+// Natural speaking rate — 0.95 is slightly below 1.0 for a deliberate, human
+// cadence without sounding artificially slow. Each agent can override via
+// their VoiceProfile.speakingRate.
+const SPEAKING_RATE_DEFAULT = 0.95;
+// First audio chunk delay: gives the Web Audio pipeline time to warm up so the
+// greeting's first syllable never gets clipped.
+const FIRST_CHUNK_DELAY_S = 0.12; // 120ms pre-roll buffer
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
@@ -217,7 +218,14 @@ export function useDeepgramVoiceAgent(
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
-    nextStartRef.current = Math.max(nextStartRef.current, outputCtx.currentTime);
+    // First chunk of a new turn: add a small delay so the audio hardware is
+    // fully warm before playback begins. Prevents the greeting's first syllable
+    // from being clipped on cold start.
+    if (sourcesRef.current.size === 0) {
+      nextStartRef.current = Math.max(nextStartRef.current, outputCtx.currentTime + FIRST_CHUNK_DELAY_S);
+    } else {
+      nextStartRef.current = Math.max(nextStartRef.current, outputCtx.currentTime);
+    }
     const src = outputCtx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(outGain);

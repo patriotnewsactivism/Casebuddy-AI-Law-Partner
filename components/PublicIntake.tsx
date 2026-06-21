@@ -12,8 +12,9 @@ import { IntakeScore } from '../types';
 // the conversation, score it, route it, and persist it for the firm — then show
 // the prospect a warm, human outcome.
 
-// Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
-const MAYA_VOICE = 'aura-2-thalia-en';
+// Maya's voice — Helena is Deepgram's most human-sounding female voice:
+// caring, natural, friendly, with a slight rasp that makes her unmistakably real.
+const MAYA_VOICE = 'aura-2-helena-en';
 
 const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. Warm, quick, and sharp.
 
@@ -43,8 +44,9 @@ CRITICAL — NO LOOPING:
 
 If directly asked: you're an AI intake specialist at CaseBuddy — not a licensed attorney.`;
 
-// Short, punchy greeting — gets Maya talking fast without a long intro
-const MAYA_GREETING = "Hey — Maya at CaseBuddy. What's going on?";
+// Short, warm greeting — "Hi" gives the audio pipeline a soft consonant to
+// start on (resilient to slight clipping), then straight to business.
+const MAYA_GREETING = "Hi, this is Maya with CaseBuddy. Tell me what's going on.";
 
 type Phase = 'welcome' | 'talking' | 'processing' | 'result';
 
@@ -59,6 +61,7 @@ const PublicIntake: React.FC = () => {
     systemInstruction: MAYA_INTAKE_PROMPT,
     greeting: MAYA_GREETING,
     publicEndpoint: true,
+    speakingRate: 0.95,
   });
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
 

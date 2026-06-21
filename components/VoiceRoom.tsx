@@ -28,11 +28,12 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ agent, onBack }) => {
   const profile = getVoiceProfile(agent.id);
 
   const voice = useDeepgramVoiceAgent({
-    voiceModel: profile?.auraVoice ?? 'aura-2-thalia-en',
+    voiceModel: profile?.auraVoice ?? 'aura-2-helena-en',
     systemInstruction: profile?.systemInstruction ?? `You are ${agent.name}, ${agent.title}.`,
     greeting:
       profile?.greeting ?? `Hi, this is ${agent.name}. How can I help you today?`,
     caseContext: buildCaseContext(activeCase),
+    speakingRate: profile?.speakingRate,
   });
 
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
