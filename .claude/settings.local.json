@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm run dev:*)",
-      "PowerShell(Get-ChildItem C:\\\\Casebuddy-AI-Lawfirm\\\\components -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object FullName | Format-Table -AutoSize)"
+      "PowerShell(Get-ChildItem C:\\\\Casebuddy-AI-Lawfirm\\\\components -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object FullName | Format-Table -AutoSize)",
+      "PowerShell(git pull *)",
+      "PowerShell(sort *)"
     ],
     "deny": [],
     "ask": []
