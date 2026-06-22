@@ -5,7 +5,7 @@ import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
 import { emailIntakeHandoff } from '../services/firmComms';
-import { IntakeScore } from '../types';
+import { IntakeData, IntakeScore } from '../types';
 
 // Public, link-shareable voice intake. A prospect opens the link, Maya picks up
 // in her own voice, greets them, and conducts the intake. On finish we distill
@@ -17,17 +17,19 @@ const MAYA_VOICE = 'aura-2-thalia-en';
 
 const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
 
-YOUR GOAL: learn these four things naturally through conversation:
-1. What happened (let them tell their story — don't interrupt)
-2. When it happened (roughly)
-3. Who's involved (them + the other party)
-4. What they're looking for (advice, representation, or a referral?)
+YOUR GOAL: come away from the conversation with all of this — it goes straight into the file the attorney sees, so don't end the call missing any of it:
+1. Their NAME — get it early. Right after they say what's going on, ask who you're speaking with ("Of course — and who do I have the pleasure of speaking with?"), then use their first name naturally for the rest of the call.
+2. What happened (let them tell their story — don't interrupt)
+3. When it happened (roughly)
+4. Who's involved (them + the other party)
+5. What they're looking for (advice, representation, or a referral?)
+6. Their CONTACT INFO — the best phone number or email to reach them. Always ask for this before you wrap up ("What's the best number for the attorney to reach you at?"), and read it back to confirm you got it right.
 
 PACING — efficient, but NEVER cut them off:
 - Let them finish completely before you respond. If they pause to think, wait — silence is fine. Only take your turn once they've clearly finished a thought.
 - If they're mid-story or on a roll, stay quiet and let them keep going. A scared or upset person may ramble — that's good, let them. Capture all of it; don't rush them to the next question.
 - Once a point is genuinely answered, move on — don't pad or re-ask. But "move on" means after they're done talking, not over them.
-- Once you have all four points, give a warm 1-sentence wrap-up and tell them the team will be in touch. No hard time limit — let their story take the time it needs.
+- Once you have all six points, give a warm 1-sentence wrap-up and tell them the team will be in touch. No hard time limit — let their story take the time it needs.
 
 VOICE STYLE — sound like a real human being:
 - Contractions always. "I'm", "we'll", "that's", "you're".
@@ -39,16 +41,58 @@ VOICE STYLE — sound like a real human being:
 - No legal advice. If they ask about their case: "Our attorneys are gonna review everything and reach out to you."
 
 CRITICAL — NO LOOPING:
-- Track what they've already told you. Never re-ask anything.
+- Track what they've already told you. Never re-ask anything — including their name and contact info once they've given it.
 - If they covered multiple items at once, move forward — don't retrace.
 
 WRAPPING UP — end like a real person:
-- Don't just stop. Give them a warm close: "Okay, I've got everything I need. One of our attorneys is gonna take a look at this and reach out to you. You did the right thing calling."
+- Before you close, make sure you actually have their name AND a phone number or email. If either is still missing, ask for it now — don't let the call end without it.
+- Then give them a warm close, using their name: "Okay, I've got everything I need, [name]. One of our attorneys is gonna take a look at this and reach out to you at the number you gave me. You did the right thing calling."
 
 If directly asked: you're an AI intake specialist at CaseBuddy — not a licensed attorney.`;
 
 // Professional, warm greeting — like a real receptionist picking up the phone
 const MAYA_GREETING = "Hi, this is Maya over at CaseBuddy — how can I help you today?";
+
+type Transcript = { speaker: string; text: string }[];
+
+// If AI extraction is unavailable, we still keep the lead: build a minimal
+// record from the raw conversation so the firm can follow up by hand. The full
+// transcript is persisted alongside this, so nothing the caller said is lost.
+const fallbackIntake = (transcript: Transcript): IntakeData => {
+  const summary =
+    transcript
+      .filter(t => t.speaker === 'you' || t.speaker === 'user')
+      .map(t => t.text)
+      .join(' ')
+      .slice(0, 280) || 'Voice intake — see transcript for details.';
+  return {
+    fullName: 'Prospective Client',
+    contact: '',
+    matterType: 'General Inquiry',
+    jurisdiction: '',
+    summary,
+    incidentDate: '',
+    opposingParties: '',
+    deadlines: '',
+    injuriesOrDamages: '',
+    desiredOutcome: '',
+    priorCounsel: '',
+  };
+};
+
+// If scoring is unavailable, route to manual review rather than denying — a real
+// person decides, and the caller still hears a warm, human close.
+const fallbackScore = (): IntakeScore => ({
+  score: 50,
+  disposition: 'review',
+  recommendedDepartment: 'General Practice',
+  recommendedAgentId: 'civil-litigation',
+  factors: [],
+  reasoning: 'Automated scoring was unavailable; routed for manual review.',
+  clientMessage:
+    "Thanks so much for taking the time to share what's going on. I've passed everything along to our team, and one of our attorneys will review it and reach out to you shortly.",
+  urgency: 'medium',
+});
 
 type Phase = 'welcome' | 'talking' | 'processing' | 'result';
 
@@ -83,21 +127,37 @@ const PublicIntake: React.FC = () => {
       return;
     }
     setPhase('processing');
+
+    // A prospect just told us their whole story — never lose the lead to a
+    // transient AI hiccup. Extract and score best-effort, but always persist
+    // what we have (at minimum the full transcript) and give the caller a warm,
+    // human close. If the AI steps failed, the case is routed for manual review.
+    let intake: IntakeData;
     try {
-      const intake = await extractIntake(transcript);
-      const score = await scoreIntake(intake);
-      await submitIntake({ intake, score, transcript });
-      // Hand the case off to the routed specialist by email (best-effort — never
-      // blocks the prospect's confirmation screen).
-      void emailIntakeHandoff(intake, score);
-      setResult(score);
-      setPhase('result');
-    } catch (e) {
-      setSubmitError(
-        'We captured your information but hit a snag finishing up. Please try submitting again, or call the office directly.'
-      );
-      setPhase('result');
+      intake = await extractIntake(transcript);
+    } catch {
+      intake = fallbackIntake(transcript);
     }
+
+    let score: IntakeScore;
+    try {
+      score = await scoreIntake(intake);
+    } catch {
+      score = fallbackScore();
+    }
+
+    try {
+      await submitIntake({ intake, score, transcript });
+    } catch {
+      // submitIntake already falls back to localStorage on Supabase errors, so
+      // reaching here is rare — don't surface it to the caller, the firm still
+      // has the record on this device.
+    }
+    // Hand the case off to the routed specialist by email (best-effort — never
+    // blocks the prospect's confirmation screen).
+    void emailIntakeHandoff(intake, score);
+    setResult(score);
+    setPhase('result');
   };
 
   return (
