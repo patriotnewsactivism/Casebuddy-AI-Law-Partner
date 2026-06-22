@@ -15,6 +15,7 @@
 import type { User } from '@supabase/supabase-js';
 import { Case } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { getSession } from './authService';
 import { saveCases, loadCases } from '../utils/storage';
 
 const CASES_TABLE = 'cases';
@@ -85,6 +86,63 @@ export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
 
 export type SyncStatus = 'syncing' | 'synced' | 'local-only' | 'error';
 
+// ─── cloud row mapping ─────────────────────────────────────────────────────────
+//
+// The deployed `cases` table is per-user: `id` is a uuid, `user_id` defaults to
+// auth.uid() (and RLS requires it to match the caller), and `name`/`case_type`/
+// `client_name` are NOT NULL. The app, however, keys cases by ids like
+// `Date.now().toString()` and stores the whole Case object. We bridge the two:
+//
+//   • id        — a deterministic uuid (v5: SHA-1 over a fixed namespace + the
+//                 app id) so every case maps to exactly one cloud row and
+//                 re-saves upsert idempotently. The real app id is preserved
+//                 inside `data`, which is what we read back.
+//   • data      — the full Case (source of truth for the client).
+//   • name/…    — populated to satisfy the table's NOT NULL columns.
+//   • user_id   — deliberately omitted so the column default (auth.uid()) fills
+//                 it, satisfying the "auth.uid() = user_id" insert policy and
+//                 making the creator the case 'owner' for later updates/deletes.
+
+// RFC-4122 DNS namespace, as raw bytes.
+const CASE_ID_NAMESPACE = Uint8Array.from(
+  '6ba7b8109dad11d180b400c04fd430c8'.match(/.{2}/g)!.map(h => parseInt(h, 16))
+);
+
+const deriveCaseRowId = async (appId: string): Promise<string> => {
+  const idBytes = new TextEncoder().encode(appId);
+  const input = new Uint8Array(CASE_ID_NAMESPACE.length + idBytes.length);
+  input.set(CASE_ID_NAMESPACE, 0);
+  input.set(idBytes, CASE_ID_NAMESPACE.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', input));
+  const b = digest.slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const toCaseRow = async (c: Case) => ({
+  id: await deriveCaseRowId(c.id),
+  firm_id: getFirmId(),
+  data: c,
+  name: c.title?.trim() || 'Untitled Case',
+  case_type: 'general',
+  client_name: c.client?.trim() || 'Unknown',
+});
+
+// Cloud writes hit a per-user table whose insert policy needs auth.uid(), so
+// only attempt them with a real session. Without this, anonymous page loads
+// (e.g. a visitor with stale localStorage cases) fire inserts that fail the
+// user_id NOT NULL constraint with a 400.
+const hasAuthedSession = async (): Promise<boolean> => {
+  try {
+    const session = await getSession();
+    return !!session?.access_token;
+  } catch {
+    return false;
+  }
+};
+
 // ─── fetch ────────────────────────────────────────────────────────────────────
 
 export const fetchCasesFromCloud = async (): Promise<Case[] | null> => {
@@ -108,15 +166,14 @@ export const upsertCaseToCloud = async (c: Case): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
   const sb = getSupabase();
   if (!sb) return false;
+  if (!(await hasAuthedSession())) return false;
 
   // Never throw: callers often fire this without awaiting, so a network-level
   // rejection here would surface as an unhandled rejection and lose the case
   // silently. Swallow to a boolean instead.
   try {
-    const { error } = await sb.from(CASES_TABLE).upsert(
-      { id: c.id, firm_id: getFirmId(), data: c },
-      { onConflict: 'id' }
-    );
+    const { error } = await sb.from(CASES_TABLE).upsert(await toCaseRow(c), { onConflict: 'id' });
+    if (error) console.warn('[caseStore] case upsert failed:', error.message);
     return !error;
   } catch {
     return false;
@@ -129,15 +186,12 @@ export const syncLocalCasesToCloud = async (cases: Case[]): Promise<boolean> => 
   if (!isSupabaseConfigured || cases.length === 0) return false;
   const sb = getSupabase();
   if (!sb) return false;
-
-  const rows = cases.map(c => ({
-    id: c.id,
-    firm_id: getFirmId(),
-    data: c,
-  }));
+  if (!(await hasAuthedSession())) return false;
 
   try {
+    const rows = await Promise.all(cases.map(toCaseRow));
     const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });
+    if (error) console.warn('[caseStore] batch case sync failed:', error.message);
     return !error;
   } catch {
     return false;
@@ -150,8 +204,10 @@ export const deleteCaseFromCloud = async (id: string): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
   const sb = getSupabase();
   if (!sb) return false;
+  if (!(await hasAuthedSession())) return false;
 
-  const { error } = await sb.from(CASES_TABLE).delete().eq('id', id).eq('firm_id', getFirmId());
+  const rowId = await deriveCaseRowId(id);
+  const { error } = await sb.from(CASES_TABLE).delete().eq('id', rowId).eq('firm_id', getFirmId());
   return !error;
 };
 

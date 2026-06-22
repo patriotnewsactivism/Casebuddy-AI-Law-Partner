@@ -376,8 +376,10 @@ export function useDeepgramVoiceAgent(
               provider: {
                 type: 'deepgram',
                 model: LISTEN_MODEL,
-                encoding: 'linear16',
-                sample_rate: INPUT_RATE,
+                // Flux end-of-turn tuning is only accepted on the v2 listen API.
+                // Audio encoding/sample_rate belong in audio.input (above) — the
+                // agent rejects them here as an unparseable client message.
+                version: 'v2',
                 // Be patient: don't take the turn until we're confident the
                 // caller is done, and tolerate long thinking pauses.
                 eot_threshold: EOT_THRESHOLD,
