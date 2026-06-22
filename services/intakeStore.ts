@@ -1,5 +1,6 @@
 import { getSupabase, INTAKE_TABLE, isSupabaseConfigured } from './supabaseClient';
 import { IntakeCase, IntakeData, IntakeScore, IntakeStatus } from '../types';
+import { getFirmId } from './caseStore';
 
 // Persists intake cases to Supabase so a prospect's submission on their own
 // device shows up live in the attorney's dashboard. Falls back to localStorage
@@ -36,6 +37,10 @@ export interface SubmitIntakeArgs {
 const buildRow = ({ intake, score, transcript }: SubmitIntakeArgs): IntakeCase => ({
   id: (globalThis.crypto?.randomUUID?.() ?? `intake_${Date.now()}_${Math.random().toString(36).slice(2)}`),
   created_at: new Date().toISOString(),
+  // firm_id scopes the intake to this firm's dashboard (migration 0005).
+  // VITE_FIRM_ID is the canonical firm ID for this deployment; falls back to
+  // the device's localStorage UUID so single-user installs still work.
+  firm_id: (import.meta.env.VITE_FIRM_ID as string | undefined) || getFirmId(),
   full_name: intake.fullName,
   contact: intake.contact,
   matter_type: intake.matterType,

@@ -35,7 +35,7 @@ export const OPERATIONAL_AGENTS: OperationalAgent[] = [
     name: 'Maya',
     title: 'Case Intake Specialist',
     role: 'Case Intake',
-    description: 'Your first point of contact. Maya gathers case details, identifies potential claims, and onboards new clients with precision and empathy.',
+    description: 'Your first point of contact. Maya v2.0 gathers case details with strict no-hallucination protocols, summarize-first methodology, and one-question-at-a-time precision. Identifies potential claims and onboards new clients with empathy.',
     colorClass: 'text-violet-400',
     bgClass: 'bg-violet-500/10',
     borderClass: 'border-violet-500/30',

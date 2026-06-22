@@ -123,10 +123,90 @@ const IntakeCard: React.FC<{
             <Field label="Opposing party" value={row.intake?.opposingParties || '—'} />
             <Field label="Deadlines" value={row.intake?.deadlines || '—'} highlight={!!row.intake?.deadlines} />
             <Field label="Damages" value={row.intake?.injuriesOrDamages || '—'} />
+            {row.intake?.financialImpact && <Field label="Financial impact" value={row.intake.financialImpact} />}
+            {row.intake?.witnesses && <Field label="Witnesses" value={row.intake.witnesses} />}
+            {row.intake?.priorLegalActions && <Field label="Prior legal action" value={row.intake.priorLegalActions} />}
           </div>
 
           {row.intake?.desiredOutcome && (
             <Field label="Desired outcome" value={row.intake.desiredOutcome} />
+          )}
+
+          {/* Detailed narrative — the full faithful write-up of the matter */}
+          {row.intake?.detailedNarrative && (
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Case narrative</p>
+              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{row.intake.detailedNarrative}</p>
+            </div>
+          )}
+
+          {/* Key facts */}
+          {row.intake?.keyFacts && row.intake.keyFacts.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Key facts</p>
+              <ul className="space-y-1">
+                {row.intake.keyFacts.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-gold-400 shrink-0" />{f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Timeline */}
+          {row.intake?.timeline && row.intake.timeline.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Timeline</p>
+              <div className="space-y-1.5 border-l border-slate-700 pl-3">
+                {row.intake.timeline.map((t, i) => (
+                  <div key={i} className="text-sm">
+                    {t.date && <span className="text-gold-400 font-medium mr-2">{t.date}</span>}
+                    <span className="text-slate-300">{t.event}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Parties */}
+          {row.intake?.parties && row.intake.parties.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {row.intake.parties.map((p, i) => (
+                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                  <span className="text-white font-medium">{p.name}</span>{p.role ? ` · ${p.role}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Evidence */}
+          {row.intake?.evidenceMentioned && (
+            <Field label="Evidence mentioned" value={row.intake.evidenceMentioned} />
+          )}
+
+          {/* Verbatim quotes */}
+          {row.intake?.clientQuotes && row.intake.clientQuotes.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">In their own words</p>
+              {row.intake.clientQuotes.map((q, i) => (
+                <blockquote key={i} className="border-l-2 border-violet-500/50 pl-3 text-sm text-slate-300 italic">"{q}"</blockquote>
+              ))}
+            </div>
+          )}
+
+          {/* Open questions — gaps to follow up, not guesses */}
+          {row.intake?.openQuestions && row.intake.openQuestions.length > 0 && (
+            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+              <p className="text-xs font-bold text-amber-400/80 uppercase tracking-wide mb-1.5">Follow-up needed</p>
+              <ul className="space-y-1">
+                {row.intake.openQuestions.map((q, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-amber-100/90">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400 shrink-0" />{q}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {/* Routing */}
@@ -232,7 +312,7 @@ const IntakeInbox: React.FC = () => {
       opposingCounsel: row.intake?.opposingParties || '',
       judge: '',
       nextCourtDate: row.intake?.deadlines || '',
-      summary: row.summary || row.intake?.summary || '',
+      summary: row.intake?.detailedNarrative || row.summary || row.intake?.summary || '',
       winProbability: row.score,
     };
     addCase(newCase);

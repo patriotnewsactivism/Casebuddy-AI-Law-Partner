@@ -61,6 +61,11 @@ export default defineConfig(({ mode }) => {
         'process.env.DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY || env.VITE_DEEPSEEK_API_KEY || ''),
         // Deepgram — DEV ONLY
         'import.meta.env.VITE_DEEPGRAM_API_KEY': JSON.stringify(env.VITE_DEEPGRAM_API_KEY || (mode === 'development' ? env.DEEPGRAM_API_KEY : '') || ''),
+        // Firm ID — canonical UUID for this deployment (used to scope intake
+        // submissions to the correct firm dashboard in multi-firm RLS).
+        // Set VITE_FIRM_ID in .env.local or Vercel env vars. Falls back to the
+        // device localStorage UUID when not set (single-user installs).
+        'import.meta.env.VITE_FIRM_ID': JSON.stringify(env.VITE_FIRM_ID || ''),
       },
       resolve: {
         alias: {
@@ -71,6 +76,10 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             manualChunks: {
+              'lucide': ['lucide-react'],
+              'framer-motion': ['framer-motion'],
+              'vendor': ['react', 'react-dom', 'react-router-dom', 'react-toastify'],
+              'ai-services': ['@google/genai'],
               recharts: ['recharts'],
               supabase: ['@supabase/supabase-js'],
             },
