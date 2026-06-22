@@ -239,9 +239,12 @@ export function useDeepgramVoiceAgent(
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
-    // Small look-ahead buffer (30ms) on first chunk only so it doesn't
-    // start right on the audio context edge — prevents initial clipping.
-    const now = outputCtx.currentTime + (isFirstChunk ? 0.03 : 0);
+    // Look-ahead buffer on the first chunk of an utterance so playback doesn't
+    // begin right on the audio-context edge. On a freshly-resumed context — the
+    // greeting — 30ms was too tight and the attack of her first word got clipped.
+    // A larger cushion lets the audio pipeline spin up so the opening syllable is
+    // never dropped; it only delays the very first chunk of each turn.
+    const now = outputCtx.currentTime + (isFirstChunk ? 0.15 : 0);
     nextStartRef.current = Math.max(nextStartRef.current, now);
     const src = outputCtx.createBufferSource();
     src.buffer = audioBuffer;
