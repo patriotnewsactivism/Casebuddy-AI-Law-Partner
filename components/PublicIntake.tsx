@@ -97,6 +97,19 @@ const fallbackScore = (): IntakeScore => ({
 type Phase = 'welcome' | 'talking' | 'processing' | 'result';
 
 const PublicIntake: React.FC = () => {
+  const { token } = useParams<{ token?: string }>();
+  const [firmId, setFirmId] = React.useState<string | null>(null);
+
+  // Resolve the intake token → firm_id on mount
+  React.useEffect(() => {
+    if (token) {
+      resolveFirmToken(token).then(id => {
+        if (id) setFirmId(id);
+        else console.warn('[PublicIntake] Unknown token — intake will use default firm_id');
+      });
+    }
+  }, [token]);
+
   const [phase, setPhase] = useState<Phase>('welcome');
   const [result, setResult] = useState<IntakeScore | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
