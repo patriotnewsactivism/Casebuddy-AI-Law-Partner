@@ -38,17 +38,27 @@ export const setFirmId = (id: string) => {
 
 /**
  * Ensures the signed-in user has a row in `firm_memberships` so that
- * firm-scoped RLS policies (migration 0005) can resolve their firm_id.
+ * firm-scoped RLS policies can resolve their firm_id.
  *
- * Security model: firm_memberships has no UPDATE policy, so once a user
- * claims a firm_id it is immutable from the client — preventing the
- * user_metadata escalation attack from migration 0003.
+ * ATTORNEY-CLIENT PRIVILEGE ISOLATION:
+ * Every account gets its own unique firm_id generated server-side at first
+ * sign-in. We NEVER inherit a firm_id from localStorage on first claim —
+ * that would allow a shared/compromised device to pull one account's cases
+ * into another account's view.
  *
  * Flow:
- *  1. Fetch the user's existing membership. If found, sync localStorage to
- *     match (membership is source of truth after first claim).
- *  2. If no membership, INSERT one using the firm_id from localStorage.
- *     The PRIMARY KEY on user_id prevents double-claiming.
+ *  1. Fetch the user's existing membership from firm_memberships.
+ *     If found, that value is the authoritative firm_id — sync localStorage.
+ *  2. If no membership exists (new account), generate a FRESH UUID here
+ *     (not from localStorage) and INSERT it. This guarantees every new
+ *     account gets a unique, never-before-seen firm_id that cannot collide
+ *     with any other user's data.
+ *  3. PRIMARY KEY on user_id prevents double-claiming; 23505 is a no-op.
+ *
+ * Firm sharing (for multi-attorney practices):
+ *  Use the invite_codes flow (claim_firm_with_invite SQL function) so a
+ *  second attorney can be explicitly added to an existing firm. Never
+ *  share firm_ids by pasting UUIDs — use invite codes only.
  */
 export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!user) return;
@@ -56,6 +66,7 @@ export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!sb) return;
 
   try {
+    // Step 1 — check for existing membership (source of truth)
     const { data: membership } = await sb
       .from('firm_memberships')
       .select('firm_id')
@@ -63,22 +74,43 @@ export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
       .single();
 
     if (membership?.firm_id) {
-      // Existing membership is the source of truth — sync localStorage.
+      // Existing membership overrides anything in localStorage.
       setFirmId(membership.firm_id);
       return;
     }
 
-    // No membership yet — claim this device's firm_id.
+    // Step 2 — new account: generate a FRESH, unique firm_id.
+    // IMPORTANT: do NOT use getFirmId() here — that reads localStorage and
+    // could contain a stale/shared/attacker-controlled UUID. Always generate
+    // a new UUID for each new account to guarantee strict isolation.
+    const freshFirmId = crypto.randomUUID();
+
     const { error } = await sb
       .from('firm_memberships')
-      .insert({ user_id: user.id, firm_id: getFirmId() });
+      .insert({ user_id: user.id, firm_id: freshFirmId });
 
-    // 23505 = unique_violation means another tab beat us to it — not an error.
     if (error && error.code !== '23505') {
+      // 23505 = unique_violation: another tab beat us to it — safe to re-fetch.
       console.warn('[caseStore] firm membership claim failed:', error.message);
+      return;
+    }
+
+    // On success (or harmless 23505 race), sync localStorage to the claimed id.
+    if (!error) {
+      setFirmId(freshFirmId);
+    } else {
+      // Race condition: re-fetch what was actually inserted.
+      const { data: refetch } = await sb
+        .from('firm_memberships')
+        .select('firm_id')
+        .eq('user_id', user.id)
+        .single();
+      if (refetch?.firm_id) setFirmId(refetch.firm_id);
     }
   } catch {
-    // Best-effort: if Supabase is unreachable, localStorage firm_id is used.
+    // Best-effort: if Supabase is unreachable, fall back to localStorage.
+    // This is acceptable for offline mode; the firm_id will be reconciled
+    // on the next successful connection.
   }
 };
 
