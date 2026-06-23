@@ -18,7 +18,7 @@ const MAYA_VOICE = 'aura-2-thalia-en';
 
 // When a client token is present, Maya already knows who she's speaking with
 // This is injected at runtime inside the component after invite resolves
-const BASE_MAYA_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
+const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
 
 YOUR GOAL: come away from the conversation with all of this — it goes straight into the file the attorney sees, so don't end the call missing any of it:
 1. Their NAME — get it early. Right after they say what's going on, ask who you're speaking with ("Of course — and who do I have the pleasure of speaking with?"), then use their first name naturally for the rest of the call.
@@ -124,9 +124,24 @@ const PublicIntake: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  // When a client token resolves, inject client context so Maya greets by name
+  // and skips re-asking for info the attorney already captured
+  const firstName = clientInvite?.client_name?.split(' ')[0] ?? '';
+  const systemInstruction = clientInvite?.client_name
+    ? `${MAYA_INTAKE_PROMPT}
+
+IMPORTANT — you already know who you are speaking with:
+Client name: ${clientInvite.client_name}${clientInvite.client_phone ? `
+Phone on file: ${clientInvite.client_phone}` : ''}${clientInvite.client_email ? `
+Email on file: ${clientInvite.client_email}` : ''}${clientInvite.notes ? `
+Attorney notes: ${clientInvite.notes}` : ''}
+
+Open with: "Hi ${firstName}, thanks for calling in — " and use their name naturally. You already have their contact info so skip asking for it unless they want to update it.`
+    : MAYA_INTAKE_PROMPT;
+
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
-    systemInstruction: MAYA_INTAKE_PROMPT,
+    systemInstruction,
     greeting: MAYA_GREETING,
     publicEndpoint: true,
   });
