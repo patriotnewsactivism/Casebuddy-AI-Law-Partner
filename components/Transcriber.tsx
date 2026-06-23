@@ -69,7 +69,7 @@ const Transcriber = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Deepgram engine toggle
-  const [engine, setEngine] = useState<TranscriptionEngine>('gemini');
+  const [engine, setEngine] = useState<TranscriptionEngine>('deepgram');
 
   // Live transcription state
   const [isLive, setIsLive] = useState(false);
@@ -135,7 +135,7 @@ const Transcriber = () => {
         if (engine === 'deepgram') {
           setProgress(`Transcribing ${mediaLabel} via Deepgram — this may take a moment...`);
           try {
-            extractedText = await transcribeWithDeeepgram(selectedFile);
+            extractedText = await transcribeWithDeeepgram(selectedFile, selectedFile.name);
           } catch (deepgramErr) {
             toast.error('Deepgram failed — falling back to Groq Whisper.');
             setProgress('Falling back to Groq Whisper transcription...');
