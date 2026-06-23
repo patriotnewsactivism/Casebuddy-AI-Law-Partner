@@ -274,6 +274,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
       </div>
 
       <div className="p-4 border-t border-slate-800 shrink-0 space-y-2">
+        {/* Quick action buttons — contextual to active case */}
+        {activeCase && session.messages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: '📋 Summarize case', prompt: `Provide a comprehensive summary and analysis of the ${activeCase.title} case, including key facts, legal issues, and potential strategies.` },
+              { label: '⚖️ Draft motion', prompt: `Draft a motion to dismiss for the ${activeCase.title} case. Include legal grounds, relevant case law, and a proposed order.` },
+              { label: '📅 Check deadlines', prompt: `List all critical deadlines and statutes of limitation for ${activeCase.title}. Flag any that are approaching within 30 days.` },
+              { label: '🔍 Find weaknesses', prompt: `Identify the top weaknesses and risks in the ${activeCase.title} case. For each weakness, suggest a mitigation strategy.` },
+            ].map(({ label, prompt }) => (
+              <button key={label} onClick={() => onSend(prompt, reasoningMode)}
+                disabled={loading}
+                className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-colors disabled:opacity-40">
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Reasoning mode selector */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-slate-500 font-medium shrink-0">Mode:</span>
