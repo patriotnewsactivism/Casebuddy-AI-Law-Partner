@@ -53,6 +53,7 @@ const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'
 const UserGuide        = React.lazy(() => import('./components/UserGuide'));
 const AuthPage         = React.lazy(() => import('./components/AuthPage'));
 const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
+const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -126,6 +127,7 @@ const NAV_GROUPS = [
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
+      { path: '/app/firm-admin', icon: Shield, label: 'Firm Admin', badge: 'Secure' },
       { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
   },
