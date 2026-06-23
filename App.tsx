@@ -534,6 +534,7 @@ const App = () => {
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/start" element={<IntakePage />} />
             <Route path="/intake" element={<PublicIntake />} />
+            <Route path="/intake/:token" element={<PublicIntake />} />
 
             {/* Protected routes — require authentication */}
             <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
