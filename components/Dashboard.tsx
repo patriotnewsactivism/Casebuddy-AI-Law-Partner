@@ -386,6 +386,61 @@ const Dashboard = () => {
         <WorkflowVisualizer />
       </div>
 
+      {/* My Cases */}
+      <div>
+        <SectionHeader
+          icon={Briefcase}
+          title="My Cases"
+          accent="text-blue-400"
+          action={
+            <Link to="/cases" className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-semibold flex items-center gap-1">
+              Manage Cases <ArrowRight size={12} />
+            </Link>
+          }
+        />
+        {cases.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
+            <Briefcase size={32} className="mx-auto mb-3 text-slate-600" />
+            <p className="text-slate-400 text-sm mb-2">No cases yet.</p>
+            <Link to="/cases" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors">
+              <Plus size={14} /> Create First Case
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {cases.map(c => (
+              <Link
+                key={c.id}
+                to="/cases"
+                onClick={() => {}}
+                className={`rounded-2xl border p-4 transition-all hover:border-blue-500/50 ${
+                  activeCase?.id === c.id
+                    ? 'border-blue-500/60 bg-blue-950/30'
+                    : 'border-slate-800 bg-slate-900/60'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="font-semibold text-white text-sm leading-tight truncate">{c.title}</p>
+                  <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    c.status === 'Active' ? 'bg-green-900/50 text-green-400' :
+                    c.status === 'Pre-Trial' ? 'bg-yellow-900/50 text-yellow-400' :
+                    c.status === 'Closed' ? 'bg-slate-700 text-slate-400' :
+                    'bg-blue-900/50 text-blue-400'
+                  }`}>{c.status || 'Active'}</span>
+                </div>
+                <p className="text-slate-400 text-xs mb-2 truncate">{c.client || 'No client set'}</p>
+                <p className="text-slate-500 text-xs line-clamp-2">{c.summary || 'No summary yet.'}</p>
+                {activeCase?.id === c.id && (
+                  <div className="mt-2 flex items-center gap-1 text-blue-400 text-[10px] font-semibold">
+                    <Activity size={10} /> Active Case
+                  </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Relevant Case Law */}
       <RelevantCases activeCase={activeCase} />
 
