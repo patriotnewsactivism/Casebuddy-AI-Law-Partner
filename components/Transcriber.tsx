@@ -7,12 +7,35 @@ import {
   CheckCircle, Loader, Zap, Eye, Radio, Square
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { transcribeAudio, performOCR, analyzeTranscription } from '../services/geminiService';
+import { performOCR, analyzeTranscription } from '../services/geminiService';
 import { transcribeWithDeeepgram, startDeepgramLiveSession } from '../services/integrationService';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAX = OPERATIONAL_AGENTS.find(a => a.id === 'max')!;
+
+// ── Groq Whisper transcription helper ────────────────────────────────────────
+async function transcribeWithGroq(file: File): Promise<string> {
+  const groqKey = (import.meta as any).env?.VITE_GROQ_API_KEY || '';
+  if (!groqKey) throw new Error('VITE_GROQ_API_KEY not configured. Add it in Settings or Vercel env vars.');
+
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  formData.append('model', 'whisper-large-v3');
+  formData.append('response_format', 'text');
+
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + groqKey },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('Groq Whisper error: ' + err);
+  }
+  return res.text();
+}
 
 const DEEPGRAM_KEY_PRESENT = !!(import.meta as any).env?.VITE_DEEPGRAM_API_KEY;
 
@@ -67,8 +90,8 @@ const Transcriber = () => {
     }
   };
 
-  const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a'];
-  const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac)$/i;
+  const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'];
+  const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac|mp4|mov|avi|mkv|wmv)$/i;
   const OCR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'application/pdf'];
   const OCR_EXTS = /\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif|pdf)$/i;
 
@@ -101,25 +124,26 @@ const Transcriber = () => {
     }
 
     setIsProcessing(true);
-    const engineLabel = fileMode === 'audio' && engine === 'deepgram' ? 'Deepgram' : 'Gemini AI';
-    setProgress(fileMode === 'audio' ? `Sending audio to ${engineLabel}...` : 'Extracting text via OCR...');
+    setProgress(fileMode === 'audio' ? 'Preparing transcription...' : 'Extracting text via OCR...');
 
     try {
       let extractedText = '';
 
       if (fileMode === 'audio') {
+        const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv)$/i.test(selectedFile.name);
+        const mediaLabel = isVideo ? 'video' : 'audio';
         if (engine === 'deepgram') {
-          setProgress('Transcribing audio via Deepgram — this may take a moment...');
+          setProgress(`Transcribing ${mediaLabel} via Deepgram — this may take a moment...`);
           try {
             extractedText = await transcribeWithDeeepgram(selectedFile);
           } catch (deepgramErr) {
-            toast.error('Deepgram failed — falling back to Gemini AI.');
-            setProgress('Falling back to Gemini AI transcription...');
-            extractedText = await transcribeAudio(selectedFile);
+            toast.error('Deepgram failed — falling back to Groq Whisper.');
+            setProgress('Falling back to Groq Whisper transcription...');
+            extractedText = await transcribeWithGroq(selectedFile);
           }
         } else {
-          setProgress('Transcribing audio — this may take a moment...');
-          extractedText = await transcribeAudio(selectedFile);
+          setProgress(`Transcribing ${mediaLabel} via Groq Whisper — this may take a moment...`);
+          extractedText = await transcribeWithGroq(selectedFile);
         }
       } else {
         setProgress('Running OCR on document/image...');
