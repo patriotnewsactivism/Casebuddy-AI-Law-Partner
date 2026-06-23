@@ -2,6 +2,54 @@ import { getSupabase, INTAKE_TABLE, isSupabaseConfigured } from './supabaseClien
 import { IntakeCase, IntakeData, IntakeScore, IntakeStatus } from '../types';
 import { getFirmId } from './caseStore';
 
+// ── Resolve a public intake token → firm_id ──────────────────────────────────
+// Called from the public /intake/:token page (no auth required).
+// Returns ONLY the firm_id — nothing else is exposed to anonymous visitors.
+export const resolveFirmToken = async (token: string): Promise<string | null> => {
+  const supabase = getSupabase();
+  if (!supabase || !token) return null;
+  const { data, error } = await supabase
+    .from('firm_memberships')
+    .select('firm_id')
+    .eq('intake_token', token)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { firm_id: string }).firm_id;
+};
+
+// ── Get or generate the current firm's intake token ─────────────────────────
+// Called from the attorney's Intake Inbox to display/copy their shareable link.
+export const getOrCreateIntakeToken = async (): Promise<string | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
+  const userId = session.user.id;
+
+  // Try to fetch existing token
+  const { data } = await supabase
+    .from('firm_memberships')
+    .select('intake_token, firm_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (data?.intake_token) return data.intake_token as string;
+
+  // No token yet — generate and save one
+  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
+  let t = '';
+  const arr = new Uint8Array(10);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => { t += chars[b % chars.length]; });
+
+  await supabase
+    .from('firm_memberships')
+    .update({ intake_token: t })
+    .eq('user_id', userId);
+
+  return t;
+};
+
 // Persists intake cases to Supabase so a prospect's submission on their own
 // device shows up live in the attorney's dashboard. Falls back to localStorage
 // (single-device) when Supabase isn't reachable, so the flow never hard-fails.
@@ -68,10 +116,12 @@ export interface SubmitIntakeArgs {
   intake: IntakeData;
   score: IntakeScore;
   transcript: { speaker: string; text: string }[];
+  /** firm_id resolved from the public intake token — required for multi-tenant isolation */
+  firmId?: string;
 }
 
 /** Build a row from the extracted intake + score. */
-const buildRow = ({ intake, score, transcript }: SubmitIntakeArgs): IntakeCase => ({
+const buildRow = ({ intake, score, transcript, firmId }: SubmitIntakeArgs & { firmId?: string }): IntakeCase => ({
   id: (globalThis.crypto?.randomUUID?.() ?? `intake_${Date.now()}_${Math.random().toString(36).slice(2)}`),
   created_at: new Date().toISOString(),
   // firm_id scopes the intake to this firm's dashboard (migration 0005).
@@ -81,7 +131,8 @@ const buildRow = ({ intake, score, transcript }: SubmitIntakeArgs): IntakeCase =
   // so intakes from anonymous/public devices are always visible on the dashboard.
   // Previously fell back to getFirmId() which generated a random UUID per device,
   // causing intakes from prospects to be invisible to the attorney.
-  firm_id: (import.meta.env.VITE_FIRM_ID as string | undefined) || 'default',
+  // firm_id: resolved from intake token (multi-tenant) or VITE_FIRM_ID (single-firm deploy)
+  firm_id: firmId || (import.meta.env.VITE_FIRM_ID as string | undefined) || getFirmId(),
   full_name: intake.fullName,
   contact: intake.contact,
   matter_type: intake.matterType,
@@ -100,7 +151,7 @@ const buildRow = ({ intake, score, transcript }: SubmitIntakeArgs): IntakeCase =
 
 /** Save a completed, scored intake. Returns the stored row. */
 export const submitIntake = async (args: SubmitIntakeArgs): Promise<IntakeCase> => {
-  const row = buildRow(args);
+  const row = buildRow(args);  // firmId passed through SubmitIntakeArgs
   const supabase = getSupabase();
 
   if (supabase) {
@@ -125,15 +176,19 @@ export const submitIntake = async (args: SubmitIntakeArgs): Promise<IntakeCase> 
 export const fetchIntakes = async (): Promise<IntakeCase[]> => {
   const supabase = getSupabase();
   if (supabase) {
+    // RLS already scopes to firm — but we also filter explicitly for defence-in-depth
+    const firmId = getFirmId();
     const { data, error } = await supabase
       .from(INTAKE_TABLE)
       .select('*')
+      .eq('firm_id', firmId)
       .order('created_at', { ascending: false })
       .limit(200);
     if (!error && data) {
       saveLocal(data as IntakeCase[]);
       return data as IntakeCase[];
     }
+    if (error) console.warn('[intakeStore] fetchIntakes error:', error.message);
   }
   return loadLocal();
 };
