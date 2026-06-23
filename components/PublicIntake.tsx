@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2 } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
-import { submitIntake, resolveFirmToken } from '../services/intakeStore';
+import { submitIntake } from '../services/intakeStore';
+import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
 import { emailIntakeHandoff } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
 
@@ -15,7 +16,9 @@ import { IntakeData, IntakeScore } from '../types';
 // Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
 const MAYA_VOICE = 'aura-2-thalia-en';
 
-const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
+// When a client token is present, Maya already knows who she's speaking with
+// This is injected at runtime inside the component after invite resolves
+const BASE_MAYA_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
 
 YOUR GOAL: come away from the conversation with all of this — it goes straight into the file the attorney sees, so don't end the call missing any of it:
 1. Their NAME — get it early. Right after they say what's going on, ask who you're speaking with ("Of course — and who do I have the pleasure of speaking with?"), then use their first name naturally for the rest of the call.
@@ -100,12 +103,18 @@ const PublicIntake: React.FC = () => {
   const { token } = useParams<{ token?: string }>();
   const [firmId, setFirmId] = React.useState<string | null>(null);
 
-  // Resolve the intake token → firm_id on mount
+  const [clientInvite, setClientInvite] = React.useState<ResolvedClientInvite | null>(null);
+
+  // Resolve the client invite token on mount — gets firm_id + client context for Maya
   React.useEffect(() => {
     if (token) {
-      resolveFirmToken(token).then(id => {
-        if (id) setFirmId(id);
-        else console.warn('[PublicIntake] Unknown token — intake will use default firm_id');
+      resolveClientToken(token).then(invite => {
+        if (invite) {
+          setFirmId(invite.firm_id);
+          setClientInvite(invite);
+        } else {
+          console.warn('[PublicIntake] Unknown token — intake will use default firm_id');
+        }
       });
     }
   }, [token]);
@@ -160,8 +169,17 @@ const PublicIntake: React.FC = () => {
     }
 
     try {
-      await submitIntake({
-        firmId: firmId ?? undefined, intake, score, transcript });
+      const result = await submitIntake({
+        firmId:         firmId ?? undefined,
+        clientInviteId: clientInvite?.invite_id,
+        intake,
+        score,
+        transcript,
+      });
+      // Mark the invite as completed so attorney can track it
+      if (clientInvite?.invite_id && result?.id) {
+        void markInviteCompleted(clientInvite.invite_id, result.id);
+      }
     } catch {
       // submitIntake already falls back to localStorage on Supabase errors, so
       // reaching here is rare — don't surface it to the caller, the firm still
