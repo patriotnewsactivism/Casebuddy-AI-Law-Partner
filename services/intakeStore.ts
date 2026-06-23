@@ -131,7 +131,11 @@ const buildRow = ({ intake, score, transcript, firmId }: SubmitIntakeArgs & { fi
   // so intakes from anonymous/public devices are always visible on the dashboard.
   // Previously fell back to getFirmId() which generated a random UUID per device,
   // causing intakes from prospects to be invisible to the attorney.
-  // firm_id: resolved from intake token (multi-tenant) or VITE_FIRM_ID (single-firm deploy)
+  // Priority order:
+  //   1. firmId from token URL param (multi-tenant — another firm's branded link)
+  //   2. VITE_FIRM_ID env var        (owner's generic casebuddy.live/intake link)
+  //   3. getFirmId() localStorage    (local-only / dev fallback)
+  // This ensures casebuddy.live/intake ALWAYS routes to the owner's dashboard.
   firm_id: firmId || (import.meta.env.VITE_FIRM_ID as string | undefined) || getFirmId(),
   full_name: intake.fullName,
   contact: intake.contact,
