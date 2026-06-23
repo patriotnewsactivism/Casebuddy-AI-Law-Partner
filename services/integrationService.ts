@@ -167,6 +167,33 @@ export const startDeepgramLiveSession = (onTranscript: (text: string) => void): 
   };
 };
 
+
+// ─── Video audio extraction (via /api/media/extract-audio) ──────────────────
+
+/**
+ * Sends a video file to the Vercel edge function, which uses ffmpeg WASM
+ * to strip the audio track and return an MP3 blob.
+ * The resulting MP3 is small (16kHz mono, 64kbps) — ideal for Whisper/Deepgram.
+ */
+export const extractAudioFromVideo = async (videoFile: File): Promise<File> => {
+  const formData = new FormData();
+  formData.append('file', videoFile, videoFile.name);
+
+  const res = await fetch('/api/media/extract-audio', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Audio extraction failed: ${err}`);
+  }
+
+  const blob = await res.blob();
+  const outputName = videoFile.name.replace(/\.[^.]+$/, '') + '_audio.mp3';
+  return new File([blob], outputName, { type: 'audio/mpeg' });
+};
+
 // ─── Email (SendGrid primary, Resend fallback — via /api/email/send) ──────────
 // The provider API keys are server-side only. Each message is sent FROM an AI
 // employee's firm address (firstname@casebuddy.live) and silently archived to
