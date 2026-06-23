@@ -60,6 +60,8 @@ import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferenc
 import { backgroundEngine } from './services/backgroundAgentEngine';
 import { caseMonitor } from './services/caseMonitor';
 import { orchestrator } from './services/agentOrchestrator';
+import { flushRetryQueue } from './services/intakeStore';
+import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
 import NotificationCenter from './components/NotificationCenter';
 import AgentStatusDashboard from './components/AgentStatusDashboard';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
@@ -425,9 +427,12 @@ const App = () => {
     if (!activeCase) {
       setActiveCase(newCase);
     }
+    // Auto-trigger new case intake workflow
+    onCaseCreated(newCase).catch(() => {});
   };
 
   const updateCase = (updatedCase: Case) => {
+    const previous = cases.find(c => c.id === updatedCase.id);
     const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
     setCases(updated);
     saveCases(updated);
@@ -436,6 +441,8 @@ const App = () => {
       setActiveCaseState(updatedCase);
       saveActiveCaseId(updatedCase.id);
     }
+    // Auto-trigger event-based workflows (deadline proximity, win prob drop, etc.)
+    onCaseUpdated(updatedCase, previous).catch(() => {});
   };
 
   const deleteCase = (id: string) => {
@@ -497,6 +504,7 @@ const App = () => {
     backgroundEngine.start();
     caseMonitor.start();
     orchestrator.cleanup(); // clean up stale completed workflows
+    flushRetryQueue().catch(() => {}); // retry any intakes that failed to save
     return () => {
       backgroundEngine.stop();
       caseMonitor.stop();

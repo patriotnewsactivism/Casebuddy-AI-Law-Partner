@@ -9,7 +9,7 @@
  *   Sierra — sends pending client update emails
  *
  * Required env vars:
- *   DEEPSEEK_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+ *   GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
  *   SENDGRID_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER,
  *   FIRM_OWNER_EMAIL, FIRM_OWNER_PHONE (optional), COURTLISTENER_API_KEY (optional)
  */
@@ -24,18 +24,21 @@ const ok = (body: object) =>
   });
 
 const deepseek = async (apiKey: string, prompt: string, temp = 0.5): Promise<string> => {
-  const r = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: temp,
-      max_tokens: 1024,
-    }),
-  });
+  // Migrated from DeepSeek (credits exhausted) to Gemini — matches the
+  // client-side deepseek.ts shim that already routes through Gemini.
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: temp, maxOutputTokens: 1024 },
+      }),
+    }
+  );
   const d = await r.json() as any;
-  return (d.choices?.[0]?.message?.content || '').trim();
+  return (d.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
 };
 
 const sbFetch = async (supabaseUrl: string, serviceKey: string, table: string, params = '') => {
@@ -106,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  const GEMINI_KEY  = process.env.DEEPSEEK_API_KEY ?? process.env.GEMINI_API_KEY ?? '';
+  const GEMINI_KEY  = process.env.GEMINI_API_KEY ?? '';
   const SB_URL      = process.env.SUPABASE_URL ?? '';
   const SB_KEY      = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
   const SG_KEY      = process.env.SENDGRID_API_KEY ?? '';

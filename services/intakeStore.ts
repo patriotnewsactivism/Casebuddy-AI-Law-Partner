@@ -7,6 +7,43 @@ import { getFirmId } from './caseStore';
 // (single-device) when Supabase isn't reachable, so the flow never hard-fails.
 
 const LOCAL_KEY = 'casebuddy_intake_cases';
+const RETRY_QUEUE_KEY = 'casebuddy_intake_retry_queue';
+
+// ── Retry Queue ─────────────────────────────────────────────────────────────
+// When Supabase insert fails, stash the row here. On next page load (or when
+// connectivity returns), retry all queued intakes.
+
+const loadRetryQueue = (): IntakeCase[] => {
+  try { return JSON.parse(localStorage.getItem(RETRY_QUEUE_KEY) || '[]'); } catch { return []; }
+};
+
+const saveRetryQueue = (rows: IntakeCase[]) => {
+  try { localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(rows.slice(0, 50))); } catch { /* full */ }
+};
+
+/** Flush any queued-for-retry intakes to Supabase. Call on app init. */
+export const flushRetryQueue = async (): Promise<number> => {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+  const queue = loadRetryQueue();
+  if (queue.length === 0) return 0;
+
+  let flushed = 0;
+  const remaining: IntakeCase[] = [];
+
+  for (const row of queue) {
+    const { error } = await supabase.from(INTAKE_TABLE).upsert(row, { onConflict: 'id' });
+    if (error) {
+      remaining.push(row);
+    } else {
+      flushed++;
+    }
+  }
+
+  saveRetryQueue(remaining);
+  if (flushed > 0) console.info(`[intakeStore] Flushed ${flushed} queued intakes to Supabase`);
+  return flushed;
+};
 
 const dispositionToStatus = (d: IntakeScore['disposition']): IntakeStatus =>
   d === 'accepted' ? 'routed' : d === 'denied' ? 'denied' : 'new';
@@ -75,7 +112,9 @@ export const submitIntake = async (args: SubmitIntakeArgs): Promise<IntakeCase> 
     }
     // Fall through to local on RLS/table/network errors so intake never blocks.
     // eslint-disable-next-line no-console
-    console.warn('[intakeStore] Supabase insert failed, using local fallback:', error?.message);
+    console.warn('[intakeStore] Supabase insert failed, queuing for retry:', error?.message);
+    // Queue for retry on next app load / connectivity change
+    saveRetryQueue([row, ...loadRetryQueue()]);
   }
 
   saveLocal([row, ...loadLocal()]);

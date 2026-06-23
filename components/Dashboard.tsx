@@ -7,6 +7,7 @@ import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 import IntakeWidget from './IntakeWidget';
+import AgentStatusDashboard from './AgentStatusDashboard';
 
 interface Lead {
   id: string;
@@ -312,6 +313,9 @@ const Dashboard = () => {
           ))}
         </div>
       </div>
+
+      {/* Agent Activity Status */}
+      <AgentStatusDashboard />
 
       {/* Main Content Split */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
