@@ -549,6 +549,7 @@ const App = () => {
             <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
             <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
             <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
+            <Route path="/app/firm-admin" element={<AuthGate><Layout><FirmAdminPanel /></Layout></AuthGate>} />
             <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
             <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
             <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
