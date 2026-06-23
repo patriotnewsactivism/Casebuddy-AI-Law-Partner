@@ -7,6 +7,8 @@ import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 import IntakeWidget from './IntakeWidget';
+import SimilarCases from './SimilarCases';
+import WorkflowVisualizer from './WorkflowVisualizer';
 
 interface Lead {
   id: string;
@@ -376,6 +378,12 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Cross-case intelligence + active workflows */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5">
+        <SimilarCases />
+        <WorkflowVisualizer />
       </div>
 
       {/* Relevant Case Law */}

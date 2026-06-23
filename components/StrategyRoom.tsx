@@ -3,11 +3,14 @@ import { AppContext } from '../App';
 import { MOCK_OPPONENT } from '../constants';
 import { predictStrategy } from '../services/geminiService';
 import { searchCaseLaw } from '../services/integrationService';
-import { StrategyInsight } from '../types';
+import { runReasoning } from '../services/agentReasoning';
+import { StrategyInsight, ReasoningMode } from '../types';
 import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw, Search, ExternalLink, BookOpen, Loader } from 'lucide-react';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { ReasoningModeSelector, ReasoningResultBadge } from './ReasoningIndicator';
+import type { ReasoningResult } from '../types';
 
 const LEX = OPERATIONAL_AGENTS.find(a => a.id === 'lex')!;
 
@@ -15,6 +18,8 @@ const StrategyRoom = () => {
   const { activeCase } = useContext(AppContext);
   const [insights, setInsights] = useState<StrategyInsight[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('standard');
+  const [reasoningResult, setReasoningResult] = useState<ReasoningResult | null>(null);
 
   // Case law search state
   const [caseLawQuery, setCaseLawQuery] = useState('');
@@ -34,12 +39,40 @@ const StrategyRoom = () => {
   const handleGenerateStrategy = async () => {
     if (!activeCase) return;
     setLoading(true);
-    const result = await predictStrategy(
-      activeCase.summary,
-      JSON.stringify(MOCK_OPPONENT)
-    );
-    setInsights(result);
-    setLoading(false);
+    setReasoningResult(null);
+
+    try {
+      if (reasoningMode === 'standard') {
+        // Gemini with thinking budget for standard mode
+        const result = await predictStrategy(activeCase.summary, JSON.stringify(MOCK_OPPONENT));
+        setInsights(result);
+      } else {
+        // Extended reasoning modes via DeepSeek
+        const caseCtx = `Title: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`;
+        const result = await runReasoning({
+          mode: reasoningMode,
+          agentId: 'lex',
+          caseId: activeCase.id,
+          systemInstruction: `You are Lex, a senior legal strategist at CaseBuddy. Provide deep strategic analysis identifying risks, opportunities, and predictions for this case.`,
+          task: `Analyze the trial strategy for case "${activeCase.title}" against opposing counsel ${activeCase.opposingCounsel}. Identify risks, opportunities, and strategic predictions.`,
+          caseContext: caseCtx,
+        });
+        setReasoningResult(result);
+        // Convert to StrategyInsight format for display
+        const lines = result.synthesis.split('\n').filter(Boolean);
+        const converted: StrategyInsight[] = lines.slice(0, 4).map((line, i) => ({
+          title: line.startsWith('-') || line.startsWith('•') ? line.slice(2, 60) : `Insight ${i + 1}`,
+          description: line,
+          confidence: result.confidence - i * 3,
+          type: i === 0 ? 'risk' : i === 1 ? 'opportunity' : 'prediction',
+        }));
+        setInsights(converted.length > 0 ? converted : [{ title: 'Strategic Analysis', description: result.synthesis, confidence: result.confidence, type: 'prediction' }]);
+      }
+    } catch {
+      // silent failure
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCaseLawSearch = async () => {
@@ -72,14 +105,22 @@ const StrategyRoom = () => {
             <h1 className="text-3xl font-bold font-serif text-white">War Room Strategy</h1>
             <p className="text-slate-400 mt-1">Deep-thought analysis against {MOCK_OPPONENT.name}</p>
         </div>
-        <button 
-          onClick={handleGenerateStrategy}
-          disabled={loading}
-          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-gold-500 border border-gold-500/30 px-4 py-2 rounded-lg transition-all"
-        >
-           <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-           {loading ? 'AI Thinking...' : 'Regenerate Strategy'}
-        </button>
+        <div className="flex flex-col sm:flex-row items-end gap-2">
+          <ReasoningModeSelector
+            value={reasoningMode}
+            onChange={setReasoningMode}
+            disabled={loading}
+            compact
+          />
+          <button
+            onClick={handleGenerateStrategy}
+            disabled={loading}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-gold-500 border border-gold-500/30 px-4 py-2 rounded-lg transition-all whitespace-nowrap"
+          >
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'AI Thinking...' : 'Regenerate Strategy'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -135,6 +176,11 @@ const StrategyRoom = () => {
 
         {/* AI Insights Feed */}
         <div className="lg:col-span-2 space-y-6">
+           {reasoningResult && !loading && (
+             <div className="flex items-center gap-2">
+               <ReasoningResultBadge result={reasoningResult} />
+             </div>
+           )}
            {loading ? (
              <div className="h-64 bg-slate-800/50 rounded-xl border border-slate-700 flex flex-col items-center justify-center animate-pulse">
                 <BrainCircuit size={48} className="text-gold-500 mb-4" />

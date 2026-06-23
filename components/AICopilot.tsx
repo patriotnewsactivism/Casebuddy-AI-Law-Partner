@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useContext } from 'react';
 import { AppContext } from '../App';
 import { MessageSquare, X, Send, Minimize2, Maximize2, Sparkles, Loader } from 'lucide-react';
 import { deepseekChat } from '../services/deepseek';
+import { buildMemoryContext } from '../services/agentMemory';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -55,8 +56,13 @@ const AICopilot: React.FC = () => {
         content: m.text,
       }));
 
+      // Inject agent memory context for the active case copilot agent
+      const memCtx = activeCase
+        ? await buildMemoryContext('maya', activeCase.id).catch(() => '')
+        : '';
+
       const reply = await deepseekChat({
-        systemInstruction: SYSTEM_PROMPT + buildContext(),
+        systemInstruction: SYSTEM_PROMPT + buildContext() + memCtx,
         messages: history,
         temperature: 0.7,
         maxTokens: 2048,
