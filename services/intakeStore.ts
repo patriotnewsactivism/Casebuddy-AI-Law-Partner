@@ -40,7 +40,11 @@ const buildRow = ({ intake, score, transcript }: SubmitIntakeArgs): IntakeCase =
   // firm_id scopes the intake to this firm's dashboard (migration 0005).
   // VITE_FIRM_ID is the canonical firm ID for this deployment; falls back to
   // the device's localStorage UUID so single-user installs still work.
-  firm_id: (import.meta.env.VITE_FIRM_ID as string | undefined) || getFirmId(),
+  // Use VITE_FIRM_ID when set (Vercel env var); otherwise fall back to 'default'
+  // so intakes from anonymous/public devices are always visible on the dashboard.
+  // Previously fell back to getFirmId() which generated a random UUID per device,
+  // causing intakes from prospects to be invisible to the attorney.
+  firm_id: (import.meta.env.VITE_FIRM_ID as string | undefined) || 'default',
   full_name: intake.fullName,
   contact: intake.contact,
   matter_type: intake.matterType,

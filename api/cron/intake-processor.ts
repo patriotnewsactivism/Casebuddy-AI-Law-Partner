@@ -13,19 +13,21 @@
 export const config = { runtime: 'edge' };
 
 const gemini = async (apiKey: string, prompt: string): Promise<string> => {
-  const key = process.env.DEEPSEEK_API_KEY || apiKey;
-  const r = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 1024,
-    }),
-  });
+  // Migrated from DeepSeek (credits exhausted) to Gemini — matches the
+  // client-side deepseek.ts shim that already routes through Gemini.
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+      }),
+    }
+  );
   const d = await r.json() as any;
-  return (d.choices?.[0]?.message?.content || '').trim();
+  return (d.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
 };
 
 const sendEmail = async (apiKey: string, to: string, subject: string, html: string) => {

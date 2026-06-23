@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
   Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut
+  Cloud, CloudOff, Loader2, LogOut, Activity
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -61,6 +61,7 @@ import { backgroundEngine } from './services/backgroundAgentEngine';
 import { caseMonitor } from './services/caseMonitor';
 import { orchestrator } from './services/agentOrchestrator';
 import NotificationCenter from './components/NotificationCenter';
+import AgentStatusDashboard from './components/AgentStatusDashboard';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -121,6 +122,7 @@ const NAV_GROUPS = [
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
+      { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
       { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
@@ -545,6 +547,7 @@ const App = () => {
             <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
             <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
             <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
+            <Route path="/app/agent-status" element={<AuthGate><Layout><AgentStatusDashboard /></Layout></AuthGate>} />
             <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
             <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
             <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
