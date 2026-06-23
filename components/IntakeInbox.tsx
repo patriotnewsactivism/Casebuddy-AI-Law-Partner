@@ -10,16 +10,22 @@ import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
 import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel, getOrCreateIntakeToken } from '../services/intakeStore';
 import { getSpecialistById } from '../agents/personas';
 
-// Dynamic per-firm intake URL — loads the firm's unique token from Supabase
-// Falls back to /intake (owner's own deploy) if token can't be loaded
-const useIntakeUrl = () => {
-  const [url, setUrl] = React.useState(`${window.location.origin}/intake`);
+// Intake link strategy:
+//   Generic owner link:  casebuddy.live/intake          (your default, no token)
+//   Per-firm token link: casebuddy.live/intake/<token>  (for future multi-firm accounts)
+// This hook returns BOTH so the attorney can see and copy each.
+const useIntakeUrls = () => {
+  const base = window.location.origin;
+  const [tokenUrl, setTokenUrl] = React.useState<string | null>(null);
   React.useEffect(() => {
     getOrCreateIntakeToken().then(t => {
-      if (t) setUrl(`${window.location.origin}/intake/${t}`);
+      if (t) setTokenUrl(`${base}/intake/${t}`);
     });
   }, []);
-  return url;
+  return {
+    genericUrl: `${base}/intake`,   // owner's link — no token, uses VITE_FIRM_ID
+    tokenUrl,                        // branded token link (same firm, alt URL)
+  };
 };
 
 const scoreColor = (s: number) =>
@@ -41,7 +47,8 @@ const urgencyDot: Record<string, string> = {
 
 const ShareLink: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const url = useIntakeUrl();
+  const { genericUrl, tokenUrl } = useIntakeUrls();
+  const url = genericUrl;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
