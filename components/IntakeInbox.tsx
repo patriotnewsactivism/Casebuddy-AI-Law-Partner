@@ -7,10 +7,20 @@ import {
 } from 'lucide-react';
 import { AppContext } from '../App';
 import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
-import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
+import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel, getOrCreateIntakeToken } from '../services/intakeStore';
 import { getSpecialistById } from '../agents/personas';
 
-const intakeUrl = () => `${window.location.origin}/intake`;
+// Dynamic per-firm intake URL — loads the firm's unique token from Supabase
+// Falls back to /intake (owner's own deploy) if token can't be loaded
+const useIntakeUrl = () => {
+  const [url, setUrl] = React.useState(`${window.location.origin}/intake`);
+  React.useEffect(() => {
+    getOrCreateIntakeToken().then(t => {
+      if (t) setUrl(`${window.location.origin}/intake/${t}`);
+    });
+  }, []);
+  return url;
+};
 
 const scoreColor = (s: number) =>
   s >= 65 ? 'text-green-400 border-green-500/40 bg-green-500/10'
@@ -31,7 +41,7 @@ const urgencyDot: Record<string, string> = {
 
 const ShareLink: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const url = intakeUrl();
+  const url = useIntakeUrl();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
