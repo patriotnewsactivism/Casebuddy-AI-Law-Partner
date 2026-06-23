@@ -185,7 +185,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-4">
               {specialist.commonTopics.slice(0, 3).map(t => (
-                <button key={t} onClick={() => onSend(`Tell me about ${t.toLowerCase()}.`)}
+                <button key={t} onClick={() => onSend(`Tell me about ${t.toLowerCase()}.`, reasoningMode)}
                   className={`text-xs px-3 py-1.5 rounded-lg border ${specialist.bgClass} ${specialist.borderClass} ${specialist.colorClass} hover:opacity-80 transition-opacity`}>
                   {t}
                 </button>
@@ -586,6 +586,7 @@ const LegalTeam: React.FC = () => {
             loading={loading}
             onBack={() => setMobileShowChat(false)}
             activeCase={activeCase}
+            onFeedback={handleFeedback}
           />
         </div>
       </div>
