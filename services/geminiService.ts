@@ -209,16 +209,53 @@ export const consultSpecialist = async (
   specialistSystemInstruction: string,
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   newMessage: string,
-  caseContext?: string
+  caseContext?: string,
+  memoryContext?: string
 ): Promise<string> => {
   const contextPrefix = caseContext ? `\n\nACTIVE CASE CONTEXT:\n${caseContext}\n` : '';
+  const memCtx = memoryContext ?? '';
   const messages = history.map(h => ({
     role: h.role === 'user' ? 'user' as const : 'assistant' as const,
     content: h.parts.map(p => p.text).join('\n'),
   }));
   messages.push({ role: 'user' as const, content: newMessage });
-  return deepseekChat({ systemInstruction: specialistSystemInstruction + contextPrefix, messages, temperature: 0.85, maxTokens: 2048, timeoutMs: 30000 });
+  return deepseekChat({
+    systemInstruction: specialistSystemInstruction + contextPrefix + memCtx,
+    messages,
+    temperature: 0.85,
+    maxTokens: 2048,
+    timeoutMs: 30000,
+  });
 };
+
+/** Streaming version of consultSpecialist for real-time token delivery */
+export async function* consultSpecialistStream(
+  specialistSystemInstruction: string,
+  history: { role: 'user' | 'model'; parts: { text: string }[] }[],
+  newMessage: string,
+  caseContext?: string,
+  memoryContext?: string
+): AsyncGenerator<string, void, unknown> {
+  const contextPrefix = caseContext ? `\n\nACTIVE CASE CONTEXT:\n${caseContext}\n` : '';
+  const memCtx = memoryContext ?? '';
+  const sysInstruction = specialistSystemInstruction + contextPrefix + memCtx;
+
+  const historyForChat = history.map(h => ({
+    role: h.role as 'user' | 'model',
+    parts: h.parts,
+  }));
+
+  const chat = ai.chats.create({
+    model: 'gemini-2.5-flash',
+    config: { systemInstruction: sysInstruction, temperature: 0.85 },
+    history: historyForChat,
+  });
+
+  const stream = await chat.sendMessageStream({ message: newMessage });
+  for await (const chunk of stream) {
+    if (chunk.text) yield chunk.text;
+  }
+}
 
 // ── Witness prep ────────────────────────────────────────────────────────────
 

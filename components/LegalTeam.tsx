@@ -1,17 +1,24 @@
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2 } from 'lucide-react';
+import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
-import { consultSpecialist } from '../services/geminiService';
+import { consultSpecialist, consultSpecialistStream } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
 import AIDisclaimer from './AIDisclaimer';
+import { buildMemoryContext, recordAction } from '../services/agentMemory';
+import { recordFeedback } from '../services/agentLearning';
+import { runReasoning, selectReasoningMode } from '../services/agentReasoning';
+import { ReasoningModeSelector, ReasoningResultBadge } from './ReasoningIndicator';
+import type { ReasoningMode } from '../types';
 
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
+  reasoningMode?: ReasoningMode;
+  confidence?: number;
 }
 
 interface ConsultationSession {
@@ -71,14 +78,17 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
 interface ChatPanelProps {
   specialist: LegalSpecialist;
   session: ConsultationSession;
-  onSend: (text: string) => Promise<void> | void;
+  onSend: (text: string, mode: ReasoningMode) => Promise<void> | void;
   onReset: () => void;
   loading: boolean;
+  streamingText?: string;
   onBack?: () => void;
   activeCase?: { title: string } | null;
+  onFeedback: (msgIdx: number, feedback: 'positive' | 'negative') => void;
 }
-const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, streamingText, onBack, activeCase, onFeedback }) => {
   const [input, setInput] = useState('');
+  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('standard');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const exportTranscript = () => {
@@ -128,7 +138,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
-    onSend(text);
+    // Auto-select reasoning mode based on query length/complexity
+    const autoMode = selectReasoningMode(text, reasoningMode);
+    onSend(text, autoMode);
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -190,17 +202,63 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
                 {specialist.emoji}
               </div>
             )}
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-              msg.role === 'user'
-                ? 'bg-slate-700 text-white rounded-tr-sm'
-                : `${specialist.bgClass} border ${specialist.borderClass} text-slate-200 rounded-tl-sm`
-            }`}>
-              {msg.text}
+            <div className="max-w-[80%] space-y-1">
+              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-slate-700 text-white rounded-tr-sm'
+                  : `${specialist.bgClass} border ${specialist.borderClass} text-slate-200 rounded-tl-sm`
+              }`}>
+                {msg.text}
+              </div>
+              {/* Reasoning badge + feedback for model messages */}
+              {msg.role === 'model' && (
+                <div className="flex items-center gap-2 px-1">
+                  {msg.reasoningMode && msg.reasoningMode !== 'standard' && (
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                      msg.reasoningMode === 'deep-think' ? 'border-violet-500/30 text-violet-400 bg-violet-500/10' :
+                      msg.reasoningMode === 'expert-panel' ? 'border-cyan-500/30 text-cyan-400 bg-cyan-500/10' :
+                      'border-red-500/30 text-red-400 bg-red-500/10'
+                    }`}>
+                      {msg.reasoningMode === 'deep-think' ? '🧠 Deep' :
+                       msg.reasoningMode === 'expert-panel' ? '👥 Panel' : '⚔️ Adversarial'}
+                      {msg.confidence ? ` · ${msg.confidence}%` : ''}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onFeedback(i, 'positive')}
+                    className="text-slate-600 hover:text-green-400 transition-colors"
+                    title="Helpful"
+                  >
+                    <ThumbsUp size={11} />
+                  </button>
+                  <button
+                    onClick={() => onFeedback(i, 'negative')}
+                    className="text-slate-600 hover:text-red-400 transition-colors"
+                    title="Not helpful"
+                  >
+                    <ThumbsDown size={11} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
 
-        {loading && (
+        {/* Streaming response */}
+        {loading && streamingText && (
+          <div className="flex justify-start">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 mt-1 shrink-0 border ${specialist.borderClass}`}
+              style={{ background: 'rgba(0,0,0,0.3)' }}>
+              {specialist.emoji}
+            </div>
+            <div className={`max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${specialist.bgClass} border ${specialist.borderClass} text-slate-200`}>
+              {streamingText}
+              <span className="inline-block w-1.5 h-4 bg-current ml-0.5 animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {loading && !streamingText && (
           <div className="flex justify-start">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 mt-1 shrink-0 border ${specialist.borderClass}`}
               style={{ background: 'rgba(0,0,0,0.3)' }}>
@@ -215,7 +273,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-4 border-t border-slate-800 shrink-0">
+      <div className="p-4 border-t border-slate-800 shrink-0 space-y-2">
+        {/* Reasoning mode selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500 font-medium shrink-0">Mode:</span>
+          <ReasoningModeSelector value={reasoningMode} onChange={setReasoningMode} disabled={loading} compact />
+        </div>
+
         <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 focus-within:border-slate-600">
           <textarea
             value={input}
@@ -233,7 +297,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
             </button>
           </div>
         </div>
-        <p className="text-xs text-slate-600 mt-2 text-center">{DISCLAIMER}</p>
+        <p className="text-xs text-slate-600 text-center">{DISCLAIMER}</p>
       </div>
     </div>
   );
@@ -291,6 +355,7 @@ const LegalTeam: React.FC = () => {
     } catch { return {}; }
   });
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [showInfo, setShowInfo] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
@@ -303,7 +368,7 @@ const LegalTeam: React.FC = () => {
   const getSession = (id: string): ConsultationSession =>
     sessions[id] || { specialistId: id, messages: [] };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, mode: ReasoningMode = 'standard') => {
     const session = getSession(activeId);
     const userMsg: ChatMessage = { role: 'user', text, timestamp: Date.now() };
     const updatedMessages = [...session.messages, userMsg];
@@ -314,6 +379,8 @@ const LegalTeam: React.FC = () => {
     }));
 
     setLoading(true);
+    setStreamingText('');
+
     try {
       const history = updatedMessages.slice(0, -1).map(m => ({
         role: m.role as 'user' | 'model',
@@ -324,14 +391,64 @@ const LegalTeam: React.FC = () => {
         ? `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`
         : undefined;
 
-      const reply = await consultSpecialist(
-        specialist.systemInstruction,
-        history,
-        text,
-        caseCtx
-      );
+      // Load memory context for this specialist
+      const memCtx = await buildMemoryContext(activeId, activeCase?.id ?? 'general');
 
-      const modelMsg: ChatMessage = { role: 'model', text: reply, timestamp: Date.now() };
+      let reply: string;
+      let confidence: number | undefined;
+
+      if (mode === 'standard') {
+        // Use streaming for standard mode
+        let accumulated = '';
+        try {
+          const stream = consultSpecialistStream(
+            specialist.systemInstruction,
+            history,
+            text,
+            caseCtx,
+            memCtx
+          );
+          for await (const chunk of stream) {
+            accumulated += chunk;
+            setStreamingText(accumulated);
+          }
+          reply = accumulated || await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, memCtx);
+        } catch {
+          // Streaming failed — fall back to non-streaming
+          reply = await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, memCtx);
+        }
+      } else {
+        // Deep reasoning modes
+        const result = await runReasoning({
+          mode,
+          agentId: activeId,
+          caseId: activeCase?.id ?? 'general',
+          systemInstruction: specialist.systemInstruction,
+          task: text,
+          caseContext: caseCtx ?? '',
+        });
+        reply = result.synthesis;
+        if (result.critique) {
+          reply += `\n\n---\n**Self-Critique:** ${result.critique}`;
+        }
+        confidence = result.confidence;
+      }
+
+      // Record action in memory
+      await recordAction(activeId, activeCase?.id ?? 'general', {
+        type: 'consultation',
+        description: `Consulted on: ${text.slice(0, 80)}`,
+        result: reply.slice(0, 150),
+      });
+
+      const modelMsg: ChatMessage = {
+        role: 'model',
+        text: reply,
+        timestamp: Date.now(),
+        reasoningMode: mode !== 'standard' ? mode : undefined,
+        confidence,
+      };
+
       setSessions(prev => ({
         ...prev,
         [activeId]: {
@@ -343,7 +460,15 @@ const LegalTeam: React.FC = () => {
       handleError(err, `${specialist.name} is unavailable. Please try again.`, 'LegalTeam');
     } finally {
       setLoading(false);
+      setStreamingText('');
     }
+  };
+
+  const handleFeedback = async (msgIdx: number, feedback: 'positive' | 'negative') => {
+    await recordFeedback(activeId, activeCase?.id ?? 'general', msgIdx, feedback, {
+      specialistId: activeId,
+      caseId: activeCase?.id,
+    });
   };
 
   const handleReset = () => {

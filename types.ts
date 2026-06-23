@@ -255,6 +255,199 @@ export interface TrialSession {
   };
 }
 
+// ── Agent Automation System ──────────────────────────────────────────────────
+
+export interface AgentAction {
+  type: string;
+  description: string;
+  result?: any;
+  timestamp: number;
+}
+
+export interface AgentInsight {
+  id: string;
+  agentId: string;
+  caseId: string;
+  title: string;
+  content: string;
+  confidence: number;
+  type: 'risk' | 'opportunity' | 'pattern' | 'recommendation' | 'alert';
+  source: 'analysis' | 'monitoring' | 'research' | 'learning';
+  timestamp: number;
+  read: boolean;
+}
+
+export interface AgentPattern {
+  id: string;
+  agentId: string;
+  pattern: string;
+  confidence: number;
+  occurrences: number;
+  lastSeen: number;
+  category: string;
+}
+
+export interface AgentHandoff {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string;
+  reason: string;
+  caseId: string;
+  context: Record<string, any>;
+  timestamp: number;
+}
+
+export interface ShortTermMemory {
+  recentActions: AgentAction[];
+  workingContext: Record<string, any>;
+  pendingInsights: AgentInsight[];
+}
+
+export interface LongTermMemory {
+  insights: AgentInsight[];
+  patterns: AgentPattern[];
+  interactionCount: number;
+  lastActiveAt: number;
+}
+
+export interface AgentMemory {
+  agentId: string;
+  caseId: string;
+  shortTerm: ShortTermMemory;
+  longTerm: LongTermMemory;
+  handoffs: AgentHandoff[];
+  updatedAt: number;
+}
+
+export type BackgroundTaskType = 'monitor' | 'analyze' | 'draft' | 'alert' | 'research' | 'workflow';
+export type BackgroundTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TaskSchedule = 'immediate' | 'hourly' | 'daily' | 'on-event';
+
+export interface BackgroundTask {
+  id: string;
+  agentId: string;
+  caseId: string;
+  taskType: BackgroundTaskType;
+  schedule: TaskSchedule;
+  priority: TaskPriority;
+  status: BackgroundTaskStatus;
+  description: string;
+  result?: any;
+  error?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  retryCount?: number;
+}
+
+export type NotificationPriority = 'low' | 'medium' | 'high' | 'critical';
+export type NotificationType = 'alert' | 'insight' | 'task-complete' | 'recommendation' | 'warning' | 'deadline';
+
+export interface NotificationAction {
+  label: string;
+  route?: string;
+}
+
+export interface AgentNotification {
+  id: string;
+  agentId: string;
+  caseId?: string;
+  caseTitle?: string;
+  type: NotificationType;
+  priority: NotificationPriority;
+  title: string;
+  message: string;
+  actions?: NotificationAction[];
+  read: boolean;
+  dismissed: boolean;
+  timestamp: number;
+}
+
+export type ReasoningMode = 'standard' | 'deep-think' | 'expert-panel' | 'adversarial';
+
+export interface ReasoningStep {
+  subtask: string;
+  reasoning: string;
+  timestamp: number;
+}
+
+export interface ReasoningResult {
+  mode: ReasoningMode;
+  steps?: ReasoningStep[];
+  synthesis: string;
+  critique?: string;
+  confidence: number;
+  durationMs: number;
+  perspectives?: { specialistId: string; specialistName: string; response: string }[];
+}
+
+export interface WorkflowStep {
+  id: string;
+  agentId: string;
+  action: string;
+  description: string;
+  inputs: Record<string, any>;
+  outputs?: Record<string, any>;
+  status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  triggerEvent: string;
+  steps: WorkflowStep[];
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  caseId?: string;
+  createdAt: number;
+  completedAt?: number;
+  result?: Record<string, any>;
+}
+
+export interface MonitoringRule {
+  id: string;
+  agentId: string;
+  name: string;
+  description: string;
+  checkIntervalMs: number;
+  enabled: boolean;
+  lastChecked?: number;
+  lastTriggered?: number;
+}
+
+export interface CrossCaseInsight {
+  type: 'benchmark' | 'pattern' | 'risk' | 'strategy';
+  title: string;
+  description: string;
+  confidence: number;
+  basedOnCases: number;
+}
+
+export interface AgentStatus {
+  agentId: string;
+  isActive: boolean;
+  currentTask?: BackgroundTask;
+  tasksCompleted: number;
+  tasksToday: number;
+  lastActiveAt?: number;
+  insights: number;
+}
+
+export interface LearningEvent {
+  id: string;
+  agentId: string;
+  caseId: string;
+  action: string;
+  outcome: 'success' | 'failure' | 'neutral';
+  userFeedback?: 'positive' | 'negative';
+  context: Record<string, any>;
+  timestamp: number;
+}
+
 // ── War Room ─────────────────────────────────────────────────────────────────
 export interface WarRoomTask {
   id: string;

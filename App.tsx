@@ -57,6 +57,10 @@ const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
+import { backgroundEngine } from './services/backgroundAgentEngine';
+import { caseMonitor } from './services/caseMonitor';
+import { orchestrator } from './services/agentOrchestrator';
+import NotificationCenter from './components/NotificationCenter';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -243,6 +247,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
             <Menu size={22} />
           </button>
           <div className="flex items-center gap-4 ml-auto">
+            <NotificationCenter />
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-sm font-semibold text-white">{displayName}</span>
               {titleLine && <span className="text-xs text-slate-400">{titleLine}</span>}
@@ -484,6 +489,17 @@ const App = () => {
     localStorage.setItem(ONBOARDING_KEY, '1');
     setShowOnboarding(false);
   };
+
+  // ─── Start autonomous AI engine on mount ──────────────────────────────────
+  useEffect(() => {
+    backgroundEngine.start();
+    caseMonitor.start();
+    orchestrator.cleanup(); // clean up stale completed workflows
+    return () => {
+      backgroundEngine.stop();
+      caseMonitor.stop();
+    };
+  }, []);
 
   return (
     <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, syncStatus, user, authLoading }}>

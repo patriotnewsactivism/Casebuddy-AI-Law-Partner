@@ -6,14 +6,20 @@ import { GoogleGenAI } from '@google/genai';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
+import { submitIntake } from '../services/intakeStore';
+import { scoreIntake } from '../services/intakeService';
+import type { IntakeData, IntakeScore } from '../types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
+
+type ContactMethod = 'phone' | 'email';
 
 interface IntakeFormData {
   // Step 1
   name: string;
-  email: string;
+  contactMethod: ContactMethod;  // ← explicit preference
   phone: string;
+  email: string;
   // Step 2
   matterType: string;
   description: string;
@@ -56,6 +62,10 @@ interface ConflictMatch {
 interface ConflictResult {
   clear: boolean;
   matches: ConflictMatch[];
+}
+
+function unifiedContact(form: IntakeFormData): string {
+  return form.contactMethod === 'phone' ? form.phone.trim() : form.email.trim();
 }
 
 function saveLead(form: IntakeFormData, assessment: MayaAssessment) {
@@ -257,6 +267,7 @@ const IntakePage: React.FC = () => {
 
   const [form, setForm] = useState<IntakeFormData>({
     name: '',
+    contactMethod: 'phone',
     email: '',
     phone: '',
     matterType: '',
@@ -271,7 +282,13 @@ const IntakePage: React.FC = () => {
 
   /* validation per step */
   const canAdvance = () => {
-    if (step === 1) return form.name.trim() && form.email.trim();
+    if (step === 1) {
+      const hasName = form.name.trim().length >= 2;
+      const hasContact = form.contactMethod === 'phone'
+        ? form.phone.trim().length >= 7
+        : form.email.trim().includes('@');
+      return hasName && hasContact;
+    }
     if (step === 2) return form.matterType && form.description.trim().length >= 20;
     if (step === 3) return form.urgency !== '';
     return false;
@@ -286,6 +303,8 @@ const IntakePage: React.FC = () => {
     setLoading(true);
     setError(null);
 
+    const contact = unifiedContact(form);
+
     try {
       const apiKey = (process.env.API_KEY as string) || '';
       const ai = new GoogleGenAI({ apiKey });
@@ -294,7 +313,8 @@ const IntakePage: React.FC = () => {
 
 Intake:
 - Name: ${form.name}
-- Email: ${form.email}
+- Preferred contact (${form.contactMethod}): ${contact}
+- Email: ${form.email || 'Not provided'}
 - Phone: ${form.phone || 'Not provided'}
 - Matter: ${form.matterType}
 - Description: ${form.description}
@@ -330,7 +350,71 @@ Respond in JSON with these exact keys:
       setConflict(conflictResult);
 
       setAssessment(parsed);
+
+      // ── Save to legacy leads store (Dashboard "Incoming Leads") ──
       saveLead(form, parsed);
+
+      // ── ALSO save to the unified Intake Inbox (intakeStore) ──────
+      // Build an IntakeData record from the form fields
+      const intakeData: IntakeData = {
+        fullName: form.name,
+        contact,                         // unified: phone OR email per preference
+        matterType: form.matterType,
+        jurisdiction: '',
+        summary: parsed.summary ?? form.description.slice(0, 200),
+        incidentDate: '',
+        opposingParties: '',
+        deadlines: form.courtDate || '',
+        injuriesOrDamages: '',
+        desiredOutcome: '',
+        priorCounsel: '',
+        detailedNarrative: form.description,
+        keyFacts: parsed.strengths ?? [],
+        openQuestions: parsed.concerns ?? [],
+        timeline: form.courtDate ? [{ date: form.courtDate, event: 'Court / deadline date' }] : [],
+        parties: [{ name: form.name, role: 'Prospective client' }],
+        clientQuotes: [],
+        emotionalState: '',
+        witnesses: '',
+        evidenceMentioned: '',
+        financialImpact: '',
+        priorLegalActions: '',
+      };
+
+      // Score via AI (best-effort — if it fails we build a fallback score)
+      let intakeScore: IntakeScore;
+      try {
+        intakeScore = await scoreIntake(intakeData);
+      } catch {
+        const urgencyMap: Record<string, IntakeScore['urgency']> = {
+          immediately: 'high', days: 'medium', weeks: 'low',
+        };
+        intakeScore = {
+          score: parsed.score ?? 50,
+          disposition: (parsed.score ?? 50) >= 65 ? 'accepted' : (parsed.score ?? 50) >= 45 ? 'review' : 'denied',
+          recommendedDepartment: form.matterType,
+          recommendedAgentId: 'civil-litigation',
+          factors: [
+            ...(parsed.strengths ?? []).map(s => ({ label: s, impact: 'positive' as const, note: '' })),
+            ...(parsed.concerns ?? []).map(c => ({ label: c, impact: 'negative' as const, note: '' })),
+          ],
+          reasoning: parsed.summary ?? '',
+          clientMessage: `Thank you ${form.name.split(' ')[0]}. We've received your intake and our team will review your ${form.matterType} matter and reach out to you at ${contact}.`,
+          urgency: urgencyMap[form.urgency] ?? 'medium',
+        };
+      }
+
+      // Persist to Intake Inbox (Supabase or localStorage fallback)
+      try {
+        await submitIntake({
+          intake: intakeData,
+          score: intakeScore,
+          transcript: [],   // form-based intake has no voice transcript
+        });
+      } catch {
+        // submitIntake falls back to localStorage automatically; don't surface to user
+      }
+
       setStep(4); // show results
     } catch (err: any) {
       setError(err?.message ?? 'Something went wrong. Please try again.');
@@ -460,20 +544,102 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
           <div className="card-premium p-6 sm:p-8 space-y-5">
             <div className="space-y-1">
               <h2 className="text-xl font-bold font-serif text-white">Let's get started</h2>
-              <p className="text-slate-400 text-sm">I'm Maya. Tell me a bit about yourself so I can reach back out.</p>
+              <p className="text-slate-400 text-sm">I'm Maya. I need your name and the best way to reach you — that's it for now.</p>
             </div>
 
+            {/* Full name */}
             <div>
               <label className={labelCls}><User size={13} className="inline mr-1" />Full name <span className="text-red-400">*</span></label>
-              <input type="text" value={form.name} onChange={set('name')} placeholder="Jane Smith" className={inputCls} />
+              <input
+                type="text"
+                value={form.name}
+                onChange={set('name')}
+                placeholder="Jane Smith"
+                className={inputCls}
+                autoFocus
+              />
             </div>
+
+            {/* Contact method toggle */}
             <div>
-              <label className={labelCls}><Mail size={13} className="inline mr-1" />Email address <span className="text-red-400">*</span></label>
-              <input type="email" value={form.email} onChange={set('email')} placeholder="jane@example.com" className={inputCls} />
+              <label className={labelCls}>Best way to reach you <span className="text-red-400">*</span></label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, contactMethod: 'phone' }))}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+                    form.contactMethod === 'phone'
+                      ? 'bg-violet-500/20 border-violet-500 text-violet-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <Phone size={15} /> Phone call or text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, contactMethod: 'email' }))}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+                    form.contactMethod === 'email'
+                      ? 'bg-violet-500/20 border-violet-500 text-violet-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <Mail size={15} /> Email
+                </button>
+              </div>
+
+              {form.contactMethod === 'phone' ? (
+                <input
+                  key="phone"
+                  type="tel"
+                  value={form.phone}
+                  onChange={set('phone')}
+                  placeholder="(555) 000-0000"
+                  className={inputCls}
+                  autoFocus
+                />
+              ) : (
+                <input
+                  key="email"
+                  type="email"
+                  value={form.email}
+                  onChange={set('email')}
+                  placeholder="jane@example.com"
+                  className={inputCls}
+                  autoFocus
+                />
+              )}
+              <p className="text-xs text-slate-500 mt-1.5">
+                The attorney will use this to follow up with you directly.
+              </p>
             </div>
+
+            {/* Secondary contact (optional) */}
             <div>
-              <label className={labelCls}><Phone size={13} className="inline mr-1" />Phone number <span className="text-slate-500 font-normal">(optional)</span></label>
-              <input type="tel" value={form.phone} onChange={set('phone')} placeholder="(555) 000-0000" className={inputCls} />
+              <label className={`${labelCls} text-slate-500`}>
+                {form.contactMethod === 'phone' ? (
+                  <><Mail size={13} className="inline mr-1" />Email address <span className="font-normal">(optional)</span></>
+                ) : (
+                  <><Phone size={13} className="inline mr-1" />Phone number <span className="font-normal">(optional)</span></>
+                )}
+              </label>
+              {form.contactMethod === 'phone' ? (
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={set('email')}
+                  placeholder="jane@example.com"
+                  className={inputCls}
+                />
+              ) : (
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={set('phone')}
+                  placeholder="(555) 000-0000"
+                  className={inputCls}
+                />
+              )}
             </div>
           </div>
         )}
