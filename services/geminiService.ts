@@ -169,12 +169,65 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
 };
 
 export const analyzeEvidence = async (file: File, caseContext: string): Promise<{ summary: string; relevance: number; keyFacts: string[]; concerns: string[]; tags: string[] }> => {
-  const part = await fileToGenerativePart(file);
-  const response = await withTimeout(
-    ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: `Analyze this evidence.\nCase: ${caseContext}\nExtract key facts, relevance (0-100), concerns, tags. Return JSON.` }] }, config: { responseMimeType: 'application/json' } }),
-    30000
-  );
-  return JSON.parse(response.text || '{}');
+  // Read file as text for Groq (text-based analysis)
+  const fileText = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsText(file);
+  }).catch(() => `[Binary file: ${file.name}, type: ${file.type}, size: ${file.size} bytes]`);
+
+  const prompt = `Analyze this evidence file for a legal case.
+File name: ${file.name}
+File type: ${file.type}
+Case context: ${caseContext}
+File content: ${fileText.slice(0, 4000)}
+
+Return ONLY valid JSON with this exact structure:
+{
+  "summary": "brief summary of the evidence",
+  "relevance": 75,
+  "keyFacts": ["fact 1", "fact 2", "fact 3"],
+  "concerns": ["concern 1", "concern 2"],
+  "tags": ["tag1", "tag2", "tag3"]
+}`;
+
+  const groqKey = import.meta.env.VITE_GROQ_API_KEY || '';
+  if (!groqKey) {
+    return { summary: 'Evidence uploaded (AI analysis unavailable — set VITE_GROQ_API_KEY)', relevance: 50, keyFacts: [], concerns: [], tags: ['uploaded'] };
+  }
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+      max_tokens: 1000,
+      messages: [
+        { role: 'system', content: 'You are a legal evidence analyst. Always respond with valid JSON only.' },
+        { role: 'user', content: prompt }
+      ]
+    })
+  });
+
+  if (!res.ok) {
+    return { summary: 'Evidence uploaded (analysis failed)', relevance: 50, keyFacts: [], concerns: [], tags: ['uploaded'] };
+  }
+
+  const data = await res.json();
+  try {
+    const text = data.choices?.[0]?.message?.content?.trim() || '{}';
+    const parsed = JSON.parse(text);
+    return {
+      summary: parsed.summary || '',
+      relevance: parsed.relevance || 50,
+      keyFacts: Array.isArray(parsed.keyFacts) ? parsed.keyFacts : [],
+      concerns: Array.isArray(parsed.concerns) ? parsed.concerns : [],
+      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+    };
+  } catch {
+    return { summary: 'Evidence uploaded', relevance: 50, keyFacts: [], concerns: [], tags: ['uploaded'] };
+  }
 };
 
 // ── Text functions → DeepSeek ──────────────────────────────────────────────
