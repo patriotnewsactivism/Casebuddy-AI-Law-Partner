@@ -93,6 +93,7 @@ export interface IntakeCase {
   id: string;
   created_at: string;
   firm_id?: string;
+  client_invite_id?: string;   // set when intake came from a specific client invite link
   full_name: string;
   contact: string;
   matter_type: string;
