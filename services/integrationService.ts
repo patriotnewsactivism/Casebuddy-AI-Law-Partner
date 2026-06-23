@@ -83,18 +83,61 @@ export const getEnvelopeStatus = async (envelopeId: string): Promise<{ status: s
 
 // ─── Deepgram (voice transcription) ─────────────────────────────────────────
 
-export const transcribeWithDeeepgram = async (audioBlob: Blob): Promise<string> => {
+export const transcribeWithDeeepgram = async (audioBlob: Blob, fileName?: string): Promise<string> => {
   const key = requireKey('VITE_DEEPGRAM_API_KEY', 'Deepgram');
-  const res = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&punctuate=true&diarize=true', {
+
+  // Detect media type — Deepgram supports audio AND video natively (mp4, mov, avi, mkv, etc.)
+  const ext = (fileName || '').split('.').pop()?.toLowerCase() || '';
+  const mimeMap: Record<string, string> = {
+    mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska', wmv: 'video/x-ms-wmv', webm: 'video/webm',
+    mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4',
+    ogg: 'audio/ogg', flac: 'audio/flac', aac: 'audio/aac',
+  };
+  const contentType = mimeMap[ext] || audioBlob.type || 'audio/webm';
+
+  // Use nova-2 for audio, nova-2 for video — both supported by Deepgram
+  // diarize=true labels speakers (great for depositions/calls)
+  // smart_format=true adds paragraphs and punctuation
+  const params = new URLSearchParams({
+    model: 'nova-2',
+    punctuate: 'true',
+    diarize: 'true',
+    smart_format: 'true',
+  });
+
+  const res = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
     method: 'POST',
     headers: {
       Authorization: `Token ${key}`,
-      'Content-Type': audioBlob.type || 'audio/webm',
+      'Content-Type': contentType,
     },
     body: audioBlob,
   });
-  if (!res.ok) throw new Error(`Deepgram error: ${res.status}`);
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Deepgram error ${res.status}: ${errBody}`);
+  }
+
   const data = await res.json();
+
+  // If diarization is on, stitch transcript with speaker labels
+  const words = data?.results?.channels?.[0]?.alternatives?.[0]?.words;
+  if (words && words.length > 0 && words[0]?.speaker !== undefined) {
+    let transcript = '';
+    let currentSpeaker = -1;
+    for (const w of words) {
+      if (w.speaker !== currentSpeaker) {
+        currentSpeaker = w.speaker;
+        transcript += `\n[Speaker ${currentSpeaker + 1}]: `;
+      }
+      transcript += w.punctuated_word ?? w.word;
+      transcript += ' ';
+    }
+    return transcript.trim();
+  }
+
   return data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
 };
 
