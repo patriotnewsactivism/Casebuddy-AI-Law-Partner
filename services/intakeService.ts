@@ -4,13 +4,56 @@ import { IntakeData, IntakeScore } from '../types';
 import { LEGAL_SPECIALISTS } from '../agents/personas';
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
 
-// Lazy proxy — reads the key fresh on every call so it works even if the key
-// was fetched after module load (e.g. after the voice session starts).
-const ai = new Proxy({} as InstanceType<typeof GoogleGenAI>, {
-  get(_target, prop) {
-    return (new GoogleGenAI({ apiKey: getGeminiKey() }) as any)[prop];
-  },
-});
+// Intake AI calls go through the server-side proxy (/api/ai/gemini), which holds
+// the GEMINI_API_KEY. This keeps the key out of the browser and avoids depending
+// on a per-session client key that may be missing or restricted — the cause of
+// intakes silently failing at the extraction step. If the proxy isn't reachable
+// (e.g. a host without the edge function) we fall back to a direct browser call,
+// but only when a runtime key is actually available.
+const callGeminiProxy = async (params: {
+  model: string;
+  contents: unknown;
+  config?: unknown;
+}): Promise<string> => {
+  const resp = await fetch('/api/ai/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!resp.ok) {
+    let message = `Gemini proxy error (${resp.status})`;
+    try {
+      const body = await resp.json();
+      if (body?.error) message = body.error;
+    } catch { /* non-JSON error body */ }
+    throw new Error(message);
+  }
+  const data: any = await resp.json();
+  const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+    .map((p: any) => p?.text ?? '')
+    .join('')
+    .trim();
+  if (!text) throw new Error('Gemini proxy returned an empty response');
+  return text;
+};
+
+const generateStructured = async (params: {
+  model: string;
+  contents: any;
+  config: any;
+}): Promise<string> => {
+  try {
+    return await callGeminiProxy(params);
+  } catch (proxyError) {
+    // Fall back to a direct browser call only if we actually have a key to use.
+    const key = getGeminiKey();
+    if (!key) throw proxyError;
+    const response = await new GoogleGenAI({ apiKey: key }).models.generateContent(params);
+    const text = response.text;
+    if (!text) throw proxyError;
+    return text;
+  }
+};
 
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
 // manual review; anything under REVIEW is politely declined.
@@ -62,8 +105,8 @@ const safeParseJson = <T = any>(raw: string | undefined, context: string): T => 
 export const extractIntake = async (transcript: Turn[]): Promise<IntakeData> => {
   const convo = transcriptToText(transcript);
   return retryWithBackoff(async () => {
-    const response = await withTimeout(
-      ai.models.generateContent({
+    const text = await withTimeout(
+      generateStructured({
         // Pro, not Flash: this is the firm's case report. Pro captures more
         // detail from a long, rambling call and is far less prone to inventing
         // facts that weren't said.
@@ -150,7 +193,7 @@ ${convo}`,
       }),
       45000
     );
-    const data = safeParseJson<Partial<IntakeData>>(response.text, 'extractIntake');
+    const data = safeParseJson<Partial<IntakeData>>(text, 'extractIntake');
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
     return {
       fullName: data.fullName || 'Prospective Client',
@@ -189,8 +232,8 @@ const specialistList = LEGAL_SPECIALISTS.map(
  */
 export const scoreIntake = async (intake: IntakeData): Promise<IntakeScore> => {
   return retryWithBackoff(async () => {
-    const response = await withTimeout(
-      ai.models.generateContent({
+    const text = await withTimeout(
+      generateStructured({
         model: 'gemini-2.5-flash',
         contents: {
           parts: [
@@ -251,7 +294,7 @@ ${JSON.stringify(intake, null, 2)}`,
       }),
       30000
     );
-    const data = safeParseJson<any>(response.text, 'scoreIntake');
+    const data = safeParseJson<any>(text, 'scoreIntake');
     const rawScore = Math.max(0, Math.min(100, Math.round(Number(data.score) || 0)));
     const disposition =
       rawScore >= ACCEPT_BENCHMARK ? 'accepted' : rawScore >= REVIEW_BENCHMARK ? 'review' : 'denied';
