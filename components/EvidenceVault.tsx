@@ -178,7 +178,7 @@ const EvidenceVault = () => {
               <p className="text-slate-400 text-xs line-clamp-2">{item.summary}</p>
 
               <div className="flex flex-wrap gap-1 mt-2">
-                {item.tags.slice(0, 3).map((tag, i) => (
+                {(item.tags || []).slice(0, 3).map((tag, i) => (
                   <span key={i} className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-xs rounded">{tag}</span>
                 ))}
               </div>
