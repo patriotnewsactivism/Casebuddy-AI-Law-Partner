@@ -7,6 +7,8 @@
  *
  * POST /api/ai/gemini
  * Body: { model, contents, config? }
+ *
+ * Includes edge-compatible rate limiting (per-IP sliding window).
  */
 
 export const config = { runtime: 'edge' };
@@ -23,9 +25,40 @@ const json = (body: object, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 
+// ── Rate limiting (per-isolate in-memory, resets on cold start) ──────────────
+
+const RATE_LIMIT = { windowMs: 60_000, maxRequests: 30 }; // 30 req/min per IP
+const windows = new Map<string, number[]>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const cutoff = now - RATE_LIMIT.windowMs;
+  let timestamps = windows.get(ip) ?? [];
+  timestamps = timestamps.filter(t => t > cutoff);
+  timestamps.push(now);
+  windows.set(ip, timestamps);
+  // Prevent memory leak
+  if (windows.size > 5_000) {
+    const entries = [...windows.entries()];
+    entries.sort((a, b) => (a[1][0] ?? 0) - (b[1][0] ?? 0));
+    for (let i = 0; i < 1_000; i++) windows.delete(entries[i][0]);
+  }
+  return timestamps.length <= RATE_LIMIT.maxRequests;
+}
+
+// ── Handler ──────────────────────────────────────────────────────────────────
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  // Rate limit check
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? req.headers.get('x-real-ip')
+    ?? 'unknown';
+  if (!checkRateLimit(ip)) {
+    return json({ error: 'Too many requests. Please try again shortly.' }, 429);
+  }
 
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return json({ error: 'Gemini API key not configured on server.' }, 503);
