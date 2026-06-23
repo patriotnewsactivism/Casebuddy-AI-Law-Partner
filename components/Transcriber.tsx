@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { performOCR, analyzeTranscription } from '../services/geminiService';
-import { transcribeWithDeeepgram, startDeepgramLiveSession } from '../services/integrationService';
+import { transcribeWithDeeepgram, startDeepgramLiveSession, extractAudioFromVideo } from '../services/integrationService';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
@@ -132,18 +132,37 @@ const Transcriber = () => {
       if (fileMode === 'audio') {
         const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv)$/i.test(selectedFile.name);
         const mediaLabel = isVideo ? 'video' : 'audio';
+
+        // For Groq (25MB limit): strip audio track first so even large videos work
+        // For Deepgram: send video directly (handles up to 2GB natively)
+        let fileToTranscribe = selectedFile;
+        if (isVideo && engine !== 'deepgram') {
+          setProgress('Extracting audio track from video...');
+          try {
+            fileToTranscribe = await extractAudioFromVideo(selectedFile);
+            toast.info(`Audio extracted (${(fileToTranscribe.size / 1024 / 1024).toFixed(1)} MB) — transcribing...`);
+          } catch (extractErr) {
+            toast.error('Audio extraction failed — trying direct video upload instead.');
+          }
+        }
+
         if (engine === 'deepgram') {
           setProgress(`Transcribing ${mediaLabel} via Deepgram — this may take a moment...`);
           try {
             extractedText = await transcribeWithDeeepgram(selectedFile, selectedFile.name);
           } catch (deepgramErr) {
-            toast.error('Deepgram failed — falling back to Groq Whisper.');
-            setProgress('Falling back to Groq Whisper transcription...');
-            extractedText = await transcribeWithGroq(selectedFile);
+            toast.error('Deepgram failed — falling back to Groq Whisper (extracting audio first).');
+            setProgress('Extracting audio for Groq Whisper fallback...');
+            try {
+              const audioFile = isVideo ? await extractAudioFromVideo(selectedFile) : selectedFile;
+              extractedText = await transcribeWithGroq(audioFile);
+            } catch {
+              extractedText = await transcribeWithGroq(selectedFile);
+            }
           }
         } else {
           setProgress(`Transcribing ${mediaLabel} via Groq Whisper — this may take a moment...`);
-          extractedText = await transcribeWithGroq(selectedFile);
+          extractedText = await transcribeWithGroq(fileToTranscribe);
         }
       } else {
         setProgress('Running OCR on document/image...');
