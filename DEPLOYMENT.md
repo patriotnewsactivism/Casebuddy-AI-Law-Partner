@@ -7,10 +7,15 @@ Deployed on **Vercel** (Hobby plan) with automatic deploys from GitHub `main`.
 ### AI Services
 | Variable | Required | Notes |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | ✅ Yes | DeepSeek chat completions (all AI features) |
+| `GEMINI_API_KEY` | ✅ Yes | All AI features — both client-side (via deepseek.ts shim) and server-side crons |
 | `DEEPGRAM_API_KEY` | ✅ Yes | Voice STT + TTS |
-| `GEMINI_API_KEY` | ✅ Yes | Deepgram Voice Agent "think" provider |
-| `VITE_DEEPSEEK_API_KEY` | ✅ Yes | Client-side DeepSeek fallback |
+| ~~`DEEPSEEK_API_KEY`~~ | ❌ Deprecated | DeepSeek credits exhausted — all calls routed through Gemini |
+| ~~`VITE_DEEPSEEK_API_KEY`~~ | ❌ Deprecated | No longer needed — `deepseek.ts` shim uses `GEMINI_API_KEY` |
+
+### Firm Identity
+| Variable | Required | Notes |
+|---|---|---|
+| `VITE_FIRM_ID` | ✅ Yes | Your firm UUID — ensures public intakes are visible on your dashboard. Get it from `localStorage.getItem('casebuddy_firm_id')` in your browser console. If not set, intakes fall back to `'default'`. |
 
 ### Supabase (Auth + Database)
 | Variable | Required | Notes |
@@ -35,11 +40,14 @@ Deployed on **Vercel** (Hobby plan) with automatic deploys from GitHub `main`.
 ## Architecture
 
 ```
-React (Vite) → Vercel Edge Functions → DeepSeek API
+React (Vite) → Vercel Edge Functions → Gemini API (all AI)
                                      → Deepgram (Voice)
-                                     → Gemini (Voice Agent brain)
                                      → Supabase (Auth + DB)
 ```
+
+> **Note:** `deepseek.ts` is a Gemini-powered compatibility shim. All callers
+> still import `deepseekChat` but it routes to `gemini-2.0-flash-lite` (fast
+> JSON tasks) or `gemini-2.5-flash` (complex legal reasoning) behind the scenes.
 
 ## Cron Jobs (Daily — Vercel Hobby compatible)
 - `0 14 * * *` — Daily briefing (Sol + Maya)
