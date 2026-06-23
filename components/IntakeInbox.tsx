@@ -404,7 +404,7 @@ const IntakeInbox: React.FC = () => {
                     {/* Recommended agent */}
                     {agent && (
                       <div className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2.5">
-                        <span className="text-lg">{agent.avatar}</span>
+                        <span className="text-lg">{agent.emoji}</span>
                         <div>
                           <div className="text-xs text-slate-400">Recommended for</div>
                           <div className="text-sm font-semibold text-white">{agent.name}</div>
