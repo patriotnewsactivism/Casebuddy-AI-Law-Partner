@@ -8,7 +8,7 @@ import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
 import AIDisclaimer from './AIDisclaimer';
 import { buildMemoryContext, recordAction } from '../services/agentMemory';
-import { recordFeedback } from '../services/agentLearning';
+import { recordFeedback, buildPatternsContext, recordLearningEvent } from '../services/agentLearning';
 import { runReasoning, selectReasoningMode } from '../services/agentReasoning';
 import { ReasoningModeSelector, ReasoningResultBadge } from './ReasoningIndicator';
 import type { ReasoningMode } from '../types';
@@ -393,6 +393,9 @@ const LegalTeam: React.FC = () => {
 
       // Load memory context for this specialist
       const memCtx = await buildMemoryContext(activeId, activeCase?.id ?? 'general');
+      // Inject learned patterns into context so agents improve over time
+      const patternsCtx = await buildPatternsContext(activeId);
+      const fullMemCtx = memCtx + patternsCtx;
 
       let reply: string;
       let confidence: number | undefined;
@@ -406,16 +409,16 @@ const LegalTeam: React.FC = () => {
             history,
             text,
             caseCtx,
-            memCtx
+            fullMemCtx
           );
           for await (const chunk of stream) {
             accumulated += chunk;
             setStreamingText(accumulated);
           }
-          reply = accumulated || await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, memCtx);
+          reply = accumulated || await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, fullMemCtx);
         } catch {
           // Streaming failed — fall back to non-streaming
-          reply = await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, memCtx);
+          reply = await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, fullMemCtx);
         }
       } else {
         // Deep reasoning modes
@@ -440,6 +443,20 @@ const LegalTeam: React.FC = () => {
         description: `Consulted on: ${text.slice(0, 80)}`,
         result: reply.slice(0, 150),
       });
+
+      // Record learning event for pattern extraction
+      recordLearningEvent({
+        agentId: activeId,
+        caseId: activeCase?.id ?? 'general',
+        action: 'consultation',
+        outcome: 'neutral',
+        context: {
+          mode,
+          questionLength: text.length,
+          replyLength: reply.length,
+          winProbability: activeCase?.winProbability,
+        },
+      }).catch(() => { /* non-critical */ });
 
       const modelMsg: ChatMessage = {
         role: 'model',

@@ -10,6 +10,7 @@ import { handleError, handleSuccess } from '../utils/errorHandler';
 import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
 import AgentHeader from './AgentHeader';
+import CrossCasePanel from './CrossCasePanel';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
@@ -256,6 +257,9 @@ const CaseManager = () => {
             </div>
           </div>
         )}
+
+        {/* Cross-Case Intelligence Panel */}
+        {activeCase && <CrossCasePanel activeCase={activeCase} />}
       </div>
 
       {/* Document Analysis Area */}
