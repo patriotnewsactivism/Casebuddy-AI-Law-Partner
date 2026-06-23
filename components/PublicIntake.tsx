@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2 } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
-import { submitIntake } from '../services/intakeStore';
+import { submitIntake, resolveFirmToken } from '../services/intakeStore';
 import { emailIntakeHandoff } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
 
@@ -147,7 +147,8 @@ const PublicIntake: React.FC = () => {
     }
 
     try {
-      await submitIntake({ intake, score, transcript });
+      await submitIntake({
+        firmId: firmId ?? undefined, intake, score, transcript });
     } catch {
       // submitIntake already falls back to localStorage on Supabase errors, so
       // reaching here is rare — don't surface it to the caller, the firm still
