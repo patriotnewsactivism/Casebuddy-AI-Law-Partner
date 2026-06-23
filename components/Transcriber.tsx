@@ -433,7 +433,7 @@ const Transcriber = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept={fileMode === 'audio' ? 'audio/*' : 'image/*,.pdf'}
+                accept={fileMode === 'audio' ? 'audio/*,video/*,.mp4,.mov,.avi,.mkv,.wmv,.webm' : 'image/*,.pdf'}
                 onChange={handleFileSelect}
                 className="block w-full text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gold-500 file:text-slate-900 hover:file:bg-gold-600 file:cursor-pointer bg-slate-700/50 border border-slate-600 rounded-lg cursor-pointer"
               />
