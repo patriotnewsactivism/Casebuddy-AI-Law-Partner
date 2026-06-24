@@ -65,7 +65,7 @@ import { flushRetryQueue } from './services/intakeStore';
 import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
 import NotificationCenter from './components/NotificationCenter';
 import AgentStatusDashboard from './components/AgentStatusDashboard';
-import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel, adoptFirmIdFromUser } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import type { User } from '@supabase/supabase-js';
@@ -378,6 +378,13 @@ const App = () => {
     const unsub = onAuthStateChange((u, _session) => {
       setUser(u);
       setAuthLoading(false);
+      // Claim a firm_memberships row for the signed-in user. Firm-scoped RLS
+      // (cases, client_invites, intakes, …) resolves the user's firm via
+      // get_user_firm_id(), which reads firm_memberships — without this the
+      // user has no firm and every firm-scoped write is rejected by RLS
+      // ("new row violates row-level security policy"). Fires on the initial
+      // session and on sign-in; it's idempotent and best-effort.
+      if (u) void adoptFirmIdFromUser(u);
     });
     // Safety net: if auth check takes >5 s, unblock the UI anyway
     const timeout = setTimeout(() => setAuthLoading(false), 5000);
