@@ -4,7 +4,7 @@ import { Transcription } from '../types';
 import {
   Mic, Upload, Trash2, Download, Tag, FileAudio, Clock, Users, Save,
   Edit2, X, FileImage, FileText, Brain, ChevronDown, ChevronUp, AlertCircle,
-  CheckCircle, Loader, Zap, Eye, Radio, Square
+  CheckCircle, Loader, Zap, Eye, Radio, Square, Video
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { performOCR, analyzeTranscription } from '../services/geminiService';
@@ -90,8 +90,15 @@ const Transcriber = () => {
     }
   };
 
+<<<<<<< Updated upstream
   const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'];
   const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac|mp4|mov|avi|mkv|wmv)$/i;
+=======
+  const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a'];
+  const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac)$/i;
+  const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm', 'video/mpeg', 'video/x-ms-wmv', 'video/3gpp', 'video/mp2t'];
+  const VIDEO_EXTS = /\.(mp4|mov|avi|mkv|mpeg|mpg|wmv|m4v|3gp|mts|m2ts)$/i;
+>>>>>>> Stashed changes
   const OCR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'application/pdf'];
   const OCR_EXTS = /\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif|pdf)$/i;
 
@@ -99,22 +106,33 @@ const Transcriber = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isVideo = VIDEO_TYPES.includes(file.type) || VIDEO_EXTS.test(file.name);
     const isAudio = AUDIO_TYPES.includes(file.type) || AUDIO_EXTS.test(file.name);
     const isOCR = OCR_TYPES.includes(file.type) || OCR_EXTS.test(file.name);
 
-    if (!isAudio && !isOCR) {
-      toast.error('Unsupported file. Use audio (MP3, WAV, M4A) or image/document (JPG, PNG, PDF).');
+    if (!isAudio && !isVideo && !isOCR) {
+      toast.error('Unsupported file. Use audio (MP3, WAV, M4A), video (MP4, MOV, MKV), or image/document (JPG, PNG, PDF).');
       return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('File must be under 100MB.');
+
+    const maxMB = isVideo ? 500 : 100;
+    if (file.size > maxMB * 1024 * 1024) {
+      toast.error(`File must be under ${maxMB}MB.`);
+      return;
+    }
+
+    if (isVideo) {
+      setFileMode('audio');
+      setEngine('deepgram');
+      setSelectedFile(file);
+      toast.info(`Video selected: ${file.name} — Deepgram will extract and transcribe the audio track`);
       return;
     }
 
     const detectedMode: FileMode = isAudio ? 'audio' : 'ocr';
     setFileMode(detectedMode);
     setSelectedFile(file);
-    toast.info(`${detectedMode === 'audio' ? '🎵 Audio' : '📄 Document/Image'} selected: ${file.name}`);
+    toast.info(`${detectedMode === 'audio' ? 'Audio' : 'Document/Image'} selected: ${file.name}`);
   };
 
   const processFile = async () => {
@@ -130,6 +148,7 @@ const Transcriber = () => {
       let extractedText = '';
 
       if (fileMode === 'audio') {
+<<<<<<< Updated upstream
         const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv)$/i.test(selectedFile.name);
         const mediaLabel = isVideo ? 'video' : 'audio';
 
@@ -138,6 +157,14 @@ const Transcriber = () => {
         let fileToTranscribe = selectedFile;
         if (isVideo && engine !== 'deepgram') {
           setProgress('Extracting audio track from video...');
+=======
+        if (engine === 'deepgram') {
+          const isVideoFile = VIDEO_TYPES.includes(selectedFile.type) || VIDEO_EXTS.test(selectedFile.name);
+          setProgress(isVideoFile
+            ? 'Sending video to Deepgram — extracting audio track and transcribing...'
+            : 'Transcribing audio via Deepgram — this may take a moment...'
+          );
+>>>>>>> Stashed changes
           try {
             fileToTranscribe = await extractAudioFromVideo(selectedFile);
             toast.info(`Audio extracted (${(fileToTranscribe.size / 1024 / 1024).toFixed(1)} MB) — transcribing...`);
@@ -151,6 +178,7 @@ const Transcriber = () => {
           try {
             extractedText = await transcribeWithDeeepgram(selectedFile, selectedFile.name);
           } catch (deepgramErr) {
+<<<<<<< Updated upstream
             toast.error('Deepgram failed — falling back to Groq Whisper (extracting audio first).');
             setProgress('Extracting audio for Groq Whisper fallback...');
             try {
@@ -159,6 +187,12 @@ const Transcriber = () => {
             } catch {
               extractedText = await transcribeWithGroq(selectedFile);
             }
+=======
+            if (isVideoFile) throw deepgramErr; // Gemini cannot handle video files
+            toast.error('Deepgram failed — falling back to Gemini AI.');
+            setProgress('Falling back to Gemini AI transcription...');
+            extractedText = await transcribeAudio(selectedFile);
+>>>>>>> Stashed changes
           }
         } else {
           setProgress(`Transcribing ${mediaLabel} via Groq Whisper — this may take a moment...`);
@@ -387,7 +421,7 @@ const Transcriber = () => {
                 fileMode === 'audio' ? 'bg-gold-600 text-slate-900' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
             >
-              <FileAudio size={16} /> Audio Transcription
+              <FileAudio size={16} /> Audio / Video
             </button>
             <button
               onClick={() => setFileMode('ocr')}
@@ -446,13 +480,17 @@ const Transcriber = () => {
             <label className="block">
               <span className="text-sm text-slate-400 mb-1 block">
                 {fileMode === 'audio'
-                  ? 'Audio file: MP3, WAV, M4A, OGG, WebM (max 100MB)'
+                  ? 'Audio: MP3, WAV, M4A, OGG (max 100MB) · Video: MP4, MOV, MKV, AVI (max 500MB — Deepgram required)'
                   : 'Image or document: JPG, PNG, PDF, TIFF, WebP (max 100MB)'}
               </span>
               <input
                 ref={fileInputRef}
                 type="file"
+<<<<<<< Updated upstream
                 accept={fileMode === 'audio' ? 'audio/*,video/*,.mp4,.mov,.avi,.mkv,.wmv,.webm' : 'image/*,.pdf'}
+=======
+                accept={fileMode === 'audio' ? 'audio/*,video/*' : 'image/*,.pdf'}
+>>>>>>> Stashed changes
                 onChange={handleFileSelect}
                 className="block w-full text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gold-500 file:text-slate-900 hover:file:bg-gold-600 file:cursor-pointer bg-slate-700/50 border border-slate-600 rounded-lg cursor-pointer"
               />
@@ -461,7 +499,9 @@ const Transcriber = () => {
             {selectedFile && (
               <div className="flex items-center justify-between bg-slate-700/50 border border-slate-600 rounded-lg p-3">
                 <div className="flex items-center gap-3">
-                  {fileMode === 'audio' ? <FileAudio className="text-gold-400" size={20} /> : <FileImage className="text-blue-400" size={20} />}
+                  {selectedFile && (VIDEO_TYPES.includes(selectedFile.type) || VIDEO_EXTS.test(selectedFile.name))
+                    ? <Video className="text-purple-400" size={20} />
+                    : fileMode === 'audio' ? <FileAudio className="text-gold-400" size={20} /> : <FileImage className="text-blue-400" size={20} />}
                   <div>
                     <p className="text-white text-sm font-medium">{selectedFile.name}</p>
                     <p className="text-slate-400 text-xs">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
@@ -488,7 +528,9 @@ const Transcriber = () => {
               {isProcessing ? (
                 <><Loader className="animate-spin" size={18} /> Processing...</>
               ) : fileMode === 'audio' ? (
-                <><Mic size={18} /> Transcribe Audio</>
+                selectedFile && (VIDEO_TYPES.includes(selectedFile.type) || VIDEO_EXTS.test(selectedFile.name))
+                  ? <><Video size={18} /> Extract &amp; Transcribe Video</>
+                  : <><Mic size={18} /> Transcribe Audio</>
               ) : (
                 <><Eye size={18} /> Extract Text (OCR)</>
               )}
@@ -580,7 +622,9 @@ const Transcriber = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        {t.fileName.match(AUDIO_EXTS) ? (
+                        {t.fileName.match(VIDEO_EXTS) ? (
+                          <Video size={14} className="text-purple-400 shrink-0" />
+                        ) : t.fileName.match(AUDIO_EXTS) ? (
                           <FileAudio size={14} className="text-gold-400 shrink-0" />
                         ) : (
                           <FileImage size={14} className="text-blue-400 shrink-0" />
