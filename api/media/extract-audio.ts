@@ -13,10 +13,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { writeFile, readFile, unlink } from 'fs/promises';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { randomUUID } from 'crypto';
 
 export const config = {
@@ -69,12 +66,16 @@ function parseMultipart(body: Buffer, boundary: string): { name: string; filenam
 }
 
 // ── Lazy-init ffmpeg (WASM loads once per cold start) ────────────────────────
-let ffmpegInstance: ReturnType<typeof createFFmpeg> | null = null;
+let ffmpegInstance: FFmpeg | null = null;
 
-async function getFFmpeg() {
+async function getFFmpeg(): Promise<FFmpeg> {
   if (!ffmpegInstance) {
-    ffmpegInstance = createFFmpeg({ log: false });
-    await ffmpegInstance.load();
+    ffmpegInstance = new FFmpeg();
+    // Load core + WASM from CDN — avoids bundling the large WASM binary
+    await ffmpegInstance.load({
+      coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+      wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+    });
   }
   return ffmpegInstance;
 }
@@ -101,24 +102,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ffmpeg = await getFFmpeg();
 
     // Write input to ffmpeg virtual FS
-    ffmpeg.FS('writeFile', inputName, new Uint8Array(filePart.data));
+    await ffmpeg.writeFile(inputName, new Uint8Array(filePart.data));
 
     // Extract audio: -vn = no video, -ar 16000 = 16kHz (optimal for Whisper), -ac 1 = mono
-    await ffmpeg.run(
+    await ffmpeg.exec([
       '-i', inputName,
       '-vn',
       '-ar', '16000',
       '-ac', '1',
       '-b:a', '64k',
-      outputName
-    );
+      outputName,
+    ]);
 
-    const outputData = ffmpeg.FS('readFile', outputName);
+    const outputData = await ffmpeg.readFile(outputName) as Uint8Array;
     const outputBuffer = Buffer.from(outputData);
 
     // Clean up virtual FS
-    try { ffmpeg.FS('unlink', inputName); } catch {}
-    try { ffmpeg.FS('unlink', outputName); } catch {}
+    try { await ffmpeg.deleteFile(inputName); } catch {}
+    try { await ffmpeg.deleteFile(outputName); } catch {}
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Content-Disposition', `attachment; filename="extracted_audio.mp3"`);
