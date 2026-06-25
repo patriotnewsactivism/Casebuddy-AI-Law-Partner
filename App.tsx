@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut, Activity
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -53,6 +53,7 @@ const UserGuide        = React.lazy(() => import('./components/UserGuide'));
 const AuthPage         = React.lazy(() => import('./components/AuthPage'));
 const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
 const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'));
+const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -95,6 +96,7 @@ const NAV_GROUPS = [
       { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
       { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
+      { path: '/app/case-thread', icon: MessageSquare, label: 'Case Threads', badge: 'New' },
     ]
   },
   {
@@ -595,6 +597,7 @@ const App = () => {
             <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
             <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
 
+            <Route path="/app/case-thread" element={<AuthGate><Layout><CaseThreadView /></Layout></AuthGate>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
