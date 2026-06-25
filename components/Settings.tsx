@@ -113,18 +113,29 @@ const Settings = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // Account & Security state
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordBusy, setPasswordBusy] = useState(false);
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ new: '', confirm: '', busy: false, error: null as string | null, success: false });
+  const newPassword = passwordForm.new;
+  const confirmPassword = passwordForm.confirm;
+  const passwordBusy = passwordForm.busy;
+  const passwordError = passwordForm.error;
+  const passwordSuccess = passwordForm.success;
+  const setNewPassword     = (v: string)  => setPasswordForm(f => ({ ...f, new: v }));
+  const setConfirmPassword = (v: string)  => setPasswordForm(f => ({ ...f, confirm: v }));
+  const setPasswordBusy    = (v: boolean) => setPasswordForm(f => ({ ...f, busy: v }));
+  const setPasswordError   = (v: string | null) => setPasswordForm(f => ({ ...f, error: v, success: false }));
+  const setPasswordSuccess = (v: boolean) => setPasswordForm(f => ({ ...f, success: v, error: null }));
   const [signingOut, setSigningOut] = useState(false);
 
   // Firm Branding state
-  const [firmName, setFirmName] = useState('CaseBuddy');
-  const [tagline, setTagline] = useState('AI-Powered Legal Platform');
-  const [whiteLabel, setWhiteLabel] = useState(false);
-  const [firmLogo, setFirmLogo] = useState<string | null>(null);
+  const [firmBranding, setFirmBranding] = useState({ name: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false, logo: null as string | null });
+  const firmName = firmBranding.name;
+  const tagline  = firmBranding.tagline;
+  const whiteLabel = firmBranding.whiteLabel;
+  const firmLogo = firmBranding.logo;
+  const setFirmName    = (v: string)       => setFirmBranding(f => ({ ...f, name: v }));
+  const setTagline     = (v: string)       => setFirmBranding(f => ({ ...f, tagline: v }));
+  const setWhiteLabel  = (v: boolean)      => setFirmBranding(f => ({ ...f, whiteLabel: v }));
+  const setFirmLogo    = (v: string|null)  => setFirmBranding(f => ({ ...f, logo: v }));
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [firmId, setFirmIdState] = useState(() => getFirmId());
