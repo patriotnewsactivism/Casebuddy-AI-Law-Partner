@@ -201,7 +201,7 @@ const StatementBuilder = () => {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-sm text-slate-400">Theory of the Case *</label>
-                <VoiceMicButton size={15} onTranscript={t => setTheory(prev => prev + (prev ? ' ' : '') + t)} />
+                <VoiceMicButton size={15} onTranscript={t => setForm(f => ({ ...f, theory: f.theory ? f.theory + ' ' + t : t }))} />
               </div>
               <textarea value={theory} onChange={e => setTheory(e.target.value)}
                 placeholder="e.g. My client acted in self-defense after being threatened. The prosecution's case relies entirely on a single unreliable witness with motive to lie."
