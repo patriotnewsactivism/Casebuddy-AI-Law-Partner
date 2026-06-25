@@ -299,6 +299,7 @@ const IntakeInbox: React.FC = () => {
   };
 
   const handleDeleteInvite = async (id: string) => {
+    if (!window.confirm('Delete this invite link? This cannot be undone.')) return;
     await deleteClientInvite(id);
     setInvites(prev => prev.filter(i => i.id !== id));
     toast.success('Invite deleted');
