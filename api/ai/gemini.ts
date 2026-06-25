@@ -27,7 +27,8 @@ const json = (body: object, status = 200) =>
 
 // ── Rate limiting (per-isolate in-memory, resets on cold start) ──────────────
 
-const RATE_LIMIT = { windowMs: 60_000, maxRequests: 30 }; // 30 req/min per IP
+// Raised to 120 req/min to support parallel agent calls (War Room fires 7 at once)
+const RATE_LIMIT = { windowMs: 60_000, maxRequests: 120 };
 const windows = new Map<string, number[]>();
 
 function checkRateLimit(ip: string): boolean {
@@ -101,3 +102,4 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Failed to reach Gemini API.', detail: err?.message }, 502);
   }
 }
+
