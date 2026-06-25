@@ -1,5 +1,5 @@
 
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo} from 'react';
 import { Users, Play, RotateCcw, Send, Loader2, TrendingUp, MessageCircle, Gavel, ChevronDown, ChevronUp } from 'lucide-react';
 import { simulateJurorReaction, runJuryDeliberation } from '../services/geminiService';
 import { AppContext } from '../App';
@@ -129,9 +129,11 @@ const JurySimulator: React.FC = () => {
   const [rounds, setRounds] = useState<RoundResult[]>([]);
   const [deliberation, setDeliberation] = useState<any>(null);
 
-  const avgPersuasion = Math.round(jurors.reduce((s, j) => s + j.persuasionLevel, 0) / jurors.length);
-  const favorable = jurors.filter(j => j.persuasionLevel >= 65).length;
-  const unfavorable = jurors.filter(j => j.persuasionLevel < 40).length;
+  const { avgPersuasion, favorable, unfavorable } = useMemo(() => ({
+    avgPersuasion: jurors.length ? Math.round(jurors.reduce((s, j) => s + j.persuasionLevel, 0) / jurors.length) : 0,
+    favorable:   jurors.filter(j => j.persuasionLevel >= 65).length,
+    unfavorable: jurors.filter(j => j.persuasionLevel < 40).length,
+  }), [jurors]);
 
   const submitArgument = async () => {
     if (!argument.trim() || loading) return;
