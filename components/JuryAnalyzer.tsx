@@ -58,16 +58,15 @@ const JuryAnalyzer = () => {
   const [caseType, setCaseType] = useState('');
 
   const [form, setForm] = useState({
-
-  const jurorStats = useMemo(() => ({
-    accept:    jurorStats.accept,
-    challenge: jurorStats.challenge,
-    strike:    jurorStats.strike,
-    total:     jurors.length,
-  }), [jurors]);
-
     number: '', name: '', occupation: '', age: '', education: '', priorJuryService: '', notes: ''
   });
+
+  const jurorStats = useMemo(() => ({
+    accept:    jurors.filter(j => j.recommendation === 'accept').length,
+    challenge: jurors.filter(j => j.recommendation === 'challenge-for-cause').length,
+    strike:    jurors.filter(j => j.recommendation === 'peremptory-strike').length,
+    total:     jurors.length,
+  }), [jurors]);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
