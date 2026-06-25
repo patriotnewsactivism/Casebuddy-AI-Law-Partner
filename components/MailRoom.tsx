@@ -268,6 +268,7 @@ const MailRoom: React.FC = () => {
   const [compose, setCompose] = useState<Compose>(emptyCompose);
   const [search, setSearch] = useState('');
   const [aiDrafting, setAiDrafting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [activeCall, setActiveCall] = useState<PhoneCall | null>(null);
   const [callTimer, setCallTimer] = useState(0);
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -373,6 +374,7 @@ const MailRoom: React.FC = () => {
 
   const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) return;
+    setIsSending(true);
     const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent);
     // Send via real API if available
     try {
@@ -400,6 +402,7 @@ const MailRoom: React.FC = () => {
       priority: compose.priority,
     };
     setEmails(prev => [newEmail, ...prev]);
+    setIsSending(false);
     setComposing(false);
     setCompose(emptyCompose);
   };
@@ -767,7 +770,7 @@ const MailRoom: React.FC = () => {
                 <input
                   value={compose.to}
                   onChange={e => setCompose(c => ({ ...c, to: e.target.value }))}
-                  placeholder="client@example.com or firm@casebuddy.live"
+                  placeholder="client@your@firm.com"
                   className="flex-1 bg-slate-700 text-white text-sm rounded-lg px-3 py-2 border border-slate-600 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
                 />
               </div>
@@ -810,10 +813,10 @@ const MailRoom: React.FC = () => {
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <button
                 onClick={sendEmail}
-                disabled={!compose.to || !compose.subject || !compose.body}
+                disabled={isSending || !compose.to || !compose.subject || !compose.body}
                 className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-40 text-slate-900 font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
               >
-                <Send size={14} /> Send
+                <Send size={14} />{isSending ? 'Sending…' : 'Send'}
               </button>
               <button
                 onClick={aiDraftReply}
