@@ -1,5 +1,5 @@
 
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState, useMemo } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -162,15 +162,14 @@ const Dashboard = () => {
     }
   }, []);
 
-  const statusCounts = cases.reduce((acc: any, curr) => {
-    acc[curr.status] = (acc[curr.status] || 0) + 1;
-    return acc;
-  }, {});
-
-  const chartData = Object.keys(statusCounts).map(status => ({
-    name: status,
-    count: statusCounts[status]
-  }));
+  const { statusCounts, chartData } = useMemo(() => {
+    const counts = cases.reduce((acc: Record<string, number>, curr) => {
+      acc[curr.status] = (acc[curr.status] || 0) + 1;
+      return acc;
+    }, {});
+    const data = Object.keys(counts).map(status => ({ name: status, count: counts[status] }));
+    return { statusCounts: counts, chartData: data };
+  }, [cases]);
 
   const daysUntil = activeCase?.nextCourtDate && activeCase.nextCourtDate !== 'TBD'
     ? Math.ceil((new Date(activeCase.nextCourtDate).getTime() - Date.now()) / 86400000)
