@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo} from 'react';
 import { AppContext } from '../App';
 import { analyzeJuror } from '../services/geminiService';
 import { UserCheck, Loader, Trash2, AlertTriangle, CheckCircle, XCircle, HelpCircle, ChevronDown, ChevronUp, Copy } from 'lucide-react';
@@ -58,6 +58,14 @@ const JuryAnalyzer = () => {
   const [caseType, setCaseType] = useState('');
 
   const [form, setForm] = useState({
+
+  const jurorStats = useMemo(() => ({
+    accept:    jurorStats.accept,
+    challenge: jurorStats.challenge,
+    strike:    jurorStats.strike,
+    total:     jurors.length,
+  }), [jurors]);
+
     number: '', name: '', occupation: '', age: '', education: '', priorJuryService: '', notes: ''
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -125,9 +133,9 @@ const JuryAnalyzer = () => {
     );
   }
 
-  const accepts = jurors.filter(j => j.recommendation === 'accept').length;
-  const challenges = jurors.filter(j => j.recommendation === 'challenge-for-cause').length;
-  const strikes = jurors.filter(j => j.recommendation === 'peremptory-strike').length;
+  const accepts = jurorStats.accept;
+  const challenges = jurorStats.challenge;
+  const strikes = jurorStats.strike;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
