@@ -193,12 +193,7 @@ Format as clean HTML paragraphs. 120 words max. Sign as "Sierra, Client Relation
 
 
 // ── email-inbound ─────────────────────────────────────────────────────────────
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const SG_KEY     = process.env.SENDGRID_API_KEY          || '';
-const SB_URL     = process.env.SUPABASE_URL              || '';
-const SB_KEY     = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const GEMINI_KEY = process.env.GEMINI_API_KEY            || '';
 const FIRM_EMAIL = process.env.FIRM_OWNER_EMAIL          || '';
 const REPLY_DELAY_MS = 3 * 60 * 1000; // 3 minutes
 
@@ -442,8 +437,8 @@ async function handleEmailInbound(req: VercelRequest, res: VercelResponse) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action || 'case-event');
   switch (action) {
-    case 'case-event':    return handleCaseEvent(req, res);
+    case 'case-event':    return handleCaseEvent(req as any) as any;
     case 'email-inbound': return handleEmailInbound(req, res);
-    default: return res.status(404).json({ error: `Unknown action: ${action}` });
+    default: res.status(404).json({ error: `Unknown action: ${action}` }); return;
   }
 }
