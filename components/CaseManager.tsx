@@ -34,6 +34,34 @@ const CaseManager = () => {
     summary: ''
   });
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'updated' | 'title' | 'status' | 'client'>('updated');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  const filteredCases = React.useMemo(() => {
+    let list = [...cases];
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter(c =>
+        c.title?.toLowerCase().includes(q) ||
+        c.client?.toLowerCase().includes(q) ||
+        c.judge?.toLowerCase().includes(q) ||
+        c.opposingCounsel?.toLowerCase().includes(q) ||
+        c.summary?.toLowerCase().includes(q)
+      );
+    }
+    if (filterStatus !== 'all') {
+      list = list.filter(c => c.status === filterStatus);
+    }
+    list.sort((a, b) => {
+      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
+      if (sortBy === 'client') return (a.client || '').localeCompare(b.client || '');
+      if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '');
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+    });
+    return list;
+  }, [cases, searchTerm, sortBy, filterStatus]);
+
   const handleAnalyze = async () => {
     if (!inputText.trim()) {
       handleError(new Error('Empty input'), 'Please enter text to analyze', 'CaseManager');
@@ -181,7 +209,59 @@ const CaseManager = () => {
         </div>
 
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden min-h-[200px] flex-1 flex flex-col">
-          {cases.length === 0 ? (
+          {/* Search, Sort, Filter bar */}
+          <div className="px-4 pt-3 pb-2 space-y-2 border-b border-slate-700">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search cases, clients, judges..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-800 text-slate-200 text-sm pl-9 pr-3 py-2 rounded-lg border border-slate-700 focus:border-gold-500 focus:outline-none placeholder-slate-500"
+              />
+              {searchTerm && (
+                <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+                className="flex-1 bg-slate-800 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-700 focus:border-gold-500 focus:outline-none"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Discovery">Discovery</option>
+                <option value="Trial">Trial</option>
+                <option value="Appeal">Appeal</option>
+                <option value="Closed">Closed</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="flex-1 bg-slate-800 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-700 focus:border-gold-500 focus:outline-none"
+              >
+                <option value="updated">Recent</option>
+                <option value="title">Title A-Z</option>
+                <option value="client">Client A-Z</option>
+                <option value="status">Status</option>
+              </select>
+            </div>
+            {(searchTerm || filterStatus !== 'all') && (
+              <p className="text-xs text-slate-500">{filteredCases.length} of {cases.length} cases</p>
+            )}
+          </div>
+
+          {filteredCases.length === 0 && cases.length > 0 ? (
+            <div className="p-6 text-center text-slate-400 text-sm">
+              <Search size={24} className="mx-auto mb-2 opacity-40" />
+              No cases match your search.
+              <button onClick={() => { setSearchTerm(''); setFilterStatus('all'); }} className="block mx-auto mt-2 text-gold-500 hover:underline text-xs">Clear filters</button>
+            </div>
+          ) : cases.length === 0 ? (
             <div className="p-8 text-center text-slate-500 flex-1 flex flex-col items-center justify-center">
               <BookOpen size={32} className="mb-3 opacity-50" />
               <p className="mb-4">No active cases found.</p>
@@ -203,7 +283,7 @@ const CaseManager = () => {
             </div>
           ) : (
             <div className="overflow-y-auto max-h-[600px]">
-              {cases.map(c => (
+              {filteredCases.map(c => (
                 <div 
                   key={c.id}
                   onClick={() => setActiveCase(c)}
