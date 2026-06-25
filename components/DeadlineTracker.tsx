@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { AppContext } from '../App';
 import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X, Scale, Loader2, Gavel } from 'lucide-react';
 import AgentHeader from './AgentHeader';
@@ -140,6 +140,7 @@ const DeadlineTracker: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM, caseTitle: activeCase?.title ?? '' });
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'overdue' | 'done'>('all');
+  const [sortBy, setSortBy] = useState<'due' | 'added'>('due');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // SOL Calculator state
@@ -279,20 +280,29 @@ Return ONLY a JSON object with exactly these string fields:
     toast.success('Deadline removed');
   };
 
-  const filtered = deadlines.filter(d => {
-    const days = daysUntil(d.dueDate);
-    if (filter === 'upcoming') return !d.completed && days >= 0;
-    if (filter === 'overdue')  return !d.completed && days < 0;
-    if (filter === 'done')     return d.completed;
-    return true;
-  }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-
-  const counts = {
-    overdue:  deadlines.filter(d => !d.completed && daysUntil(d.dueDate) < 0).length,
-    soon:     deadlines.filter(d => !d.completed && daysUntil(d.dueDate) >= 0 && daysUntil(d.dueDate) <= 7).length,
-    upcoming: deadlines.filter(d => !d.completed && daysUntil(d.dueDate) > 7).length,
-    done:     deadlines.filter(d => d.completed).length,
-  };
+  const { filtered, counts } = useMemo(() => {
+    const days = (d: any) => daysUntil(d.dueDate);
+    const list = deadlines.filter(d => {
+      const ds = days(d);
+      if (filter === 'upcoming') return !d.completed && ds >= 0;
+      if (filter === 'overdue')  return !d.completed && ds < 0;
+      if (filter === 'done')     return d.completed;
+      return true;
+    }).sort((a, b) =>
+      sortBy === 'added'
+        ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        : new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    );
+    return {
+      filtered: list,
+      counts: {
+        overdue:  deadlines.filter(d => !d.completed && daysUntil(d.dueDate) < 0).length,
+        soon:     deadlines.filter(d => !d.completed && daysUntil(d.dueDate) >= 0 && daysUntil(d.dueDate) <= 7).length,
+        upcoming: deadlines.filter(d => !d.completed && daysUntil(d.dueDate) > 7).length,
+        done:     deadlines.filter(d => d.completed).length,
+      },
+    };
+  }, [deadlines, filter, sortBy]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
