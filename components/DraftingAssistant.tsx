@@ -1,5 +1,5 @@
 
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo} from 'react';
 import { AppContext } from '../App';
 import { FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2, FileDown } from 'lucide-react';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
@@ -141,15 +141,17 @@ const DraftingAssistant = () => {
   const [customPrompt, setCustomPrompt] = useState('');
   const [generatedContent, setGeneratedContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [uiState, setUiState] = useState<{error: string; copied: boolean}>({error: '', copied: false});
+  const error = uiState.error;
+  const copied = uiState.copied;
+  const setError = (v: string) => setUiState(s => ({...s, error: v}));
+  const setCopied = (v: boolean) => setUiState(s => ({...s, copied: v}));
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = ['All', 'Pleading', 'Motion', 'Discovery', 'Brief', 'Trial', 'Pre-Litigation', 'Records'];
-
-  const filteredTemplates = selectedCategory === 'All'
-    ? TEMPLATES
-    : TEMPLATES.filter(t => t.category === selectedCategory);
+  const { categories, filteredTemplates } = useMemo(() => ({
+    categories: ['All', ...Array.from(new Set(TEMPLATES.map(t => t.category)))],
+    filteredTemplates: selectedCategory === 'All' ? TEMPLATES : TEMPLATES.filter(t => t.category === selectedCategory),
+  }), [selectedCategory]);
 
   const generateDocument = async () => {
     if (!selectedTemplate) {
