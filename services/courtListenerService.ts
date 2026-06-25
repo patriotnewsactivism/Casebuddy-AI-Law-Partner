@@ -7,10 +7,12 @@ export interface CourtCase {
 }
 
 export const searchCourtListenerCases = async (query: string): Promise<CourtCase[]> => {
-  const apiKey = (import.meta.env.VITE_COURTLISTENER_API_KEY as string) || '';
-  if (!apiKey || !query.trim()) return [];  // no key = skip silently
+  const apiKey = (import.meta.env.VITE_COURTLISTENER_API_KEY as string) ?? '';
 
-  // Sanitize: strip special chars, remove noise words (v, et, al, vs), limit length
+  // Hard guard — never make the request without a real key (empty token = 400)
+  if (!apiKey || apiKey.trim().length < 10 || !query.trim()) return [];
+
+  // Sanitize: strip special chars, remove noise words, limit length
   const stopWords = new Set(['v', 'vs', 'et', 'al', 'a', 'an', 'the', 'in', 're']);
   const clean = query
     .replace(/[^a-zA-Z0-9\s\-]/g, ' ')
@@ -18,11 +20,11 @@ export const searchCourtListenerCases = async (query: string): Promise<CourtCase
     .trim()
     .split(' ')
     .filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()))
-    .slice(0, 6)           // max 6 meaningful tokens
+    .slice(0, 6)
     .join(' ')
     .trim();
 
-  if (!clean) return [];
+  if (!clean || clean.length < 3) return [];
 
   const params = new URLSearchParams({
     q: clean,
@@ -38,7 +40,7 @@ export const searchCourtListenerCases = async (query: string): Promise<CourtCase
       { headers: { Authorization: `Token ${apiKey}` } }
     );
 
-    // Silently swallow client errors (400/401/403) — likely bad query or missing key
+    // Silently swallow all errors — CourtListener is optional
     if (!resp.ok) return [];
     const data = await resp.json();
 
