@@ -189,6 +189,26 @@ export async function onCaseStatusChanged(updated: Case, previousStatus: string)
   }
 }
 
+/** Call when evidence analysis reveals concerns/weaknesses */
+export async function onEvidenceConcernsFound(caseId: string, analysis: { concerns: string[]; summary?: string }, caseTitle?: string): Promise<void> {
+  const wf = createWorkflow('evidence-intake', caseId);
+  if (wf) {
+    wf.steps[0].inputs = { ...wf.steps[0].inputs, concerns: analysis.concerns, summary: analysis.summary };
+    orchestrator.executeWorkflow(wf).catch(err => {
+      console.warn('[caseEventHooks] evidence-intake workflow failed:', err);
+    });
+    pushNotification({
+      agentId: 'rex',
+      caseId,
+      caseTitle,
+      type: 'warning',
+      priority: 'high',
+      title: 'Evidence Concerns Detected',
+      message: `Rex is assessing credibility for concerning evidence in "${caseTitle ?? 'the case'}". Review required.`,
+    });
+  }
+}
+
 /** Call when a prospect's intake is received/submitted */
 export async function onIntakeReceived(intake: IntakeCase): Promise<void> {
   let cases: Case[] = [];
@@ -236,5 +256,41 @@ Please provide a structured triage report with:
     });
   } catch (err) {
     console.error('[caseEventHooks] Maya auto-triage failed:', err);
+  }
+}
+
+/** Call when a deadline is added to trigger follow-up workflows */
+export async function onDeadlineAdded(deadline: { caseId?: string; caseTitle?: string; type: string; dueDate: string }): Promise<void> {
+  const { caseId, caseTitle, type, dueDate } = deadline;
+  const daysUntilDue = daysBetween(Date.now(), new Date(dueDate).getTime());
+
+  // Trial/hearing date triggers trial prep workflow
+  if (type === 'trial-date' || type === 'hearing-date') {
+    if (daysUntilDue <= 30 && daysUntilDue > 28) {
+      const wf = createWorkflow('trial-prep-30-days', caseId!);
+      if (wf) {
+        orchestrator.executeWorkflowAsync(wf);
+        pushNotification({
+          agentId: 'rex',
+          caseId,
+          caseTitle,
+          type: 'alert',
+          priority: 'high',
+          title: '30-Day Trial Prep Activated',
+          message: `Trial for "${caseTitle ?? 'the case'}" is ${daysUntilDue} days away. Full prep workflow started.`,
+        });
+      }
+    }
+    // Jury selection prep at 10 days
+    if (daysUntilDue <= 10 && daysUntilDue > 8) {
+      const wf = createWorkflow('jury-selection-prep', caseId!);
+      if (wf) orchestrator.executeWorkflowAsync(wf);
+    }
+  }
+
+  // Statute of limitations triggers intake workflow if case is new
+  if (type === 'statute-of-limitations' && daysUntilDue <= 60) {
+    const wf = createWorkflow('new-case-intake', caseId!);
+    if (wf) orchestrator.executeWorkflowAsync(wf);
   }
 }

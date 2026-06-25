@@ -12,6 +12,8 @@ import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel 
 import { createClientInvite, fetchClientInvites, deleteClientInvite, ClientInvite } from '../services/clientInviteStore';
 import { getSpecialistById } from '../agents/personas';
 import { onIntakeReceived } from '../services/caseEventHooks';
+import { orchestrator } from '../services/agentOrchestrator';
+import { createWorkflow } from '../services/workflows';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const scoreColor = (s: number) =>
@@ -300,6 +302,28 @@ const IntakeInbox: React.FC = () => {
     handleStatusChange(intake.id, 'routed');
     toast.success('Case created from intake');
     navigate('/app/cases');
+
+    // Trigger matter-type specific workflow
+    const matterType = (intake.matter_type || '').toLowerCase();
+    let workflowKey: string | null = null;
+    if (matterType.includes('personal injury') || matterType.includes('pi') || matterType.includes('car accident')) {
+      workflowKey = 'medical-records-demand';
+    } else if (matterType.includes('criminal')) {
+      workflowKey = 'client-onboarding';
+    } else if (matterType.includes('immigration') || matterType.includes('deportation') || matterType.includes('removal')) {
+      workflowKey = 'immigration-petition-prep';
+    } else if (matterType.includes('estate') || matterType.includes('probate') || matterType.includes('trust')) {
+      workflowKey = 'estate-inventory';
+    } else if (matterType.includes('family') || matterType.includes('divorce')) {
+      workflowKey = 'client-onboarding';
+    } else {
+      workflowKey = 'client-onboarding';
+    }
+
+    const wf = createWorkflow(workflowKey, newCase.id);
+    if (wf) {
+      orchestrator.executeWorkflowAsync(wf);
+    }
   };
 
   const handleDeleteInvite = async (id: string) => {

@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect, useRef, useMemo} from 'react';
 import { AppContext } from '../App';
 import { analyzeEvidence } from '../services/geminiService';
-import { onDiscoveryReceived } from '../services/caseEventHooks';
+import { onDiscoveryReceived, onEvidenceConcernsFound } from '../services/caseEventHooks';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
@@ -92,6 +92,12 @@ const EvidenceVault = () => {
       if (isDiscovery) {
         onDiscoveryReceived(activeCase.id, activeCase.title).catch(() => {});
         toast.info('📋 Discovery pipeline started — agents are drafting responses.');
+      }
+
+      // Auto-flag concerning evidence to Rex for credibility assessment
+      if (analysis.concerns && analysis.concerns.length > 0) {
+        onEvidenceConcernsFound(activeCase.id, analysis, activeCase.title).catch(() => {});
+        toast.info('⚠️ Concern flagged — Rex is assessing witness evidence credibility.');
       }
     } catch (err) {
       toast.error('Analysis failed. Please try again.');

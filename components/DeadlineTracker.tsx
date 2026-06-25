@@ -6,6 +6,7 @@ import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
 import { GoogleGenAI } from '@google/genai';
+import { onDeadlineAdded } from '../services/caseEventHooks';
 
 // ── Supabase deadline sync ────────────────────────────────────────────────────
 const syncDeadlinesToCloud = async (deadlines: any[]) => {
