@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo} from 'react';
 import { AppContext } from '../App';
 import { generateDepositionQuestions } from '../services/geminiService';
 import { ClipboardList, Loader, ChevronDown, ChevronUp, Copy, Download, Plus, Trash2, RefreshCw } from 'lucide-react';
@@ -21,11 +21,16 @@ interface DepoSession {
 
 const DepositionPrep = () => {
   const { activeCase } = useContext(AppContext);
-  const [deponentName, setDeponentName] = useState('');
-  const [deponentRole, setDeponentRole] = useState('');
-  const [strategy, setStrategy] = useState('');
+  const [depForm, setDepForm] = useState({ name: '', role: '', strategy: '' });
+  const deponentName = depForm.name;
+  const deponentRole = depForm.role;
+  const strategy     = depForm.strategy;
+  const setDeponentName = (v: string) => setDepForm(f => ({ ...f, name: v }));
+  const setDeponentRole = (v: string) => setDepForm(f => ({ ...f, role: v }));
+  const setStrategy     = (v: string) => setDepForm(f => ({ ...f, strategy: v }));
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<DepoSession[]>(() => {
+  const sortedSessions = useMemo(() => [...sessions].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [sessions]);
     try { return JSON.parse(localStorage.getItem('depo_sessions') || '[]'); } catch { return []; }
   });
   const [activeSession, setActiveSession] = useState<DepoSession | null>(null);
@@ -230,7 +235,7 @@ const DepositionPrep = () => {
           {sessions.length > 0 && (
             <div className="border-t border-slate-700 pt-4 space-y-2">
               <p className="text-xs text-slate-500 uppercase tracking-wider">Past Sessions</p>
-              {sessions.map(s => (
+              {sortedSessions.map(s => (
                 <div key={s.id}
                   onClick={() => { setActiveSession(s); setExpandedTopics(new Set(s.topics.map((_, i) => i))); }}
                   className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${activeSession?.id === s.id ? 'bg-gold-900/20 border-gold-600/40' : 'bg-slate-700/50 border-slate-700 hover:bg-slate-700'}`}
