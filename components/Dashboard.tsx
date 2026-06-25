@@ -83,7 +83,7 @@ const RelevantCases = ({ activeCase }: { activeCase: any }) => {
 
   useEffect(() => {
     if (!activeCase) { setResults([]); setSearched(false); return; }
-    const query = [activeCase.title, activeCase.summary].filter(Boolean).join(' ').slice(0, 120);
+    const query = (activeCase.title || '').slice(0, 80);
     setLoading(true);
     setSearched(false);
     searchCourtListenerCases(query)
