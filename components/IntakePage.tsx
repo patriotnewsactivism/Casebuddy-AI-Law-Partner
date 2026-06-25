@@ -896,7 +896,7 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
-                      onClick={() => setLetterOpen(o => !o)}
+                      onClick={() => setLetterOpen(!letterOpen)}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:border-slate-600 transition-all"
                     >
                       {letterOpen ? <ChevronRight size={15} className="rotate-90 transition-transform" /> : <ChevronRight size={15} className="transition-transform" />}
