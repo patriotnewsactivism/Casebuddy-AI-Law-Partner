@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useContext, useEffect, useRef, useMemo} from 'react';
 import { AppContext } from '../App';
 import { analyzeEvidence } from '../services/geminiService';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
@@ -90,8 +90,10 @@ const EvidenceVault = () => {
     }
   };
 
-  const allTags = Array.from(new Set(items.flatMap(i => i.tags)));
-  const filtered = filterTag ? items.filter(i => i.tags.includes(filterTag)) : items;
+  const { allTags, filtered } = useMemo(() => ({
+    allTags: Array.from(new Set(items.flatMap(i => i.tags))),
+    filtered: filterTag ? items.filter(i => i.tags.includes(filterTag)) : items,
+  }), [items, filterTag]);
 
   const FileIcon = ({ type }: { type: string }) => {
     if (type.startsWith('image/')) return <FileImage size={16} className="text-blue-400" />;
