@@ -251,7 +251,7 @@ const WitnessPrep: React.FC = () => {
     }
   };
 
-  const deleteWitness = (id: string) => save(witnesses.filter(w => w.id !== id));
+  const deleteWitness = (id: string) => { if (!window.confirm('Remove this witness profile?')) return; save(witnesses.filter(w => w.id !== id)); };
 
   const viewing = viewingId ? witnesses.find(w => w.id === viewingId) : null;
 
