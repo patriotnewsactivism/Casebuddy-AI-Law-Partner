@@ -1,4 +1,3 @@
-
 export interface CourtCase {
   caseName: string;
   court: string;
@@ -11,27 +10,41 @@ export const searchCourtListenerCases = async (query: string): Promise<CourtCase
   const apiKey = import.meta.env.VITE_COURTLISTENER_API_KEY;
   if (!apiKey || !query.trim()) return [];
 
+  // Sanitize: strip special characters that cause 400s, keep letters/numbers/spaces/hyphens
+  const clean = query
+    .replace(/[^a-zA-Z0-9\s\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+
+  if (!clean) return [];
+
   const params = new URLSearchParams({
-    q: query.trim(),
+    q: clean,
     type: 'o',
     order_by: 'score',
     format: 'json',
     page_size: '5',
   });
 
-  const resp = await fetch(
-    `https://www.courtlistener.com/api/rest/v4/search/?${params}`,
-    { headers: { Authorization: `Token ${apiKey}` } }
-  );
+  try {
+    const resp = await fetch(
+      `https://www.courtlistener.com/api/rest/v4/search/?${params}`,
+      { headers: { Authorization: `Token ${apiKey}` } }
+    );
 
-  if (!resp.ok) return [];
-  const data = await resp.json();
+    // Silently swallow client errors (400/401/403) — likely bad query or missing key
+    if (!resp.ok) return [];
+    const data = await resp.json();
 
-  return (data.results ?? []).slice(0, 5).map((r: any) => ({
-    caseName: r.caseName ?? r.case_name ?? 'Untitled',
-    court: r.court_citation_string ?? r.court ?? '',
-    dateFiled: r.dateFiled ?? r.date_filed ?? '',
-    absoluteUrl: r.absolute_url ? `https://www.courtlistener.com${r.absolute_url}` : '',
-    snippet: r.snippet ?? '',
-  }));
+    return (data.results ?? []).slice(0, 5).map((r: any) => ({
+      caseName: r.caseName ?? r.case_name ?? 'Untitled',
+      court: r.court_citation_string ?? r.court ?? '',
+      dateFiled: r.dateFiled ?? r.date_filed ?? '',
+      absoluteUrl: r.absolute_url ? `https://www.courtlistener.com${r.absolute_url}` : '',
+      snippet: r.snippet ?? '',
+    }));
+  } catch {
+    return [];
+  }
 };
