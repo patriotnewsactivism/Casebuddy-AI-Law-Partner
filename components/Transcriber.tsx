@@ -92,6 +92,8 @@ const Transcriber = () => {
 
   const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'];
   const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac|mp4|mov|avi|mkv|wmv)$/i;
+  const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg', 'video/x-matroska', 'video/x-ms-wmv'];
+  const VIDEO_EXTS = /\.(mp4|mov|avi|mkv|wmv|webm|mpeg|mpg)$/i;
   const OCR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'application/pdf'];
   const OCR_EXTS = /\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif|pdf)$/i;
 
