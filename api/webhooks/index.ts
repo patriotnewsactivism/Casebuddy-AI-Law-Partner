@@ -28,6 +28,15 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, x-supabase-signature',
 };
 
+// ── Environment variables (module-level for edge functions) ─────────────────
+const GEMINI_KEY  = process.env.GEMINI_API_KEY        ?? '';
+const SG_KEY      = process.env.SENDGRID_API_KEY      ?? '';
+const OWNER_EMAIL = process.env.FIRM_OWNER_EMAIL       ?? '';
+const WH_SECRET   = process.env.SUPABASE_WEBHOOK_SECRET ?? '';
+const SB_URL      = process.env.SUPABASE_URL           ?? '';
+const SB_KEY      = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+
 const gemini = async (apiKey: string, prompt: string): Promise<string> => {
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -59,10 +68,7 @@ async function handleCaseEvent(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
-  const GEMINI_KEY  = process.env.GEMINI_API_KEY ?? '';
-  const SG_KEY      = process.env.SENDGRID_API_KEY ?? '';
-  const OWNER_EMAIL = process.env.FIRM_OWNER_EMAIL ?? '';
-  const WH_SECRET   = process.env.SUPABASE_WEBHOOK_SECRET ?? '';
+  // env vars declared at module level above
 
   // Verify webhook signature if configured
   if (WH_SECRET) {
@@ -194,7 +200,7 @@ Format as clean HTML paragraphs. 120 words max. Sign as "Sierra, Client Relation
 
 // ── email-inbound ─────────────────────────────────────────────────────────────
 
-const FIRM_EMAIL = process.env.FIRM_OWNER_EMAIL          || '';
+const FIRM_EMAIL = OWNER_EMAIL;
 const REPLY_DELAY_MS = 3 * 60 * 1000; // 3 minutes
 
 const AGENTS: Record<string, { name: string; role: string; personality: string }> = {
