@@ -137,7 +137,17 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [navSearch, setNavSearch] = useState('');
   const { syncStatus } = React.useContext(AppContext);
+
+  const filteredNavGroups = React.useMemo(() => {
+    if (!navSearch.trim()) return NAV_GROUPS;
+    const q = navSearch.toLowerCase();
+    return NAV_GROUPS.map(group => ({
+      ...group,
+      items: group.items.filter((item: any) => item.label.toLowerCase().includes(q)),
+    })).filter(group => group.items.length > 0);
+  }, [navSearch]);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -168,7 +178,19 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3">
-          {NAV_GROUPS.map(group => (
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={navSearch}
+                onChange={e => setNavSearch(e.target.value)}
+                className="w-full bg-slate-800/60 text-slate-300 text-xs pl-7 pr-2 py-1.5 rounded-lg border border-slate-700/60 focus:border-gold-500/50 focus:outline-none placeholder-slate-600"
+              />
+            </div>
+          </div>
+          {filteredNavGroups.map(group => (
             <div key={group.label} className="mb-1">
               <button
                 onClick={() => toggleGroup(group.label)}
