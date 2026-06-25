@@ -1,5 +1,6 @@
+import { toast } from 'react-toastify';
 
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useMemo} from 'react';
 import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
 import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
 import AgentHeader from './AgentHeader';
@@ -510,10 +511,19 @@ const LegalTeam: React.FC = () => {
     setSessions(prev => ({ ...prev, [activeId]: { specialistId: activeId, messages: [] } }));
   };
 
+  const [confirmClear, setConfirmClear] = useState(false);
+
   const handleClearAllMemory = () => {
-    if (!window.confirm('Clear all consultation histories for all specialists? This cannot be undone.')) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      toast.info('Click again to confirm clearing all consultation history.');
+      setTimeout(() => setConfirmClear(false), 5000);
+      return;
+    }
     setSessions({});
     localStorage.removeItem(SESSIONS_KEY);
+    setConfirmClear(false);
+    toast.success('Consultation history cleared.');
   };
 
   return (
