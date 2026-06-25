@@ -44,3 +44,5 @@ replit.md
 .replit_integration_files/
 .replit-backup/
 .upm/
+.vercel
+.env*.local
