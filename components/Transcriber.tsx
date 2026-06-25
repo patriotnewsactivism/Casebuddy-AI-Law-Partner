@@ -90,10 +90,8 @@ const Transcriber = () => {
     }
   };
 
-  const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a'];
-  const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac)$/i;
-  const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm', 'video/mpeg', 'video/x-ms-wmv', 'video/3gpp', 'video/mp2t'];
-  const VIDEO_EXTS = /\.(mp4|mov|avi|mkv|mpeg|mpg|wmv|m4v|3gp|mts|m2ts)$/i;
+  const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'];
+  const AUDIO_EXTS = /\.(mp3|wav|m4a|ogg|webm|aac|flac|mp4|mov|avi|mkv|wmv)$/i;
   const OCR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'application/pdf'];
   const OCR_EXTS = /\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif|pdf)$/i;
 
@@ -143,7 +141,7 @@ const Transcriber = () => {
       let extractedText = '';
 
       if (fileMode === 'audio') {
-        const isVideo = VIDEO_TYPES.includes(selectedFile.type) || VIDEO_EXTS.test(selectedFile.name);
+        const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv)$/i.test(selectedFile.name);
         const mediaLabel = isVideo ? 'video' : 'audio';
 
         // For Groq (25MB limit): strip audio track first so even large videos work
@@ -465,7 +463,7 @@ const Transcriber = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept={fileMode === 'audio' ? 'audio/*,video/*' : 'image/*,.pdf'}
+                accept={fileMode === 'audio' ? 'audio/*,video/*,.mp4,.mov,.avi,.mkv,.wmv,.webm' : 'image/*,.pdf'}
                 onChange={handleFileSelect}
                 className="block w-full text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gold-500 file:text-slate-900 hover:file:bg-gold-600 file:cursor-pointer bg-slate-700/50 border border-slate-600 rounded-lg cursor-pointer"
               />
