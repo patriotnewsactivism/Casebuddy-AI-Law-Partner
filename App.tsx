@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
+  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
   Cloud, CloudOff, Loader2, LogOut, Activity
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
