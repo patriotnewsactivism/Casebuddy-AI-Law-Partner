@@ -51,21 +51,21 @@ const ProbabilityRing = ({ value }: { value: number }) => {
 
 const VerdictPredictor = () => {
   const { activeCase } = useContext(AppContext);
-  const [vpForm, setVpForm] = useState({ caseType: 'civil', jurisdiction: 'federal', evidenceStrength: 'moderate', additionalFactors: '' });
+  const [vpForm, setVpForm] = useState({ caseType: 'civil', jurisdiction: 'federal', evidenceStrength: 50, additionalFactors: '' });
   const caseType = vpForm.caseType;
   const jurisdiction = vpForm.jurisdiction;
   const evidenceStrength = vpForm.evidenceStrength;
   const additionalFactors = vpForm.additionalFactors;
   const setCaseType          = (v: string) => setVpForm(f => ({...f, caseType: v}));
   const setJurisdiction      = (v: string) => setVpForm(f => ({...f, jurisdiction: v}));
-  const setEvidenceStrength  = (v: string) => setVpForm(f => ({...f, evidenceStrength: v}));
+  const setEvidenceStrength  = (v: number) => setVpForm(f => ({...f, evidenceStrength: v}));
   const setAdditionalFactors = (v: string) => setVpForm(f => ({...f, additionalFactors: v}));
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [history, setHistory] = useState<Prediction[]>(() => {
-  const recentHistory = useMemo(() => [...history].reverse().slice(0, 10), [history]);
     try { return JSON.parse(localStorage.getItem('verdict_predictions') || '[]'); } catch { return []; }
   });
+  const recentHistory = useMemo(() => [...history].reverse().slice(0, 10), [history]);
 
   const predict = async () => {
     if (!activeCase) { toast.error('Select an active case first.'); return; }
