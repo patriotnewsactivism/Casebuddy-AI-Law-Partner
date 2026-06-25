@@ -3,7 +3,7 @@ import React, { useContext, useEffect, useState, useMemo } from 'react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall, Network, Rocket } from 'lucide-react';
+import { Briefcase, Calendar, TrendingUp, Activity, Mic, Plus, Scale, ArrowRight, Users, ClipboardList, BookOpen, ExternalLink, Loader2, PhoneCall, Network, Rocket, BrainCircuit, Mail} from 'lucide-react';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { searchCourtListenerCases, CourtCase } from '../services/courtListenerService';
 import IntakeWidget from './IntakeWidget';
@@ -150,7 +150,7 @@ const greeting = () => {
 };
 
 const Dashboard = () => {
-  const { cases, activeCase } = useContext(AppContext);
+  const { cases, activeCase, setActiveCase } = useContext(AppContext);
   const [leads, setLeads] = useState<Lead[]>([]);
 
   useEffect(() => {
@@ -228,6 +228,22 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
+            {/* Quick Actions */}
+      <div className="flex flex-wrap gap-2 -mt-1 mb-2">
+        {([
+          { label: 'New Case',     icon: <Plus size={13} />,         to: '/app/cases' },
+          { label: 'Add Deadline', icon: <Calendar size={13} />,     to: '/app/deadlines' },
+          { label: 'Draft Doc',    icon: <BookOpen size={13} />,     to: '/app/docs' },
+          { label: 'AI Strategy',  icon: <BrainCircuit size={13} />, to: '/app/strategy' },
+          { label: 'Mail Room',    icon: <Mail size={13} />,         to: '/app/mail-room' },
+        ] as { label: string; icon: React.ReactNode; to: string }[]).map(qa => (
+          <Link key={qa.to} to={qa.to}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 hover:border-slate-600 text-slate-300 text-xs font-medium transition-all">
+            {qa.icon}{qa.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={Briefcase}
@@ -392,7 +408,7 @@ const Dashboard = () => {
           title="My Cases"
           accent="text-blue-400"
           action={
-            <Link to="/cases" className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-semibold flex items-center gap-1">
+            <Link to="/app/cases" className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-semibold flex items-center gap-1">
               Manage Cases <ArrowRight size={12} />
             </Link>
           }
@@ -401,7 +417,7 @@ const Dashboard = () => {
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center">
             <Briefcase size={32} className="mx-auto mb-3 text-slate-600" />
             <p className="text-slate-400 text-sm mb-2">No cases yet.</p>
-            <Link to="/cases" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors">
+            <Link to="/app/cases" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors">
               <Plus size={14} /> Create First Case
             </Link>
           </div>
@@ -410,8 +426,8 @@ const Dashboard = () => {
             {cases.map(c => (
               <Link
                 key={c.id}
-                to="/cases"
-                onClick={() => {}}
+                to="/app/cases"
+                onClick={() => setActiveCase(c)}
                 className={`rounded-2xl border p-4 transition-all hover:border-blue-500/50 ${
                   activeCase?.id === c.id
                     ? 'border-blue-500/60 bg-blue-950/30'
