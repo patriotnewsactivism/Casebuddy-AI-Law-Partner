@@ -2,7 +2,7 @@ import { toast } from 'react-toastify';
 
 import React, { useState, useRef, useEffect, useContext, useMemo} from 'react';
 import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
-import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
+import { LEGAL_SPECIALISTS, PARALEGALS, LegalSpecialist, Paralegal, getParalegalsByAttorney } from '../agents/personas';
 import AgentHeader from './AgentHeader';
 import { consultSpecialist, consultSpecialistStream } from '../services/geminiService';
 import { AppContext } from '../App';
@@ -366,6 +366,7 @@ const SESSIONS_KEY = 'casebuddy_legal_sessions';
 
 const LegalTeam: React.FC = () => {
   const { activeCase } = useContext(AppContext);
+  const [activeTab, setActiveTab] = useState<'attorneys' | 'staff'>('attorneys');
   const [activeId, setActiveId] = useState<string>(LEGAL_SPECIALISTS[0].id);
   const [sessions, setSessions] = useState<Record<string, ConsultationSession>>(() => {
     try {
@@ -568,40 +569,131 @@ const LegalTeam: React.FC = () => {
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
-        {/* Specialist list — full-width on mobile when chat is hidden */}
-        <div className={`${mobileShowChat ? 'hidden md:block' : 'block'} w-full md:w-72 shrink-0 overflow-y-auto space-y-2 pr-1`}>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <MessageSquare size={12} />
-            Select a Specialist
-          </p>
-          {LEGAL_SPECIALISTS.map(s => (
-            <SpecialistCard
-              key={s.id}
-              specialist={s}
-              isActive={s.id === activeId}
-              onClick={() => { setActiveId(s.id); setMobileShowChat(true); }}
-              hasHistory={(sessions[s.id]?.messages.length ?? 0) > 0}
-            />
-          ))}
+        <div className={`${mobileShowChat ? 'hidden md:block' : 'block'} w-full md:w-72 shrink-0 overflow-y-auto pr-1`}>
+          <div className="flex gap-1 p-1 bg-slate-800/70 rounded-xl mb-3">
+            <button
+              onClick={() => setActiveTab('attorneys')}
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-all ${activeTab === 'attorneys' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              🏛️ Attorneys ({LEGAL_SPECIALISTS.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('staff')}
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-all ${activeTab === 'staff' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              📋 Paralegals ({PARALEGALS.length})
+            </button>
+          </div>
+
+          {activeTab === 'attorneys' ? (
+            <>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <MessageSquare size={12} />
+                Select a Specialist
+              </p>
+              {LEGAL_SPECIALISTS.map(s => (
+                <SpecialistCard
+                  key={s.id}
+                  specialist={s}
+                  isActive={s.id === activeId}
+                  onClick={() => { setActiveId(s.id); setMobileShowChat(true); }}
+                  hasHistory={(sessions[s.id]?.messages.length ?? 0) > 0}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <MessageSquare size={12} />
+                Select a Paralegal
+              </p>
+              {LEGAL_SPECIALISTS.map(atty => {
+                const paralegals = getParalegalsByAttorney(atty.id);
+                return (
+                  <div key={atty.id} className="mb-3">
+                    <p className={`text-[10px] font-bold uppercase tracking-widest px-1 mb-1 ${atty.colorClass}`}>
+                      {atty.emoji} {atty.name}
+                    </p>
+                    <div className="space-y-1">
+                      {paralegals.map(pl => (
+                        <button
+                          key={pl.id}
+                          onClick={() => { setActiveId(pl.id); setMobileShowChat(true); }}
+                          className={`w-full text-left p-3 rounded-xl border transition-all group ${
+                            activeId === pl.id
+                              ? `${pl.bgClass} ${pl.borderClass}`
+                              : 'bg-slate-800/40 border-slate-700 hover:border-slate-600 hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0 border ${pl.borderClass}`} style={{ background: 'rgba(0,0,0,0.3)' }}>
+                              {pl.emoji}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${activeId === pl.id ? pl.colorClass : 'text-white'}`}>{pl.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{pl.specialty}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
 
-        {/* Chat panel — full-width on mobile when shown */}
         <div className={`${mobileShowChat ? 'flex flex-col' : 'hidden md:flex md:flex-col'} flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden`}>
-          <ChatPanel
-            key={activeId}
-            specialist={specialist}
-            session={getSession(activeId)}
-            onSend={handleSend}
-            onReset={handleReset}
-            loading={loading}
-            onBack={() => setMobileShowChat(false)}
-            activeCase={activeCase}
-            onFeedback={handleFeedback}
-          />
+          {(() => {
+            const paralegal = PARALEGALS.find(p => p.id === activeId);
+            const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId);
+            if (paralegal) {
+              const syntheticSpecialist: LegalSpecialist = {
+                id: paralegal.id,
+                name: paralegal.name,
+                title: paralegal.title,
+                practiceArea: paralegal.specialty,
+                description: paralegal.description,
+                colorClass: paralegal.colorClass,
+                bgClass: paralegal.bgClass,
+                borderClass: paralegal.borderClass,
+                emoji: paralegal.emoji,
+                personality: 'Efficient, organized, detail-oriented',
+                yearsExperience: 5,
+                commonTopics: [paralegal.specialty],
+                systemInstruction: paralegal.systemInstruction,
+              };
+              return (
+                <ChatPanel
+                  key={activeId}
+                  specialist={syntheticSpecialist}
+                  session={getSession(activeId)}
+                  onSend={handleSend}
+                  onReset={handleReset}
+                  loading={loading}
+                  onBack={() => setMobileShowChat(false)}
+                  activeCase={activeCase}
+                  onFeedback={handleFeedback}
+                />
+              );
+            }
+            return (
+              <ChatPanel
+                key={activeId}
+                specialist={specialist ?? LEGAL_SPECIALISTS[0]}
+                session={getSession(activeId)}
+                onSend={handleSend}
+                onReset={handleReset}
+                loading={loading}
+                onBack={() => setMobileShowChat(false)}
+                activeCase={activeCase}
+                onFeedback={handleFeedback}
+              />
+            );
+          })()}
         </div>
       </div>
     </div>
   );
 };
-
-export default LegalTeam;

@@ -9,32 +9,60 @@ interface AgentConfig {
   colorClass: string; personality: string; voiceModel: string;
 }
 
-const INTERCOM_AGENTS: AgentConfig[] = [
-  { id: 'maya',   name: 'Maya',   emoji: '👩‍💼', role: 'Intake Specialist',
-    colorClass: 'from-blue-600 to-blue-800',
-    personality: 'Warm, efficient, gets to the point fast. Short sentences. No filler.',
-    voiceModel: 'aura-2-thalia-en' },
-  { id: 'sol',    name: 'Sol',    emoji: '⏱️',  role: 'Deadline Tracker',
-    colorClass: 'from-amber-600 to-orange-800',
-    personality: 'Precise, urgent when needed. Sharp. No fluff.',
-    voiceModel: 'aura-2-orion-en' },
-  { id: 'lex',    name: 'Lex',    emoji: '📚',  role: 'Legal Researcher',
-    colorClass: 'from-purple-600 to-purple-900',
-    personality: 'Analytical but accessible. Confident. Summarizes complex things simply.',
-    voiceModel: 'aura-2-orion-en' },
-  { id: 'rex',    name: 'Rex',    emoji: '⚔️',  role: 'Trial Strategist',
-    colorClass: 'from-red-700 to-red-900',
-    personality: 'Confident, assertive, strategic. Bold but not arrogant.',
-    voiceModel: 'aura-2-orion-en' },
-  { id: 'sierra', name: 'Sierra', emoji: '💬',  role: 'Client Relations',
-    colorClass: 'from-green-600 to-green-800',
-    personality: 'Warm, empathetic. Makes everyone feel heard.',
-    voiceModel: 'aura-2-thalia-en' },
-  { id: 'doc',    name: 'Doc',    emoji: '📝',  role: 'Legal Drafter',
-    colorClass: 'from-slate-600 to-slate-800',
-    personality: 'Methodical, clear, thorough.',
-    voiceModel: 'aura-2-orion-en' },
-];
+import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS } from '../agents/personas';
+
+type IntercomSection = 'ops' | 'attorneys' | 'paralegals';
+
+const OPS_INTERCOM = OPERATIONAL_AGENTS.map(a => ({
+  id: a.id, name: a.name, emoji: a.emoji, role: a.title,
+  colorClass: a.colorClass.includes('violet') ? 'from-violet-700 to-violet-900'
+    : a.colorClass.includes('blue') ? 'from-blue-700 to-blue-900'
+    : a.colorClass.includes('teal') ? 'from-teal-700 to-teal-900'
+    : a.colorClass.includes('gold') || a.colorClass.includes('yellow') ? 'from-yellow-700 to-amber-900'
+    : a.colorClass.includes('orange') ? 'from-orange-700 to-orange-900'
+    : a.colorClass.includes('pink') ? 'from-pink-700 to-pink-900'
+    : a.colorClass.includes('cyan') ? 'from-cyan-700 to-cyan-900'
+    : 'from-green-700 to-green-900',
+  personality: a.description.slice(0, 80),
+  voiceModel: ['maya', 'sierra'].includes(a.id) ? 'aura-2-thalia-en' : 'aura-2-orion-en',
+}));
+
+const ATTORNEY_INTERCOM = LEGAL_SPECIALISTS.map(s => ({
+  id: s.id, name: s.name, emoji: s.emoji, role: s.practiceArea,
+  colorClass: s.colorClass.includes('red') ? 'from-red-700 to-red-900'
+    : s.colorClass.includes('orange') ? 'from-orange-700 to-orange-900'
+    : s.colorClass.includes('pink') ? 'from-pink-700 to-pink-900'
+    : s.colorClass.includes('blue') ? 'from-blue-700 to-blue-900'
+    : s.colorClass.includes('purple') ? 'from-purple-700 to-purple-900'
+    : s.colorClass.includes('emerald') ? 'from-emerald-700 to-emerald-900'
+    : s.colorClass.includes('teal') ? 'from-teal-700 to-teal-900'
+    : s.colorClass.includes('amber') ? 'from-amber-700 to-amber-900'
+    : s.colorClass.includes('slate') ? 'from-slate-700 to-slate-900'
+    : s.colorClass.includes('indigo') ? 'from-indigo-700 to-indigo-900'
+    : s.colorClass.includes('rose') ? 'from-rose-700 to-rose-900'
+    : 'from-cyan-700 to-cyan-900',
+  personality: s.personality.split(',')[0],
+  voiceModel: 'aura-2-orion-en',
+}));
+
+const PARALEGAL_INTERCOM = PARALEGALS.map(p => ({
+  id: p.id, name: p.name, emoji: p.emoji, role: `${p.supervisorName}'s Paralegal`,
+  colorClass: p.colorClass.includes('red') ? 'from-red-900 to-slate-900'
+    : p.colorClass.includes('orange') ? 'from-orange-900 to-slate-900'
+    : p.colorClass.includes('pink') ? 'from-pink-900 to-slate-900'
+    : p.colorClass.includes('blue') ? 'from-blue-900 to-slate-900'
+    : p.colorClass.includes('purple') ? 'from-purple-900 to-slate-900'
+    : p.colorClass.includes('emerald') ? 'from-emerald-900 to-slate-900'
+    : p.colorClass.includes('teal') ? 'from-teal-900 to-slate-900'
+    : p.colorClass.includes('amber') ? 'from-amber-900 to-slate-900'
+    : p.colorClass.includes('indigo') ? 'from-indigo-900 to-slate-900'
+    : p.colorClass.includes('rose') ? 'from-rose-900 to-slate-900'
+    : p.colorClass.includes('cyan') ? 'from-cyan-900 to-slate-900'
+    : 'from-slate-800 to-slate-900',
+  personality: `Paralegal supporting ${p.supervisorName}. ${p.specialty}.`,
+  voiceModel: 'aura-2-thalia-en',
+}));
+
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
@@ -49,6 +77,13 @@ const IntercomPanel: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const [textInput,   setTextInput]   = useState('');
   const [loading,     setLoading]     = useState(false);
   const [callDuration,setCallDuration]= useState(0);
+  const [activeSection, setActiveSection] = useState<IntercomSection>('ops');
+
+  const SECTION_AGENTS: Record<IntercomSection, AgentConfig[]> = {
+    ops: OPS_INTERCOM,
+    attorneys: ATTORNEY_INTERCOM,
+    paralegals: PARALEGAL_INTERCOM,
+  };
 
   const playerRef    = useRef<ReturnType<typeof createPCMPlayer> | null>(null);
   const sttRef       = useRef<{ sendAudio:(d:ArrayBuffer)=>void; close:()=>void } | null>(null);
@@ -216,18 +251,41 @@ Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a qui
 
       {!callActive ? (
         <div className="flex-1 overflow-y-auto p-4">
-          <p className="text-slate-400 text-sm mb-4 text-center">Tap an agent to open a direct line</p>
-          <div className="grid grid-cols-2 gap-3">
-            {INTERCOM_AGENTS.map(agent => (
-              <button key={agent.id} onClick={() => startCall(agent)}
-                className={"relative bg-gradient-to-br " + agent.colorClass + " rounded-2xl p-4 text-left border border-white/10 hover:scale-105 active:scale-95 transition-all shadow-lg"}>
-                <div className="text-3xl mb-2">{agent.emoji}</div>
-                <p className="text-white font-bold text-sm">{agent.name}</p>
-                <p className="text-white/60 text-xs">{agent.role}</p>
-                <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_6px_2px_rgba(74,222,128,0.4)]" />
+          {/* Section tabs */}
+          <div className="flex gap-1 p-1 bg-slate-800 rounded-xl mb-4">
+            {([['ops', '🔧 Operations'], ['attorneys', '🏛️ Attorneys'], ['paralegals', '📋 Paralegals']] as const).map(([sec, label]) => (
+              <button
+                key={sec}
+                onClick={() => setActiveSection(sec)}
+                className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-all ${
+                  activeSection === sec
+                    ? 'bg-slate-700 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {label}
               </button>
             ))}
           </div>
+
+          <p className="text-slate-400 text-xs mb-3 text-center">
+            {activeSection === 'ops' && 'Operations team — always available'}
+            {activeSection === 'attorneys' && `${ATTORNEY_INTERCOM.length} AI attorneys across all practice areas`}
+            {activeSection === 'paralegals' && `${PARALEGAL_INTERCOM.length} paralegals — 2 per attorney`}
+          </p>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            {SECTION_AGENTS[activeSection].map(agent => (
+              <button key={agent.id} onClick={() => startCall(agent)}
+                className={"relative bg-gradient-to-br " + agent.colorClass + " rounded-2xl p-3.5 text-left border border-white/10 hover:scale-105 active:scale-95 transition-all shadow-lg"}>
+                <div className="text-2xl mb-1.5">{agent.emoji}</div>
+                <p className="text-white font-bold text-xs leading-tight">{agent.name}</p>
+                <p className="text-white/55 text-[10px] leading-tight mt-0.5 line-clamp-1">{agent.role}</p>
+                <div className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-green-400 shadow-[0_0_5px_1px_rgba(74,222,128,0.5)]" />
+              </button>
+            ))}
+          </div>
+
           <div className="mt-4 p-3 bg-slate-800 rounded-xl border border-slate-700">
             <label className="flex items-center gap-3 cursor-pointer">
               <MessageSquare size={16} className="text-slate-400" />

@@ -17,8 +17,12 @@ function db() {
   return client;
 }
 import { deepseekChat } from './deepseek';
-import { getAgentById, getSpecialistById, OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
+import {
+  getAgentById, getSpecialistById, getParalegalById, getAnyPersonById,
+  OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS,
+} from '../agents/personas';
 import { AGENT_CONFIG } from '../config/agentConfig';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,7 +83,38 @@ const ROUTING_KEYWORDS: { pattern: RegExp; agentId: string }[] = [
   { pattern: /\b(bankruptcy|debt|creditor|chapter 7|chapter 13|discharge|garnish)\b/i, agentId: 'bankruptcy' },
 ];
 
+/** Build a name→id lookup across all firm members for @mention resolution */
+const MENTION_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  const add = (name: string, id: string) => {
+    // index by full name, first name, and lowercase variants
+    map[name.toLowerCase()] = id;
+    const first = name.split(' ')[0].toLowerCase();
+    if (!map[first]) map[first] = id;
+  };
+  OPERATIONAL_AGENTS.forEach(a => add(a.name, a.id));
+  LEGAL_SPECIALISTS.forEach(s => add(s.name, s.id));
+  PARALEGALS.forEach(p => add(p.name, p.id));
+  return map;
+})();
+
+/**
+ * Extract the first @mention from a message and return the target agent ID.
+ * Returns null if no valid @mention is found.
+ */
+export function parseMention(text: string): string | null {
+  const match = text.match(/@([A-Za-z]+(?:\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)/);
+  if (!match) return null;
+  const raw = match[1].toLowerCase();
+  // Try full match first, then first word
+  return MENTION_MAP[raw] ?? MENTION_MAP[raw.split(' ')[0]] ?? null;
+}
+
 function detectAgentTarget(text: string): string {
+  // @mention takes absolute priority
+  const mentioned = parseMention(text);
+  if (mentioned) return mentioned;
+
   for (const { pattern, agentId } of ROUTING_KEYWORDS) {
     if (pattern.test(text)) return agentId;
   }
@@ -87,10 +122,82 @@ function detectAgentTarget(text: string): string {
   return 'maya';
 }
 
+// ── Broadcast: individual replies + Maya summary ────────────────────────────
+
+export interface BroadcastReply {
+  agentId: string;
+  agentName: string;
+  senderType: 'agent' | 'attorney';
+  body: string;
+}
+
+/**
+ * Send a broadcast message to a curated cross-section of firm members:
+ * All 8 operational agents + 4 lead attorneys + all 24 paralegals that are
+ * relevant. In practice we sample 6 agents + 2 attorneys + 2 paralegals for
+ * speed, then have Maya produce a synthesis.
+ */
+export async function broadcastToAllStaff(
+  userMessage: string,
+  caseCtx: string,
+): Promise<{ replies: BroadcastReply[]; summary: string }> {
+  // Pick a cross-section: 3 ops agents + 3 attorneys + 2 paralegals
+  const targets = [
+    OPERATIONAL_AGENTS[0], // Maya
+    OPERATIONAL_AGENTS[1], // Lex
+    OPERATIONAL_AGENTS[3], // Rex
+    LEGAL_SPECIALISTS[0],  // Alex Stone
+    LEGAL_SPECIALISTS[1],  // Rosa Martinez
+    LEGAL_SPECIALISTS[9],  // Derek Cole
+    PARALEGALS[0],         // Marcus Webb Jr.
+    PARALEGALS[2],         // Sofia Cruz
+  ];
+
+  const replyJobs = targets.map(async (person): Promise<BroadcastReply> => {
+    const id = person.id;
+    const sysInst = getPersonaInstruction(id, caseCtx);
+    try {
+      const body = await deepseekChat({
+        systemInstruction: sysInst + '\n\nThis is a firm-wide broadcast. Give a brief (2-3 sentence) response from your role perspective.',
+        messages: [{ role: 'user', content: userMessage }],
+        temperature: 0.6,
+        maxTokens: 200,
+        timeoutMs: 25_000,
+      });
+      return { agentId: id, agentName: getPersonaName(id), senderType: getSenderType(id), body };
+    } catch {
+      return { agentId: id, agentName: getPersonaName(id), senderType: getSenderType(id), body: 'Standing by.' };
+    }
+  });
+
+  const replies = await Promise.all(replyJobs);
+
+  // Maya synthesizes all replies
+  const replySummaryInput = replies.map(r => `${r.agentName}: ${r.body}`).join('\n');
+  let summary = '';
+  try {
+    summary = await deepseekChat({
+      systemInstruction: `You are Maya, the firm's intake specialist and internal coordinator. Multiple team members just responded to a broadcast. Synthesize their key points into a 3-4 sentence action summary for the attorney. Be concise and actionable.\n\nCase context:\n${caseCtx}`,
+      messages: [{ role: 'user', content: `Original message: "${userMessage}"\n\nTeam responses:\n${replySummaryInput}\n\nProvide your synthesis.` }],
+      temperature: 0.4,
+      maxTokens: 300,
+      timeoutMs: 20_000,
+    });
+  } catch {
+    summary = 'Team has been notified and is reviewing your request.';
+  }
+
+  return { replies, summary };
+}
+
 function getPersonaInstruction(agentId: string, caseCtx: string): string {
   const specialist = getSpecialistById(agentId);
   if (specialist) {
     return `${specialist.systemInstruction}\n\nCurrent case context:\n${caseCtx}`;
+  }
+  const paralegal = getParalegalById(agentId);
+  if (paralegal) {
+    return `${paralegal.systemInstruction}\n\nBe concise — you are support staff, not lead counsel. Offer to take on specific tasks. Never mention being an AI unless directly asked.\n\nCurrent case context:\n${caseCtx}`;
   }
   const agent = getAgentById(agentId);
   if (agent) {
@@ -100,6 +207,8 @@ function getPersonaInstruction(agentId: string, caseCtx: string): string {
 }
 
 function getPersonaName(agentId: string): string {
+  const p = getParalegalById(agentId);
+  if (p) return p.name;
   const specialist = getSpecialistById(agentId);
   if (specialist) return specialist.name;
   const agent = getAgentById(agentId);
@@ -108,7 +217,9 @@ function getPersonaName(agentId: string): string {
 }
 
 function getSenderType(agentId: string): 'agent' | 'attorney' {
-  return getSpecialistById(agentId) ? 'attorney' : 'agent';
+  if (getSpecialistById(agentId)) return 'attorney';
+  if (getParalegalById(agentId)) return 'agent'; // paralegals are 'agent' type
+  return 'agent'; // operational agents and fallback
 }
 
 // ── Thread management ──────────────────────────────────────────────────────
