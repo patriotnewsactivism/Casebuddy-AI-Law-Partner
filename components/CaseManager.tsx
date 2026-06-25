@@ -57,7 +57,7 @@ const CaseManager = () => {
       if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
       if (sortBy === 'client') return (a.client || '').localeCompare(b.client || '');
       if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '');
-      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
     });
     return list;
   }, [cases, searchTerm, sortBy, filterStatus]);
