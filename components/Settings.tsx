@@ -740,7 +740,7 @@ const Settings = () => {
               <p className="text-xs text-slate-400 mt-1">Hide "CaseBuddy" branding and replace with your firm name</p>
             </div>
             <button
-              onClick={() => setWhiteLabel(v => !v)}
+              onClick={() => setWhiteLabel(!whiteLabel)}
               className={`relative w-12 h-6 rounded-full transition-colors ${whiteLabel ? 'bg-gold-500' : 'bg-slate-600'}`}
             >
               <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${whiteLabel ? 'transform translate-x-6' : ''}`} />
