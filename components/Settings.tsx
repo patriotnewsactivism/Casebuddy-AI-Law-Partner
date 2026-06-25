@@ -614,7 +614,7 @@ const Settings = () => {
               <option value="light">Light</option>
             </select>
           </div>
-          <p className="text-xs text-slate-400 italic">Light theme coming soon. Currently, only dark theme is fully supported.</p>
+          <p className="text-xs text-slate-400 italic">Theme preference is saved and applied instantly across the app.</p>
         </div>
       </div>
 
