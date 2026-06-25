@@ -30,9 +30,9 @@ const DepositionPrep = () => {
   const setStrategy     = (v: string) => setDepForm(f => ({ ...f, strategy: v }));
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<DepoSession[]>(() => {
-  const sortedSessions = useMemo(() => [...sessions].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [sessions]);
     try { return JSON.parse(localStorage.getItem('depo_sessions') || '[]'); } catch { return []; }
   });
+  const sortedSessions = useMemo(() => [...sessions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)), [sessions]);
   const [activeSession, setActiveSession] = useState<DepoSession | null>(null);
   const [expandedTopics, setExpandedTopics] = useState<Set<number>>(new Set());
   const [editingQuestion, setEditingQuestion] = useState<{topic: number; q: number} | null>(null);
@@ -216,7 +216,7 @@ const DepositionPrep = () => {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm text-slate-400">Deposition Strategy</label>
-              <VoiceMicButton size={15} onTranscript={t => setStrategy(prev => prev + (prev ? ' ' : '') + t)} />
+              <VoiceMicButton size={15} onTranscript={t => setDepForm(f => ({ ...f, strategy: f.strategy ? f.strategy + ' ' + t : t }))} />
             </div>
             <textarea value={strategy} onChange={e => setStrategy(e.target.value)}
               placeholder="e.g. Lock in timeline. Expose inconsistency between statement and report. Establish they never directly witnessed the event."
