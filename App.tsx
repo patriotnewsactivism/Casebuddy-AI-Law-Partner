@@ -252,7 +252,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
 
 const Layout = ({ children }: { children?: React.ReactNode }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { user } = React.useContext(AppContext);
+  const { user, theme } = React.useContext(AppContext);
   const location = useLocation();
 
   // Derive display name from user metadata, falling back to preferences then email
@@ -265,7 +265,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100">
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-gray-50 text-gray-900' : 'bg-[#020617] text-slate-100'}`}>
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
       <div className="md:ml-64 min-h-screen flex flex-col">
