@@ -4,6 +4,7 @@ import { MOCK_OPPONENT } from '../constants';
 import { predictStrategy } from '../services/geminiService';
 import { searchCaseLaw } from '../services/integrationService';
 import { runReasoning } from '../services/agentReasoning';
+import { addInsight } from '../services/agentMemory';
 import { StrategyInsight, ReasoningMode } from '../types';
 import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw, Search, ExternalLink, BookOpen, Loader } from 'lucide-react';
 import AgentHeader from './AgentHeader';
@@ -43,10 +44,12 @@ const StrategyRoom = () => {
     setReasoningResult(null);
 
     try {
+      let finalInsights: StrategyInsight[] = [];
       if (reasoningMode === 'standard') {
         // Gemini with thinking budget for standard mode
         const result = await predictStrategy(activeCase.summary, JSON.stringify(MOCK_OPPONENT));
         setInsights(result);
+        finalInsights = result;
       } else {
         // Extended reasoning modes via DeepSeek
         const caseCtx = `Title: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`;
@@ -67,7 +70,21 @@ const StrategyRoom = () => {
           confidence: result.confidence - i * 3,
           type: i === 0 ? 'risk' : i === 1 ? 'opportunity' : 'prediction',
         }));
-        setInsights(converted.length > 0 ? converted : [{ title: 'Strategic Analysis', description: result.synthesis, confidence: result.confidence, type: 'prediction' }]);
+        finalInsights = converted.length > 0 ? converted : [{ title: 'Strategic Analysis', description: result.synthesis, confidence: result.confidence, type: 'prediction' }];
+        setInsights(finalInsights);
+      }
+
+      // N1: Strategy outputs -> agent memory
+      for (const insight of finalInsights) {
+        await addInsight('lex', activeCase.id, {
+          agentId: 'lex',
+          caseId: activeCase.id,
+          title: insight.title,
+          content: insight.description,
+          confidence: insight.confidence ?? 80,
+          type: insight.type === 'opportunity' ? 'opportunity' : insight.type === 'risk' ? 'risk' : 'prediction',
+          source: 'research',
+        });
       }
     } catch {
       // silent failure

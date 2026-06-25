@@ -417,7 +417,7 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
     setError(null);
 
     try {
-      const { replies, summary } = await broadcastToAllStaff(broadcastText, caseCtx);
+      const { replies, summary } = await broadcastToAllStaff(broadcastText, caseCtx, caseId);
       setBroadcastReplies(replies);
 
       // Add Maya's summary as a regular message

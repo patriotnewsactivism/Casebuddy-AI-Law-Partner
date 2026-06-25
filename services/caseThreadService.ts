@@ -140,18 +140,57 @@ export interface BroadcastReply {
 export async function broadcastToAllStaff(
   userMessage: string,
   caseCtx: string,
+  caseId?: string,
 ): Promise<{ replies: BroadcastReply[]; summary: string }> {
-  // Pick a cross-section: 3 ops agents + 3 attorneys + 2 paralegals
-  const targets = [
-    OPERATIONAL_AGENTS[0], // Maya
-    OPERATIONAL_AGENTS[1], // Lex
-    OPERATIONAL_AGENTS[3], // Rex
-    LEGAL_SPECIALISTS[0],  // Alex Stone
-    LEGAL_SPECIALISTS[1],  // Rosa Martinez
-    LEGAL_SPECIALISTS[9],  // Derek Cole
-    PARALEGALS[0],         // Marcus Webb Jr.
-    PARALEGALS[2],         // Sofia Cruz
-  ];
+  // F2: Smart Broadcast Targeting
+  let targets: (any)[] = [];
+
+  if (caseId && caseId !== 'global') {
+    try {
+      const casesRaw = localStorage.getItem('lexsim_cases');
+      const cases: any[] = casesRaw ? JSON.parse(casesRaw) : [];
+      const currentCase = cases.find((c: any) => c.id === caseId);
+      if (currentCase && currentCase.assignedSpecialistId) {
+        const attorneyId = currentCase.assignedSpecialistId;
+        const attorney = getSpecialistById(attorneyId);
+        if (attorney) {
+          targets.push(attorney);
+          const paralegals = getParalegalsByAttorney(attorneyId);
+          targets.push(...paralegals);
+        }
+      }
+    } catch (e) {
+      console.error('Error loading case for smart broadcast targeting:', e);
+    }
+  }
+
+  // Append core ops agents (Maya, Lex, Rex, Sol, Max)
+  const coreOpsIds = ['maya', 'lex', 'rex', 'sol', 'max'];
+  coreOpsIds.forEach(id => {
+    const agent = getAgentById(id);
+    if (agent && !targets.some(t => t.id === id)) {
+      targets.push(agent);
+    }
+  });
+
+  // If targets list doesn't have enough members (e.g. no specialist was found), add fallback specialists/paralegals
+  if (targets.length <= 5) {
+    const fallbackAttorneys = [LEGAL_SPECIALISTS[0], LEGAL_SPECIALISTS[1]]; // Alex Stone, Rosa Martinez
+    fallbackAttorneys.forEach(attorney => {
+      if (attorney && !targets.some(t => t.id === attorney.id)) {
+        targets.push(attorney);
+      }
+    });
+    const fallbackParalegals = [PARALEGALS[0], PARALEGALS[2]]; // Marcus Webb Jr., Sofia Cruz
+    fallbackParalegals.forEach(p => {
+      if (p && !targets.some(t => t.id === p.id)) {
+        targets.push(p);
+      }
+    });
+  }
+
+  // Slice to max 8 targets for performance/speed
+  targets = targets.slice(0, 8);
 
   const replyJobs = targets.map(async (person): Promise<BroadcastReply> => {
     const id = person.id;

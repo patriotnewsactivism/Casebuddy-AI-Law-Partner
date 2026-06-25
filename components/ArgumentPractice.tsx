@@ -8,6 +8,9 @@ import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration, Bl
 import { getTrialSimSystemInstruction } from '../services/geminiService';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { addInsight } from '../services/agentMemory';
+import { deepseekChat } from '../services/deepseek';
+import { toast } from 'react-toastify';
 
 const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 import { Link } from 'react-router-dom';
@@ -328,7 +331,84 @@ const TrialSim = () => {
     }
   };
 
+  const [savingLog, setSavingLog] = useState(false);
+
+  const savePracticeSession = async () => {
+    if (!activeCase || messages.length === 0) return;
+    setSavingLog(true);
+    const toastId = toast.info("Rex is compiling your trial practice coaching analysis...", { autoClose: false });
+
+    // Build the transcript text
+    const transcriptText = messages
+      .map(m => `${m.sender === 'user' ? 'Attorney' : opponentName}: ${m.text}`)
+      .join('\n');
+
+    try {
+      // P1: Save the practice transcript log to agent memory
+      const logTitle = `Trial Practice Transcript - ${phase} (${new Date().toLocaleDateString()})`;
+      await addInsight('rex', activeCase.id, {
+        agentId: 'rex',
+        caseId: activeCase.id,
+        title: logTitle,
+        content: transcriptText.slice(0, 1000),
+        confidence: 90,
+        type: 'prediction',
+        source: 'monitoring',
+      });
+
+      // P2: Rex coaching analysis
+      const analysisPrompt = `You are Rex, Trial Coach at CaseBuddy Law Firm. Analyze the following practice transcript from a trial simulation session (Phase: ${phase}, Mode: ${mode}) and provide coaching notes. Identify:
+1. Weak arguments made by the attorney.
+2. Missed objections or arguments that could be improved.
+3. A rhetorical effectiveness score (0-100) and brief feedback.
+
+Practice Transcript:
+${transcriptText}
+
+Provide your feedback in a structured, professional, and coaching-oriented format. Keep it concise (2-3 paragraphs).`;
+
+      const response = await deepseekChat({
+        systemInstruction: `You are Rex, the firm's Trial Coach. You run witness prep, trial simulations, and objections training. You give aggressive, tactical, and constructive trial feedback.`,
+        messages: [{ role: 'user', content: analysisPrompt }],
+        temperature: 0.5,
+        maxTokens: 800,
+        timeoutMs: 30_000,
+      });
+
+      // Save Rex's coaching notes as a high-confidence recommendation insight in agent memory
+      await addInsight('rex', activeCase.id, {
+        agentId: 'rex',
+        caseId: activeCase.id,
+        title: `Rex's Coaching Notes - ${phase} (${new Date().toLocaleDateString()})`,
+        content: response,
+        confidence: 95,
+        type: 'recommendation',
+        source: 'learning',
+      });
+
+      toast.update(toastId, {
+        render: "Trial practice log & coaching feedback saved to Rex's memory!",
+        type: "success",
+        autoClose: 5000,
+        isLoading: false
+      } as any);
+    } catch (err) {
+      console.error('Failed to save practice session to agent memory:', err);
+      toast.update(toastId, {
+        render: "Failed to save coaching log, but transcript is captured.",
+        type: "error",
+        autoClose: 5000,
+        isLoading: false
+      } as any);
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
   const stopLiveSession = () => {
+    if (isLive && messages.length > 0) {
+      savePracticeSession();
+    }
     setIsLive(false);
     setIsConnecting(false);
     setLiveVolume(0);

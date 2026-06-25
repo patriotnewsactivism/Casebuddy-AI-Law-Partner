@@ -705,3 +705,5 @@ const LegalTeam: React.FC = () => {
     </div>
   );
 };
+
+export default LegalTeam;

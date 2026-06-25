@@ -284,6 +284,9 @@ class BackgroundAgentEngine {
       case 'draft':
         await this.runDraft(task);
         break;
+      case 'summarize':
+        await this.runSummarize(task);
+        break;
       default:
         // workflow tasks are handled by the orchestrator
         break;
@@ -436,6 +439,114 @@ class BackgroundAgentEngine {
       task.caseId,
       activeCase.title,
       `${agentName} drafted a ${docTypeHint}. Review in Document Center.`
+    );
+  }
+
+  private async runSummarize(task: BackgroundTask): Promise<void> {
+    const cases = this.loadCasesFromStorage();
+    const activeCase = cases.find(c => c.id === task.caseId);
+    if (!activeCase) return;
+
+    // Load messages
+    let messages: any[] = [];
+    try {
+      messages = JSON.parse(localStorage.getItem(`warroom_msgs_${task.caseId}`) ?? '[]');
+    } catch {}
+
+    // Load evidence
+    let evidence: any[] = [];
+    try {
+      evidence = JSON.parse(localStorage.getItem(`evidence_${task.caseId}`) ?? '[]');
+    } catch {}
+
+    // Load workflows
+    let workflows: any[] = [];
+    try {
+      workflows = JSON.parse(localStorage.getItem('cb_workflows') ?? '[]');
+    } catch {}
+    const caseWorkflows = workflows.filter((w: any) => w.caseId === task.caseId);
+
+    // Format inputs for the prompt
+    const msgText = messages.slice(-20).map(m => `[${m.sender_name}]: ${m.body}`).join('\n');
+    const evText = evidence.map(e => `- ${e.name} (${e.type}): ${e.summary || ''}`).join('\n');
+    const wfText = caseWorkflows.map(w => `- Workflow "${w.name}" (${w.status}):\n` + (w.steps ?? []).map((s: any) => `  * ${s.description}: ${s.status}`).join('\n')).join('\n');
+
+    const prompt = `You are Maya, CaseBuddy's operations supervisor. Produce a comprehensive, high-quality Weekly Case Digest for the case.
+
+Case Details:
+Title: ${activeCase.title}
+Client: ${activeCase.client}
+Status: ${activeCase.status}
+Summary: ${activeCase.summary || 'None'}
+
+Recent Messages:
+${msgText || 'No recent messages.'}
+
+Evidence Vault:
+${evText || 'No evidence uploaded.'}
+
+Recent Workflows:
+${wfText || 'No workflows run.'}
+
+Provide a structured weekly digest containing:
+1. Executive Summary (2-3 sentences summarizing the current posture).
+2. Key Recent Updates (bullet points of what occurred in messages, evidence, or workflows).
+3. Critical Gaps & Urgent Next Steps (what is missing, deadlines, action items).
+Be extremely concise, professional, and actionable. Do not use placeholders or generic phrases.`;
+
+    const response = await deepseekChat({
+      systemInstruction: `You are Maya, Case Intake Specialist & Internal Operations Supervisor at CaseBuddy Law Firm. Speak directly, concisely, and with legal precision.`,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.5,
+      maxTokens: 1000,
+      timeoutMs: 45_000,
+    });
+
+    // Save to agent memory as a weekly digest insight
+    await addInsight('maya', task.caseId, {
+      agentId: 'maya',
+      caseId: task.caseId,
+      title: `Weekly Case Digest - ${new Date().toLocaleDateString()}`,
+      content: response,
+      confidence: 85,
+      type: 'recommendation',
+      source: 'analysis',
+    });
+
+    // Post it as an automated update to the case's War Room thread!
+    const summaryMsg: any = {
+      id: `local-digest-${Date.now()}`,
+      created_at: new Date().toISOString(),
+      thread_id: 'local',
+      case_id: task.caseId,
+      firm_id: 'default',
+      sender_type: 'agent',
+      sender_id: 'maya',
+      sender_name: 'Maya (Weekly Digest)',
+      direction: 'agent_to_user',
+      body: `📅 **Weekly Case Digest**\n\n${response}`,
+      read: false,
+      triggers_automation: false,
+      automation_target: null,
+      automation_status: 'none',
+      automation_result: null,
+      attachment_url: null,
+      attachment_name: null,
+      attachment_type: null,
+      metadata: { isWeeklyDigest: true },
+    };
+
+    try {
+      const savedMsgs = JSON.parse(localStorage.getItem(`warroom_msgs_${task.caseId}`) ?? '[]');
+      savedMsgs.push(summaryMsg);
+      localStorage.setItem(`warroom_msgs_${task.caseId}`, JSON.stringify(savedMsgs));
+    } catch {}
+
+    pushTaskComplete(
+      'maya',
+      task.caseId,
+      activeCase.title,
+      `Weekly case digest prepared by Maya. Check agent memory or War Room.`
     );
   }
 
