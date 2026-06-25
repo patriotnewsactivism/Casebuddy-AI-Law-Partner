@@ -7,15 +7,20 @@ export interface CourtCase {
 }
 
 export const searchCourtListenerCases = async (query: string): Promise<CourtCase[]> => {
-  const apiKey = import.meta.env.VITE_COURTLISTENER_API_KEY;
-  if (!apiKey || !query.trim()) return [];
+  const apiKey = (import.meta.env.VITE_COURTLISTENER_API_KEY as string) || '';
+  if (!apiKey || !query.trim()) return [];  // no key = skip silently
 
-  // Sanitize: strip special characters that cause 400s, keep letters/numbers/spaces/hyphens
+  // Sanitize: strip special chars, remove noise words (v, et, al, vs), limit length
+  const stopWords = new Set(['v', 'vs', 'et', 'al', 'a', 'an', 'the', 'in', 're']);
   const clean = query
     .replace(/[^a-zA-Z0-9\s\-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 80);
+    .split(' ')
+    .filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()))
+    .slice(0, 6)           // max 6 meaningful tokens
+    .join(' ')
+    .trim();
 
   if (!clean) return [];
 
