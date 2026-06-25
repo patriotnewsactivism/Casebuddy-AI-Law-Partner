@@ -283,6 +283,25 @@ const MailRoom: React.FC = () => {
   }, [emails]);
 
   // ── Live Supabase email sync ──────────────────────────────────────────────
+
+  // Gemini fetch with single 429-retry
+  const geminiGenerate = React.useCallback(async (prompt: string): Promise<string> => {
+    const key = getGeminiKey();
+    if (!key) throw new Error('Gemini API key not configured. Add it in Settings.');
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.6 } });
+    const doFetch = () => fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    let res = await doFetch();
+    if (res.status === 429) {
+      // Rate limited — wait 3s then retry once
+      await new Promise(r => setTimeout(r, 3000));
+      res = await doFetch();
+    }
+    if (!res.ok) throw new Error(res.status === 429 ? 'AI rate limit reached — please wait a moment and try again.' : `Gemini error ${res.status}`);
+    const data = await res.json() as any;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }, []);
+
   const [syncStatus, setSyncStatus] = React.useState<'idle'|'syncing'|'ok'|'error'>('idle');
 
   const syncFromSupabase = React.useCallback(async () => {
@@ -296,7 +315,11 @@ const MailRoom: React.FC = () => {
         `${sbUrl}/rest/v1/firm_emails?order=received_at.desc&limit=100`,
         { headers: { apikey: sbAnon, Authorization: `Bearer ${sbAnon}` } }
       );
-      if (!res.ok) { setSyncStatus('error'); return; }
+      if (!res.ok) {
+        // 401/403 = missing/invalid Supabase key — fail silently, don't log
+        setSyncStatus(res.status === 401 || res.status === 403 ? 'idle' : 'error');
+        return;
+      }
       const rows: any[] = await res.json();
 
       const mapped: Email[] = rows.map(r => ({
@@ -412,21 +435,9 @@ const MailRoom: React.FC = () => {
     if (!selected) return;
     setAiDrafting(true);
     try {
-      const key = getGeminiKey();
-      if (!key) throw new Error('Gemini API key not configured. Add it in Settings.');
       const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent) || AGENT_SENDERS[0];
       const prompt = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.\nDraft a professional, concise email reply in under 100 words. Be direct and action-oriented. Match the agent's voice.\nOriginal email:\nFrom: ${selected.fromName}\nSubject: ${selected.subject}\nBody: ${selected.body.slice(0, 800)}\nWrite only the email body. Sign as "— ${agent.name}"`;
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.6 } }),
-        }
-      );
-      if (!res.ok) throw new Error(`Gemini error ${res.status}`);
-      const data = await res.json() as any;
-      const draft = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const draft = await geminiGenerate(prompt);
       if (!draft) throw new Error('Empty response from AI');
       setCompose(c => ({ ...c, to: selected.from, subject: `Re: ${selected.subject}`, body: draft }));
       setComposing(true);
@@ -440,22 +451,10 @@ const MailRoom: React.FC = () => {
   const generateAgentBrief = async (agentId: string) => {
     setAgentBrief({ agentId, loading: true, text: '' });
     try {
-      const key = getGeminiKey();
-      if (!key) { setAgentBrief({ agentId, loading: false, text: 'Gemini key not configured.' }); return; }
       const agent = OPERATIONAL_AGENTS.find(a => a.id === agentId);
       const agentEmails = emails.filter(e => e.fromAgent === agentId).slice(0, 5);
       const prompt = `You are ${agent?.name}, ${agent?.role} at CaseBuddy. Give a 3-sentence status briefing on your current workload based on these recent emails. Be concise and in-character.\nEmails: ${agentEmails.map(e => '[' + e.subject + ']: ' + e.body.slice(0, 200)).join('\n\n')}`;
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7 } }),
-        }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as any;
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No briefing available.';
+      const text = await geminiGenerate(prompt) || 'No briefing available.';
       setAgentBrief({ agentId, loading: false, text });
     } catch (e: any) {
       setAgentBrief({ agentId, loading: false, text: 'Could not load briefing: ' + e.message });
