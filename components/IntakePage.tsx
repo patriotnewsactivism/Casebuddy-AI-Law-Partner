@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback} from 'react';
 import { Link } from 'react-router-dom';
 import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download, Printer } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
@@ -258,12 +258,18 @@ const IntakePage: React.FC = () => {
   const [assessment, setAssessment] = useState<MayaAssessment | null>(null);
   const [conflict, setConflict]   = useState<ConflictResult | null>(null);
 
-  // Engagement letter
-  const [letter, setLetter]           = useState<string | null>(null);
-  const [letterLoading, setLetterLoading] = useState(false);
-  const [letterError, setLetterError] = useState<string | null>(null);
-  const [letterOpen, setLetterOpen]   = useState(false);
-  const [copied, setCopied]           = useState(false);
+  // Engagement letter — consolidated into one state object
+  const [letterState, setLetterState] = useState<{ text: string | null; loading: boolean; error: string | null; open: boolean; copied: boolean }>({ text: null, loading: false, error: null, open: false, copied: false });
+  const letter        = letterState.text;
+  const letterLoading = letterState.loading;
+  const letterError   = letterState.error;
+  const letterOpen    = letterState.open;
+  const copied        = letterState.copied;
+  const setLetter        = (v: string | null) => setLetterState(s => ({ ...s, text: v }));
+  const setLetterLoading = (v: boolean)        => setLetterState(s => ({ ...s, loading: v }));
+  const setLetterError   = (v: string | null)  => setLetterState(s => ({ ...s, error: v }));
+  const setLetterOpen    = (v: boolean)         => setLetterState(s => ({ ...s, open: v }));
+  const setCopied        = (v: boolean)         => setLetterState(s => ({ ...s, copied: v }));
 
   const [form, setForm] = useState<IntakeFormData>({
     name: '',
