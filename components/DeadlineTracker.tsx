@@ -254,6 +254,13 @@ Return ONLY a JSON object with exactly these string fields:
     setDeadlines(prev => [d, ...prev]);
     setSolAdded(true);
     toast.success('Statute-of-limitations deadline added');
+    // Trigger automation for new SOL deadline
+    onDeadlineAdded({
+      caseId: activeCase?.id,
+      caseTitle: activeCase?.title,
+      type: 'statute-of-limitations',
+      dueDate: iso,
+    }).catch(() => {});
   };
 
   const addDeadline = () => {
@@ -268,6 +275,14 @@ Return ONLY a JSON object with exactly these string fields:
       createdAt: Date.now(),
     };
     setDeadlines(prev => [d, ...prev]);
+
+    // Trigger automation for trial/hearing/SOL deadlines
+    onDeadlineAdded({
+      caseId: activeCase?.id,
+      caseTitle: activeCase?.title,
+      type: form.type,
+      dueDate: form.dueDate,
+    }).catch(() => {});
 
     // K1: if it's a trial/hearing date, sync it back to the active case
     if (activeCase && (form.type === 'trial-date' || form.type === 'hearing-date') && form.dueDate) {
