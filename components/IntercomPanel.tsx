@@ -64,6 +64,18 @@ const PARALEGAL_INTERCOM = PARALEGALS.map(p => ({
 }));
 
 
+function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate) return input;
+  const ratio = fromRate / toRate;
+  const newLength = Math.round(input.length / ratio);
+  const result = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    const nextIndex = Math.floor(i * ratio);
+    result[i] = input[nextIndex];
+  }
+  return result;
+}
+
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 const IntercomPanel: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
@@ -89,6 +101,7 @@ const IntercomPanel: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const sttRef       = useRef<{ sendAudio:(d:ArrayBuffer)=>void; close:()=>void } | null>(null);
   const micRef       = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceRef    = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioCtxRef  = useRef<AudioContext | null>(null);
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomRef    = useRef<HTMLDivElement>(null);
@@ -184,9 +197,10 @@ Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a qui
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         micRef.current = stream;
-        const ctx = new AudioContext({ sampleRate: 16000 });
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioCtxRef.current = ctx;
         const source = ctx.createMediaStreamSource(stream);
+        sourceRef.current = source;
         const processor = ctx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
         sttRef.current = openSTTSocket(
@@ -197,10 +211,11 @@ Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a qui
         );
         processor.onaudioprocess = (e) => {
           if (muted || speaking) return;
-          const input = e.inputBuffer.getChannelData(0);
-          const int16 = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++)
-            int16[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+          const rawInput = e.inputBuffer.getChannelData(0);
+          const resampledInput = resample(rawInput, ctx.sampleRate, 16000);
+          const int16 = new Int16Array(resampledInput.length);
+          for (let i = 0; i < resampledInput.length; i++)
+            int16[i] = Math.max(-32768, Math.min(32767, resampledInput[i] * 32768));
           sttRef.current?.sendAudio(int16.buffer);
         };
         source.connect(processor);
@@ -213,11 +228,12 @@ Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a qui
   const endCall = useCallback(() => {
     sttRef.current?.close();
     playerRef.current?.stop();
-    processorRef.current?.disconnect();
+    try { processorRef.current?.disconnect(); } catch {}
+    try { sourceRef.current?.disconnect(); } catch {}
     audioCtxRef.current?.close().catch(() => {});
     micRef.current?.getTracks().forEach(t => t.stop());
     sttRef.current = null; playerRef.current = null;
-    processorRef.current = null; micRef.current = null;
+    processorRef.current = null; sourceRef.current = null; micRef.current = null;
     setCallActive(false); setActiveAgent(null);
     setListening(false); setSpeaking(false); setMessages([]);
   }, []);

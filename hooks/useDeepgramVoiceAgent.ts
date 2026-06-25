@@ -25,9 +25,19 @@ const OUTPUT_RATE = 24000;
 const LISTEN_MODEL = 'flux-general-en';
 const EOT_THRESHOLD = 0.8;
 const EOT_TIMEOUT_MS = 8000;
-// How quickly we fade the agent's voice out when the caller barges in. A short
-// ramp instead of a hard cut means her words are never abruptly clipped.
 const BARGE_FADE_MS = 90;
+
+function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate) return input;
+  const ratio = fromRate / toRate;
+  const newLength = Math.round(input.length / ratio);
+  const result = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    const nextIndex = Math.floor(i * ratio);
+    result[i] = input[nextIndex];
+  }
+  return result;
+}
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
 export type Speaker = 'agent' | 'you';
@@ -134,6 +144,7 @@ export function useDeepgramVoiceAgent(
   const inputCtxRef = useRef<AudioContext | null>(null);
   const outputCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const outGainRef = useRef<GainNode | null>(null);
   const nextStartRef = useRef(0);
@@ -175,7 +186,9 @@ export function useDeepgramVoiceAgent(
 
   const stop = useCallback(() => {
     try { processorRef.current?.disconnect(); } catch { /* noop */ }
+    try { sourceRef.current?.disconnect(); } catch { /* noop */ }
     processorRef.current = null;
+    sourceRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
     try { inputCtxRef.current?.close(); } catch { /* noop */ }
@@ -335,8 +348,8 @@ export function useDeepgramVoiceAgent(
     }
 
     try {
-      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_RATE });
-      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_RATE });
+      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       await inputCtx.resume();
       await outputCtx.resume();
       inputCtxRef.current = inputCtx;
@@ -408,18 +421,20 @@ export function useDeepgramVoiceAgent(
         setStatus('live');
 
         const source = inputCtx.createMediaStreamSource(micStream);
+        sourceRef.current = source;
         const processor = inputCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
         processor.onaudioprocess = (e) => {
-          const input = e.inputBuffer.getChannelData(0);
+          const rawInput = e.inputBuffer.getChannelData(0);
+          const resampledInput = resample(rawInput, inputCtx.sampleRate, INPUT_RATE);
           let sum = 0;
-          const int16 = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]));
+          const int16 = new Int16Array(resampledInput.length);
+          for (let i = 0; i < resampledInput.length; i++) {
+            const s = Math.max(-1, Math.min(1, resampledInput[i]));
             int16[i] = s < 0 ? s * 32768 : s * 32767;
-            sum += input[i] * input[i];
+            sum += resampledInput[i] * resampledInput[i];
           }
-          setInputLevel(Math.min(100, Math.sqrt(sum / input.length) * 200));
+          setInputLevel(Math.min(100, Math.sqrt(sum / resampledInput.length) * 200));
           if (ws.readyState === WebSocket.OPEN) ws.send(int16.buffer);
         };
         source.connect(processor);

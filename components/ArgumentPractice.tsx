@@ -16,6 +16,18 @@ const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 import { Link } from 'react-router-dom';
 
 // --- Audio Utils for Live API ---
+function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate) return input;
+  const ratio = fromRate / toRate;
+  const newLength = Math.round(input.length / ratio);
+  const result = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    const nextIndex = Math.floor(i * ratio);
+    result[i] = input[nextIndex];
+  }
+  return result;
+}
+
 function createBlob(data: Float32Array): Blob {
   const l = data.length;
   const int16 = new Int16Array(l);
@@ -91,6 +103,8 @@ const TrialSim = () => {
   const inputContextRef = useRef<AudioContext | null>(null);
   const outputContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   
@@ -129,8 +143,8 @@ const TrialSim = () => {
     setIsConnecting(true);
     try {
       // 1. Ensure AudioContext is resumed (User Gesture)
-      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       
       await inputCtx.resume();
       await outputCtx.resume();
@@ -226,15 +240,18 @@ const TrialSim = () => {
 
             // Audio Processing — use micStream captured in outer scope (not streamRef to avoid stale closure)
             const source = inputCtx.createMediaStreamSource(micStream);
+            sourceRef.current = source;
             const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+            processorRef.current = scriptProcessor;
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
+              const resampledInput = resample(inputData, inputCtx.sampleRate, 16000);
               // Viz
               let sum = 0;
-              for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-              setLiveVolume(Math.sqrt(sum / inputData.length) * 100);
+              for(let i=0; i<resampledInput.length; i++) sum += resampledInput[i] * resampledInput[i];
+              setLiveVolume(Math.sqrt(sum / resampledInput.length) * 100);
 
-              const pcmBlob = createBlob(inputData);
+              const pcmBlob = createBlob(resampledInput);
               sessionPromise.then(s => s.sendRealtimeInput({ media: pcmBlob }));
             };
             source.connect(scriptProcessor);
@@ -413,6 +430,10 @@ Provide your feedback in a structured, professional, and coaching-oriented forma
     setIsConnecting(false);
     setLiveVolume(0);
     streamRef.current?.getTracks().forEach(t => t.stop());
+    try { processorRef.current?.disconnect(); } catch { /* noop */ }
+    try { sourceRef.current?.disconnect(); } catch { /* noop */ }
+    processorRef.current = null;
+    sourceRef.current = null;
     inputContextRef.current?.close();
     outputContextRef.current?.close();
     sourcesRef.current.forEach(s => s.stop());
