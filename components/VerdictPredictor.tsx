@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo} from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { predictVerdictAndSettlement } from '../services/geminiService';
@@ -51,13 +51,19 @@ const ProbabilityRing = ({ value }: { value: number }) => {
 
 const VerdictPredictor = () => {
   const { activeCase } = useContext(AppContext);
-  const [caseType, setCaseType] = useState('');
-  const [jurisdiction, setJurisdiction] = useState('');
-  const [evidenceStrength, setEvidenceStrength] = useState(50);
-  const [additionalFactors, setAdditionalFactors] = useState('');
+  const [vpForm, setVpForm] = useState({ caseType: 'civil', jurisdiction: 'federal', evidenceStrength: 'moderate', additionalFactors: '' });
+  const caseType = vpForm.caseType;
+  const jurisdiction = vpForm.jurisdiction;
+  const evidenceStrength = vpForm.evidenceStrength;
+  const additionalFactors = vpForm.additionalFactors;
+  const setCaseType          = (v: string) => setVpForm(f => ({...f, caseType: v}));
+  const setJurisdiction      = (v: string) => setVpForm(f => ({...f, jurisdiction: v}));
+  const setEvidenceStrength  = (v: string) => setVpForm(f => ({...f, evidenceStrength: v}));
+  const setAdditionalFactors = (v: string) => setVpForm(f => ({...f, additionalFactors: v}));
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [history, setHistory] = useState<Prediction[]>(() => {
+  const recentHistory = useMemo(() => [...history].reverse().slice(0, 10), [history]);
     try { return JSON.parse(localStorage.getItem('verdict_predictions') || '[]'); } catch { return []; }
   });
 
