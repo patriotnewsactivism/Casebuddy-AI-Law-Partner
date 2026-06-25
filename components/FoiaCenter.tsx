@@ -120,20 +120,19 @@ const FoiaCenter: React.FC = () => {
 
   // ---- Tracker state ----
   const [requests, setRequests] = useState<FoiaRequest[]>(() => {
-
+    try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
   const [requestSearch, setRequestSearch] = React.useState('');
   const filteredRequests = useMemo(() => {
     if (!requestSearch.trim()) return requests;
     const q = requestSearch.toLowerCase();
     return requests.filter(r =>
       r.agency?.toLowerCase().includes(q) ||
-      r.subject?.toLowerCase().includes(q) ||
+      r.recordsSought?.toLowerCase().includes(q) ||
       r.status?.toLowerCase().includes(q)
     );
   }, [requests, requestSearch]);
-    try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : []; }
-    catch { return []; }
-  });
   const [followUpId, setFollowUpId] = useState<string | null>(null);
   const [followUpText, setFollowUpText] = useState('');
   const [followUpLoading, setFollowUpLoading] = useState(false);
