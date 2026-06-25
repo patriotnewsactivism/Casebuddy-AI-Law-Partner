@@ -13,7 +13,7 @@ The codebase has a robust foundation for AI-driven legal automation but several 
 - **NotificationManager** (`services/notificationManager.ts`): Smart notification system with batching
 - **All operational from App.tsx**: Engines start on app mount
 
-### Events Currently Wired ✅
+### Events Now Wired ✅
 | Event | Hook | Workflow Triggered |
 |-------|------|-------------------|
 | Case Created | `onCaseCreated` | `new-case-intake` workflow |
@@ -23,8 +23,11 @@ The codebase has a robust foundation for AI-driven legal automation but several 
 | Deposition Scheduled | `onDepositionScheduled` | `witness-deposition-prep` workflow |
 | Case Status Change | `onCaseStatusChanged` | `discovery-paralegal-pack`, `trial-prep-30-days` workflows |
 | Intake Received | `onIntakeReceived` | Maya AI triage + notification |
+| Evidence Concerns Found | `onEvidenceConcernsFound` | `evidence-intake` workflow |
+| Deadline Added | `onDeadlineAdded` | Trial prep / jury selection / intake workflows |
 
-### Monitoring Rules Currently Active ✅
+### Gaps & Opportunities (Remaining)
+These UI actions still need hooks:
 - Deadline proximity alerts (30, 14, 7, 3, 1 days)
 - Case strength decline detection
 - Daily background analysis per active case
@@ -33,8 +36,25 @@ The codebase has a robust foundation for AI-driven legal automation but several 
 
 ## Gaps & Opportunities
 
-### 1. Missing Event Hooks
-These UI actions don't trigger background workflows:
+## Gaps & Opportunities (Remaining)
+
+These UI actions still need hooks:
+
+| Component | Missing Hook | Suggested Workflow |
+|-----------|--------------|------------------|
+| `FoiaCenter.tsx` | No workflow when FOIA marked as submitted | N/A (single-agency requests) |
+| `ClientUpdate.tsx` | Manual only, no automation | Could auto-draft based on case changes |
+| `DraftingAssistant.tsx` | Manual only | Could auto-generate documents based on case stage |
+
+### Completed Enhancements ✓
+
+| Priority | Enhancement | Status |
+|----------|-------------|--------|
+| Priority 1 | Matter-type specific workflow routing after intake conversion | ✅ Implemented in IntakeInbox.tsx |
+| Priority 2 | Auto-flag concerning evidence to Rex via `evidence-intake` workflow | ✅ Implemented in EvidenceVault.tsx |
+| Priority 3 | Smart deadline triggers for trial/SOL dates | ✅ Implemented in DeadlineTracker.tsx via `onDeadlineAdded` |
+
+### 1. Missing Event Hooks (Remaining)
 
 | Component | Missing Hook | Suggested Workflow |
 |-----------|--------------|------------------|
@@ -77,7 +97,27 @@ Current workflows execute sequentially/parallel but lack:
 - **Feedback loops**: If analysis shows weakness, auto-assign follow-up research
 - **Escalation**: If win probability drops below threshold, auto-alert attorney
 
-## Proposed Enhancements
+## Completed Implementation
+
+### Priority 1: Intake-to-Case Automation ✅
+Modified `IntakeInbox.tsx` to trigger matter-type specific workflows after case conversion:
+- Personal Injury → `medical-records-demand` workflow
+- Criminal → `client-onboarding` workflow
+- Immigration → `immigration-petition-prep` workflow
+- Estate Probate → `estate-inventory` workflow
+- Others → `client-onboarding` workflow
+
+### Priority 2: Evidence-Driven Workflow Triggers ✅
+Added `onEvidenceConcernsFound` hook to `caseEventHooks.ts` that triggers `evidence-intake` workflow.
+Wired in `EvidenceVault.tsx` to call the hook when evidence analysis reveals concerns.
+
+### Priority 3: Smart Deadline Management ✅
+Added `onDeadlineAdded` hook to `caseEventHooks.ts` that triggers:
+- Trial/hearing dates → `trial-prep-30-days` (at 30 days) and `jury-selection-prep` (at 10 days)
+- Statute of limitations → `new-case-intake` (within 60 days)
+Wired in `DeadlineTracker.tsx` for both manual deadline additions and SOL calculator results.
+
+## Proposed Enhancements (Remaining)
 
 ### Priority 1: Complete Intake-to-Case Automation
 
