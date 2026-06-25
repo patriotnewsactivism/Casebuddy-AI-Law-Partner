@@ -8,7 +8,14 @@
  * - Streams AI attorney/agent reply back and persists it
  */
 
-import { supabase } from './supabaseClient';
+import { getSupabase } from './supabaseClient';
+
+/** Convenience — throws if Supabase isn't configured so callers get a clear error. */
+function db() {
+  const client = getSupabase();
+  if (!client) throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+  return client;
+}
 import { deepseekChat } from './deepseek';
 import { getAgentById, getSpecialistById, OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 import { AGENT_CONFIG } from '../config/agentConfig';
@@ -113,7 +120,7 @@ export async function getOrCreateThread(
   firmId = 'default'
 ): Promise<CaseThread> {
   // Try to find existing open thread for this case
-  const { data: existing } = await supabase
+  const { data: existing } = await db()
     .from('case_threads')
     .select('*')
     .eq('case_id', caseId)
@@ -126,7 +133,7 @@ export async function getOrCreateThread(
   if (existing) return existing as CaseThread;
 
   // Create new thread
-  const { data: created, error } = await supabase
+  const { data: created, error } = await db()
     .from('case_threads')
     .insert({
       case_id: caseId,
@@ -145,7 +152,7 @@ export async function getOrCreateThread(
 }
 
 export async function listThreadsForCase(caseId: string, firmId = 'default'): Promise<CaseThread[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db()
     .from('case_threads')
     .select('*')
     .eq('case_id', caseId)
@@ -157,7 +164,7 @@ export async function listThreadsForCase(caseId: string, firmId = 'default'): Pr
 }
 
 export async function getThreadMessages(threadId: string): Promise<CaseMessage[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db()
     .from('case_messages')
     .select('*')
     .eq('thread_id', threadId)
@@ -168,8 +175,8 @@ export async function getThreadMessages(threadId: string): Promise<CaseMessage[]
 }
 
 export async function markThreadRead(threadId: string): Promise<void> {
-  await supabase.from('case_messages').update({ read: true }).eq('thread_id', threadId).eq('direction', 'agent_to_user');
-  await supabase.from('case_threads').update({ unread_count: 0 }).eq('id', threadId);
+  await db().from('case_messages').update({ read: true }).eq('thread_id', threadId).eq('direction', 'agent_to_user');
+  await db().from('case_threads').update({ unread_count: 0 }).eq('id', threadId);
 }
 
 // ── Core send + auto-reply ─────────────────────────────────────────────────
@@ -201,7 +208,7 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
   const triggersAutomation = targetAgentId !== 'maya' || /\b(help|need|please|can you|what should|advise|recommend)\b/i.test(userMessage);
 
   // 2. Save user message
-  const { data: userRow, error: userErr } = await supabase
+  const { data: userRow, error: userErr } = await db()
     .from('case_messages')
     .insert({
       thread_id: threadId,
@@ -225,15 +232,11 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
 
   if (userErr) throw new Error(`Failed to save message: ${userErr.message}`);
 
-  // Ensure the target agent is in participants
-  await supabase.rpc
-    ? await supabase.from('case_threads').update({
-        participants: supabase.rpc ? undefined : undefined,
-      }).eq('id', threadId)
-    : null;
+  // Ensure the target agent is in participants (no-op update — participants are
+  // managed in step 5 below after we know which agent replied)
 
   // 3. Mark automation running
-  await supabase.from('case_messages').update({ automation_status: 'running' }).eq('id', userRow.id);
+  await db().from('case_messages').update({ automation_status: 'running' }).eq('id', userRow.id);
 
   // 4. Build AI reply
   const caseCtx = `Case: ${caseTitle}\nStatus: ${caseStatus}\nSummary: ${caseSummary}`;
@@ -252,18 +255,18 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
     });
 
     // Mark automation complete on the user message
-    await supabase.from('case_messages')
+    await db().from('case_messages')
       .update({ automation_status: 'complete', automation_result: `Dispatched to ${agentName}` })
       .eq('id', userRow.id);
   } catch (err) {
     replyBody = `I'm looking into this for you. I'll get back to you on the case shortly — please feel free to add more details in the meantime.`;
-    await supabase.from('case_messages')
+    await db().from('case_messages')
       .update({ automation_status: 'error', automation_result: String(err) })
       .eq('id', userRow.id);
   }
 
   // 5. Save agent reply
-  const { data: agentRow, error: agentErr } = await supabase
+  const { data: agentRow, error: agentErr } = await db()
     .from('case_messages')
     .insert({
       thread_id: threadId,
@@ -285,9 +288,9 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
   if (agentErr) throw new Error(`Failed to save agent reply: ${agentErr.message}`);
 
   // Add responder to thread participants
-  await supabase.from('case_threads').select('participants').eq('id', threadId).single().then(async ({ data: t }) => {
+  await db().from('case_threads').select('participants').eq('id', threadId).single().then(async ({ data: t }) => {
     if (t && !t.participants.includes(targetAgentId)) {
-      await supabase.from('case_threads').update({
+      await db().from('case_threads').update({
         participants: [...t.participants, targetAgentId],
       }).eq('id', threadId);
     }
@@ -311,7 +314,7 @@ export async function sendAgentMessage(
   const agentName = getPersonaName(agentId);
   const senderType = getSenderType(agentId);
 
-  const { data, error } = await supabase
+  const { data, error } = await db()
     .from('case_messages')
     .insert({
       thread_id: threadId,
@@ -339,7 +342,8 @@ export function subscribeToThread(
   threadId: string,
   onMessage: (msg: CaseMessage) => void
 ): () => void {
-  const channel = supabase
+  const client = db();
+  const channel = client
     .channel(`case_thread_${threadId}`)
     .on(
       'postgres_changes',
@@ -348,5 +352,5 @@ export function subscribeToThread(
     )
     .subscribe();
 
-  return () => { supabase.removeChannel(channel); };
+  return () => { client.removeChannel(channel); };
 }
