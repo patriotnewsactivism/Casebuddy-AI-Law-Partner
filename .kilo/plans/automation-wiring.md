@@ -28,74 +28,11 @@ The codebase has a robust foundation for AI-driven legal automation but several 
 
 ### Gaps & Opportunities (Remaining)
 These UI actions still need hooks:
-- Deadline proximity alerts (30, 14, 7, 3, 1 days)
-- Case strength decline detection
-- Daily background analysis per active case
-- Stale case detection (30+ days without updates)
-- Deposition approaching (5 days)
-
-## Gaps & Opportunities
-
-## Gaps & Opportunities (Remaining)
-
-These UI actions still need hooks:
-
 | Component | Missing Hook | Suggested Workflow |
 |-----------|--------------|------------------|
 | `FoiaCenter.tsx` | No workflow when FOIA marked as submitted | N/A (single-agency requests) |
 | `ClientUpdate.tsx` | Manual only, no automation | Could auto-draft based on case changes |
 | `DraftingAssistant.tsx` | Manual only | Could auto-generate documents based on case stage |
-
-### Completed Enhancements ✓
-
-| Priority | Enhancement | Status |
-|----------|-------------|--------|
-| Priority 1 | Matter-type specific workflow routing after intake conversion | ✅ Implemented in IntakeInbox.tsx |
-| Priority 2 | Auto-flag concerning evidence to Rex via `evidence-intake` workflow | ✅ Implemented in EvidenceVault.tsx |
-| Priority 3 | Smart deadline triggers for trial/SOL dates | ✅ Implemented in DeadlineTracker.tsx via `onDeadlineAdded` |
-
-### 1. Missing Event Hooks (Remaining)
-
-| Component | Missing Hook | Suggested Workflow |
-|-----------|--------------|------------------|
-| `EvidenceVault.tsx` | No auto-trigger on evidence upload completion | `evidence-intake` workflow |
-| `FoiaCenter.tsx` | No workflow when FOIA marked as submitted | N/A (single-agency requests) |
-| `DeadlineTracker.tsx` | No trigger when deadlines are added | Suggest scheduling follow-ups |
-| `ClientUpdate.tsx` | Manual only, no automation | Could auto-draft based on case changes |
-| `DraftingAssistant.tsx` | Manual only | Could auto-generate documents based on case stage |
-
-### 2. Incomplete Automation Loops
-
-#### 2.1 Intake → Case Conversion Missing
-- When intake is marked "routed" or accepted, it creates a case
-- **Missing**: Auto-trigger `client-onboarding` workflow after case creation
-- **Missing**: Auto-trigger workflow based on matter type (e.g., `medical-records-demand` for PI)
-
-#### 2.2 Evidence Analysis → Next Steps
-- Evidence is analyzed but results aren't automatically actioned
-- **Missing**: Auto-flag concerning evidence to Rex for credibility assessment
-- **Missing**: Auto-suggest document drafting based on evidence content
-
-#### 2.3 Workflow Completion → Automatic Actions
-- Workflows complete but require manual follow-up
-- **Missing**: Auto-email drafted docs to client (requires email integration)
-- **Missing**: Auto-schedule related deadlines
-- **Missing**: Auto-update case status based on workflow outcomes
-
-### 3. Background Task Scheduling Gaps
-
-The `backgroundEngine.schedule()` function exists but isn't called for:
-- **Evidence**: Schedule follow-ups when concerning evidence is found
-- **Deadlines**: Auto-schedule deadline monitoring tasks when cases are created
-- **Cross-case learning**: Schedule weekly similarity analysis between cases
-- **Document expiration**: Track statute of limitations on evidence documents
-
-### 4. Agent-to-Agent Automation
-
-Current workflows execute sequentially/parallel but lack:
-- **Conditional branching**: If Doc drafts a motion, auto-assign to Rex for objections
-- **Feedback loops**: If analysis shows weakness, auto-assign follow-up research
-- **Escalation**: If win probability drops below threshold, auto-alert attorney
 
 ## Completed Implementation
 
@@ -119,52 +56,13 @@ Wired in `DeadlineTracker.tsx` for both manual deadline additions and SOL calcul
 
 ## Proposed Enhancements (Remaining)
 
-### Priority 1: Complete Intake-to-Case Automation
-
-```typescript
-// In IntakeInbox.tsx handleConvertToCase
-const handleConvertToCase = (intake: IntakeCase) => {
-  // ... existing code ...
-  
-  // NEW: Trigger matter-type specific workflow
-  const wf = createWorkflow(intake.matter_type === 'Personal Injury' 
-    ? 'medical-records-demand' 
-    : 'client-onboarding', newCase.id);
-  if (wf) orchestrator.executeWorkflowAsync(wf);
-};
-```
-
-### Priority 2: Evidence-Driven Workflow Triggers
-
-```typescript
-// In EvidenceVault.tsx after analysis
-const evidenceWorkflowTriggers = {
-  medical_records: 'medical-records-demand',
-  police_report: 'evidence-intake',
-  financial: 'foia-pipeline', // For government financial records
-};
-
-if (analysis.concerns?.length > 0) {
-  onEvidenceConcernsFound(activeCase.id, analysis).catch(() => {});
-}
-```
-
-### Priority 3: Smart Deadline Management
-
-Auto-wire from DeadlineTracker:
-- When court date is added → schedule trial prep workflow
-- When SOL deadline is added → schedule case intake workflow
-- When any deadline passes → auto-alert + suggest next steps
-
 ### Priority 4: Workflow Chaining Based on Outcomes
-
 In `agentOrchestrator.ts`, after workflow completion:
 - Parse outputs for action keywords
 - Auto-schedule follow-up workflows
 - Update case with derived intelligence
 
 ### Priority 5: Background Research Scheduling
-
 Add to `caseMonitor.ts`:
 - Weekly similarity analysis between active cases
 - Monthly precedent updates for each case type
@@ -192,9 +90,8 @@ All automation controlled via `config/agentConfig.ts`:
 
 ## Summary
 
-The core automation engine is built but needs:
-1. More event hooks wired to UI interactions
-2. Smart deadline scheduling from case creation
+The core automation engine has been strengthened with:
+1. `onEvidenceConcernsFound` hook for evidence-driven workflows
+2. `onDeadlineAdded` hook for smart deadline triggers
 3. Matter-type specific workflow routing after intake conversion
-4. Evidence-driven next-step suggestions
-5. Workflow outcome parsing for follow-up automation
+4. Evidence concerns now auto-trigger Rex's credibility assessment
