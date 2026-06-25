@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo} from 'react';
 import { AppContext } from '../App';
 import { MOCK_OPPONENT } from '../constants';
 import { predictStrategy } from '../services/geminiService';
@@ -17,6 +17,7 @@ const LEX = OPERATIONAL_AGENTS.find(a => a.id === 'lex')!;
 const StrategyRoom = () => {
   const { activeCase } = useContext(AppContext);
   const [insights, setInsights] = useState<StrategyInsight[]>([]);
+  const sortedInsights = useMemo(() => [...insights].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)), [insights]);
   const [loading, setLoading] = useState(false);
   const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('standard');
   const [reasoningResult, setReasoningResult] = useState<ReasoningResult | null>(null);
@@ -189,7 +190,7 @@ const StrategyRoom = () => {
              </div>
            ) : (
              insights.length > 0 ? (
-               insights.map((insight, idx) => (
+               sortedInsights.map((insight, idx) => (
                  <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-6 hover:border-slate-500 transition-colors">
                     <div className="flex items-start gap-4">
                        <div className={`p-3 rounded-lg shrink-0 ${
