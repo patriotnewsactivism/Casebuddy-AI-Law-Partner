@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useMemo} from 'react';
 import { MOCK_WITNESSES } from '../constants';
 import { AppContext } from '../App';
 import { generateWitnessResponse, generateWitnessCoaching } from '../services/geminiService';
@@ -92,8 +92,7 @@ const WitnessLab = () => {
         activeCase?.summary || "A generic legal case."
       );
       setCoachingTip(coaching);
-    } catch (error) {
-      console.error('Witness simulation error:', error);
+    } catch (err) {
       const errorMsg: Message = {
         id: Date.now().toString(),
         sender: 'system',
@@ -101,9 +100,9 @@ const WitnessLab = () => {
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
     }
-
-    setIsTyping(false);
   };
 
   return (
