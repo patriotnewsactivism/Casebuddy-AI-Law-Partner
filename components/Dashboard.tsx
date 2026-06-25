@@ -337,7 +337,7 @@ const Dashboard = () => {
           <SectionHeader icon={Activity} title="Case Load Distribution" accent="text-blue-400" />
           <div className="h-64 w-full flex-1 min-h-[250px]">
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height={250} minWidth={0}>
                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
