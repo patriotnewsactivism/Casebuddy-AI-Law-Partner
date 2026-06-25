@@ -3,11 +3,12 @@ import React, { useState, useMemo, useCallback} from 'react';
 import { Link } from 'react-router-dom';
 import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download, Printer } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { getGeminiKey } from '../services/runtimeKeys';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 import { submitIntake } from '../services/intakeStore';
-import { scoreIntake } from '../services/intakeService';
+import { scoreIntake, callGeminiProxy } from '../services/intakeService';
 import type { IntakeData, IntakeScore } from '../types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -312,9 +313,6 @@ const IntakePage: React.FC = () => {
     const contact = unifiedContact(form);
 
     try {
-      const apiKey = (process.env.API_KEY as string) || '';
-      const ai = new GoogleGenAI({ apiKey });
-
       const prompt = `You are Maya, intake specialist at CaseBuddy AI Law Firm. Fast, direct, warm — like a real legal intake coordinator. Get the key facts quickly.
 
 Intake:
@@ -340,16 +338,46 @@ Respond in JSON with these exact keys:
 - recommendation: "proceed" | "schedule-consult" | "refer-out" | "decline"
 - score: 0-100 viability score`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      let raw: string;
+      try {
+        raw = await callGeminiProxy({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+      } catch (proxyErr) {
+        // Fall back to direct key if available (local dev)
+        const key = getGeminiKey();
+        if (!key) throw proxyErr;
+        const fallbackResp = await new GoogleGenAI({ apiKey: key }).models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { responseMimeType: 'application/json' },
+        });
+        raw = fallbackResp.text ?? '';
+      }
 
-      const raw = response.text ?? '';
-      const parsed: MayaAssessment = JSON.parse(raw);
+      // Strip markdown fences defensively
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+      let parsed: MayaAssessment;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        // If JSON parse fails, use fallback values
+        parsed = {
+          greeting: `Thanks ${form.name.split(' ')[0]}, we've received your intake.`,
+          urgency: 'medium',
+          summary: form.description.slice(0, 200),
+          strengths: [],
+          concerns: [],
+          nextSteps: ['Our team will review your intake and reach out.'],
+          recommendation: 'proceed',
+          score: 50,
+        };
+      }
 
       // Run conflict check BEFORE saving the new lead so we don't match against ourselves.
       const conflictResult = runConflictCheck(form);
@@ -417,8 +445,9 @@ Respond in JSON with these exact keys:
           score: intakeScore,
           transcript: [],   // form-based intake has no voice transcript
         });
-      } catch {
-        // submitIntake falls back to localStorage automatically; don't surface to user
+      } catch (saveErr: any) {
+        // Submit intake falls back to localStorage automatically; still surface error
+        console.error('[IntakePage] submitIntake encountered error:', saveErr?.message);
       }
 
       setStep(4); // show results
@@ -435,9 +464,6 @@ Respond in JSON with these exact keys:
     setLetterError(null);
     setLetterOpen(true);
     try {
-      const apiKey = (process.env.API_KEY as string) || '';
-      const ai = new GoogleGenAI({ apiKey });
-
       const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
       const prompt = `Draft a professional attorney-client engagement letter for a law firm onboarding a new client. Output ONLY the letter text (plain text, no markdown code fences).
 
@@ -458,12 +484,23 @@ The letter MUST include these clearly labeled sections:
 
 Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NAME], [FIRM ADDRESS] where firm-specific details are unknown.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      });
+      let letterText: string;
+      try {
+        letterText = await callGeminiProxy({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+      } catch (proxyErr) {
+        const key = getGeminiKey();
+        if (!key) throw proxyErr;
+        const fallbackResp = await new GoogleGenAI({ apiKey: key }).models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+        letterText = fallbackResp.text ?? '';
+      }
 
-      setLetter(response.text ?? '');
+      setLetter(letterText);
     } catch (err: any) {
       setLetterError(err?.message ?? 'Failed to generate the engagement letter. Please try again.');
     } finally {

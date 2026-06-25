@@ -55,6 +55,9 @@ const generateStructured = async (params: {
   }
 };
 
+/** Export the proxy caller for use by IntakePage.tsx */
+export { callGeminiProxy };
+
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
 // manual review; anything under REVIEW is politely declined.
 export const ACCEPT_BENCHMARK = 65;
