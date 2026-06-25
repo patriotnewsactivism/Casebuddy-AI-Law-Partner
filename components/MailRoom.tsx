@@ -1,3 +1,4 @@
+import { toast } from 'react-toastify';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Mail, Send, Inbox, Star, Trash2, Plus, X,
@@ -407,74 +408,53 @@ const MailRoom: React.FC = () => {
     if (!selected) return;
     setAiDrafting(true);
     try {
-      const key = (window as any).__GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
-      if (!key) throw new Error('No Gemini key');
+      const key = getGeminiKey();
+      if (!key) throw new Error('Gemini API key not configured. Add it in Settings.');
       const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent) || AGENT_SENDERS[0];
+      const prompt = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.\nDraft a professional, concise email reply in under 100 words. Be direct and action-oriented. Match the agent's voice.\nOriginal email:\nFrom: ${selected.fromName}\nSubject: ${selected.subject}\nBody: ${selected.body.slice(0, 800)}\nWrite only the email body. Sign as "— ${agent.name}"`;
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.
-Draft a professional, concise email reply in under 100 words. Be direct and action-oriented. Match the agent's voice.
-Original email:
-From: ${selected.fromName}
-Subject: ${selected.subject}
-Body: ${selected.body.slice(0, 800)}
-Write only the email body. Sign as "— ${agent.name}"`
-              }]
-            }],
-            generationConfig: { temperature: 0.6 },
-          }),
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.6 } }),
         }
       );
+      if (!res.ok) throw new Error(`Gemini error ${res.status}`);
       const data = await res.json() as any;
       const draft = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      setCompose(c => ({
-        ...c,
-        to: selected.from,
-        subject: `Re: ${selected.subject}`,
-        body: draft,
-      }));
+      if (!draft) throw new Error('Empty response from AI');
+      setCompose(c => ({ ...c, to: selected.from, subject: `Re: ${selected.subject}`, body: draft }));
       setComposing(true);
     } catch (e: any) {
-      alert('Could not generate AI draft: ' + e.message);
+      toast.error('AI draft failed: ' + e.message);
+    } finally {
+      setAiDrafting(false);
     }
-    setAiDrafting(false);
   };
 
   const generateAgentBrief = async (agentId: string) => {
     setAgentBrief({ agentId, loading: true, text: '' });
     try {
-      const key = (window as any).__GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
-      if (!key) throw new Error('No Gemini key');
+      const key = getGeminiKey();
+      if (!key) { setAgentBrief({ agentId, loading: false, text: 'Gemini key not configured.' }); return; }
       const agent = OPERATIONAL_AGENTS.find(a => a.id === agentId);
       const agentEmails = emails.filter(e => e.fromAgent === agentId).slice(0, 5);
+      const prompt = `You are ${agent?.name}, ${agent?.role} at CaseBuddy. Give a 3-sentence status briefing on your current workload based on these recent emails. Be concise and in-character.\nEmails: ${agentEmails.map(e => '[' + e.subject + ']: ' + e.body.slice(0, 200)).join('\n\n')}`;
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are ${agent?.name}, ${agent?.role} at CaseBuddy. 
-Give a 3-sentence status briefing on your current workload based on these recent emails. Be concise and in-character.
-Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('\n\n')}`
-              }]
-            }],
-            generationConfig: { temperature: 0.7 },
-          }),
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7 } }),
         }
       );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as any;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No briefing available.';
       setAgentBrief({ agentId, loading: false, text });
-    } catch {
-      setAgentBrief({ agentId, loading: false, text: 'Could not load briefing.' });
+    } catch (e: any) {
+      setAgentBrief({ agentId, loading: false, text: 'Could not load briefing: ' + e.message });
     }
   };
 
