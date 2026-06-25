@@ -102,6 +102,73 @@ export const WORKFLOW_TEMPLATES: Record<string, Omit<Workflow, 'id' | 'createdAt
       makeStep('4', 'doc', 'witness-prep-memo',      'Doc: draft witness preparation memo'),
     ],
   },
+
+  'evidence-intake': {
+    name: 'Evidence Intake Pipeline',
+    description: 'Catalog exhibits, prepare chain of custody logs, and compile evidence binders',
+    triggerEvent: 'evidence-uploaded',
+    steps: [
+      makeStep('1', 'max', 'catalog-exhibits', 'Max: catalog and tag incoming evidence'),
+      makeStep('2', 'paralegal-criminal-1', 'chain-of-custody', 'Marcus Webb Jr.: prepare chain of custody logs'),
+      makeStep('3', 'paralegal-criminal-2', 'evidence-binder', 'Tanya Reid: assemble and organize evidence binder'),
+    ],
+  },
+
+  'client-onboarding': {
+    name: 'Client Onboarding Package',
+    description: 'Maya fact extraction, paralegal intake packet, Sierra scheduling, and Doc retainer drafting',
+    triggerEvent: 'case-created',
+    steps: [
+      makeStep('1', 'maya', 'extract-facts', 'Maya: extract and summarize initial case facts'),
+      makeStep('2', 'assigned-paralegal-1', 'intake-packet', 'Paralegal: prepare specific intake questionnaire and client instructions'),
+      makeStep('3', 'sierra', 'schedule-consultation', 'Sierra: coordinate and schedule initial client consultation'),
+      makeStep('4', 'doc', 'draft-retainer', 'Doc: draft formal client representation agreement / retainer'),
+    ],
+  },
+
+  'medical-records-demand': {
+    name: 'Medical Records Demand',
+    description: 'Medical record requests, damages calculation, insurance follow-up logs, and deadline tracking',
+    triggerEvent: 'personal-injury-intake',
+    steps: [
+      makeStep('1', 'paralegal-pi-1', 'request-records', 'Sofia Cruz: prepare HIPAA authorizations and records requests'),
+      makeStep('2', 'paralegal-pi-2', 'insurance-demand', 'Derek Shaw: compile medical bills and drafts demand letter package'),
+      makeStep('3', 'sol', 'track-response-deadline', 'Sol: calendar insurance response deadline and follow-up alerts'),
+    ],
+  },
+
+  'discovery-paralegal-pack': {
+    name: 'Discovery Paralegal Pack',
+    description: 'ESI cataloging, deposition scheduling, and trial exhibit layout coordination',
+    triggerEvent: 'litigation-discovery',
+    steps: [
+      makeStep('1', 'paralegal-civil-1', 'esi-inventory', 'Rachel Burns: review and inventory ESI database'),
+      makeStep('2', 'paralegal-employment-2', 'deposition-schedule', 'Tyler Mann: coordinate witness/opposing counsel schedules for depositions'),
+      makeStep('3', 'paralegal-civil-2', 'exhibit-list', 'Aaron King: organize draft trial exhibit lists'),
+    ],
+  },
+
+  'immigration-petition-prep': {
+    name: 'Immigration Petition Prep',
+    description: 'USCIS form validation, receipt tracking, and final attorney legal review',
+    triggerEvent: 'immigration-intake',
+    steps: [
+      makeStep('1', 'paralegal-immigration-1', 'uscis-forms', 'Priya Patel: compile USCIS forms and supporting document checklists'),
+      makeStep('2', 'paralegal-immigration-2', 'court-exhibits', 'Carlos Reyes: prepare removal defense country conditions and court declarations'),
+      makeStep('3', 'immigration', 'attorney-review', 'Amir Hassan: perform final legal review of petition package'),
+    ],
+  },
+
+  'estate-inventory': {
+    name: 'Estate Inventory',
+    description: 'Asset cataloging, beneficiary conflicts check, and draft trust distribution action plan',
+    triggerEvent: 'estate-planning-start',
+    steps: [
+      makeStep('1', 'paralegal-estate-2', 'asset-inventory', 'Oliver Park: audit and valuate estate asset inventory'),
+      makeStep('2', 'paralegal-estate-1', 'beneficiary-review', 'Mei Chen: review beneficiary designations and check for probate conflicts'),
+      makeStep('3', 'estate-planning', 'draft-action-plan', 'Grace Liu: draft client trust distribution action plan'),
+    ],
+  },
 };
 
 /** Clone a workflow template and bind it to a specific case */

@@ -11,7 +11,7 @@
 import { deepseekChat } from './deepseek';
 import { recordHandoff, recordAction, addInsight } from './agentMemory';
 import { pushInsightAlert, pushTaskComplete } from './notificationManager';
-import { getAgentById, getSpecialistById, LEGAL_SPECIALISTS } from '../agents/personas';
+import { getAgentById, getSpecialistById, getParalegalById, getParalegalsByAttorney, LEGAL_SPECIALISTS } from '../agents/personas';
 import { backgroundEngine } from './backgroundAgentEngine';
 import { AGENT_CONFIG } from '../config/agentConfig';
 import type { Workflow, WorkflowStep, Case } from '../types';
@@ -56,13 +56,24 @@ async function executeStep(
   workflow: Workflow,
   caseData: Case | undefined
 ): Promise<string> {
-  const agent = getAgentById(step.agentId);
-  const specialist = getSpecialistById(step.agentId);
-  const persona = agent ?? specialist;
-  if (!persona) throw new Error(`Unknown agent: ${step.agentId}`);
+  let agentId = step.agentId;
+  if (agentId === 'assigned-paralegal-1' || agentId === 'assigned-paralegal-2') {
+    const attorneyId = caseData?.assignedSpecialistId || 'criminal-defense';
+    const pls = getParalegalsByAttorney(attorneyId);
+    const index = agentId === 'assigned-paralegal-1' ? 0 : 1;
+    agentId = pls[index]?.id ?? (index === 0 ? 'paralegal-criminal-1' : 'paralegal-criminal-2');
+  }
+
+  const agent = getAgentById(agentId);
+  const specialist = getSpecialistById(agentId);
+  const paralegal = getParalegalById(agentId);
+  const persona = agent ?? specialist ?? paralegal;
+  if (!persona) throw new Error(`Unknown agent: ${agentId}`);
 
   const sysInstruction =
-    (specialist ? specialist.systemInstruction : `You are ${persona.name}, ${(agent as any).title}. ${(agent as any).description}`) +
+    (specialist ? specialist.systemInstruction :
+     paralegal ? paralegal.systemInstruction :
+     `You are ${persona.name}, ${(agent as any).title}. ${(agent as any).description}`) +
     '\n\nYou are operating autonomously as part of an automated workflow. Be thorough and practical.';
 
   const caseCtx = caseData

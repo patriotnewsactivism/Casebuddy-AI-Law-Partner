@@ -1,6 +1,7 @@
 import React, { useState, useContext, useEffect, useRef, useMemo} from 'react';
 import { AppContext } from '../App';
 import { analyzeEvidence } from '../services/geminiService';
+import { onDiscoveryReceived } from '../services/caseEventHooks';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
@@ -81,6 +82,17 @@ const EvidenceVault = () => {
       save(updated);
       setSelected(item);
       toast.success('Evidence analyzed and stored!');
+
+      // Auto-trigger discovery pipeline if the file looks like discovery material
+      const discoveryKeywords = ['discovery', 'subpoena', 'interrogator', 'deposition', 'request', 'production', 'disclosure'];
+      const isDiscovery = discoveryKeywords.some(kw =>
+        file.name.toLowerCase().includes(kw) ||
+        (analysis.tags || []).some((t: string) => t.toLowerCase().includes(kw))
+      );
+      if (isDiscovery) {
+        onDiscoveryReceived(activeCase.id, activeCase.title).catch(() => {});
+        toast.info('📋 Discovery pipeline started — agents are drafting responses.');
+      }
     } catch (err) {
       toast.error('Analysis failed. Please try again.');
       console.error(err);

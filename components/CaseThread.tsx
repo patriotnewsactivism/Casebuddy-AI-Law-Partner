@@ -138,7 +138,13 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offlineMode, setOfflineMode] = useState(false);
-  const [offlineMessages, setOfflineMessages] = useState<CaseMessage[]>([]);
+  const [offlineMessages, setOfflineMessages] = useState<CaseMessage[]>(() => {
+    // Rehydrate from localStorage on mount
+    try {
+      const saved = localStorage.getItem(`warroom_msgs_${activeCase?.id ?? 'global'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [showRoster, setShowRoster] = useState(true);
   const [showParticipants, setShowParticipants] = useState(false);
   const [expandedAttorneys, setExpandedAttorneys] = useState<Set<string>>(new Set());
@@ -162,6 +168,16 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
   const caseSummary = activeCase?.summary ?? '';
   const caseStatus = activeCase?.status ?? '';
   const caseCtx = `Case: ${caseTitle}\nStatus: ${caseStatus}\nSummary: ${caseSummary}`;
+
+  // ── Offline persistence key (per case) ──────────────────────────────────
+  const offlineKey = `warroom_msgs_${caseId}`;
+
+  // Auto-save offline messages whenever they change
+  useEffect(() => {
+    if (offlineMode) {
+      try { localStorage.setItem(offlineKey, JSON.stringify(offlineMessages)); } catch {}
+    }
+  }, [offlineMessages, offlineMode, offlineKey]);
 
   const allMessages = offlineMode ? offlineMessages : messages;
 

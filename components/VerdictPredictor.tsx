@@ -50,7 +50,7 @@ const ProbabilityRing = ({ value }: { value: number }) => {
 };
 
 const VerdictPredictor = () => {
-  const { activeCase } = useContext(AppContext);
+  const { activeCase, updateCase } = useContext(AppContext);
   const [vpForm, setVpForm] = useState({ caseType: 'civil', jurisdiction: 'federal', evidenceStrength: 50, additionalFactors: '' });
   const caseType = vpForm.caseType;
   const jurisdiction = vpForm.jurisdiction;
@@ -88,6 +88,12 @@ const VerdictPredictor = () => {
       localStorage.setItem('verdict_predictions', JSON.stringify(updated));
       setHistory(updated);
       setPrediction(p);
+
+      // Write winProbability back to the active case so the monitor can track drops
+      if (activeCase && typeof p.winProbability === 'number') {
+        updateCase({ ...activeCase, winProbability: p.winProbability });
+      }
+
       toast.success('Prediction complete!');
     } catch (e) {
       toast.error('Prediction failed. Please try again.');

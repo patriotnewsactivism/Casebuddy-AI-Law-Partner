@@ -13,7 +13,7 @@
 
 import { toast } from 'react-toastify';
 import { AGENT_CONFIG } from '../config/agentConfig';
-import { getAgentById, OPERATIONAL_AGENTS } from '../agents/personas';
+import { getAnyPersonById } from '../agents/personas';
 import type { AgentNotification, NotificationPriority, NotificationType } from '../types';
 
 // ── Storage key ────────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ function isQuietHours(): boolean {
 function toastNotification(n: AgentNotification): void {
   if (isQuietHours() && n.priority !== 'critical') return;
 
-  const agent = OPERATIONAL_AGENTS.find(a => a.id === n.agentId);
+  const agent = getAnyPersonById(n.agentId);
   const prefix = agent ? `${agent.emoji} ${agent.name}` : 'CaseBuddy';
   const msg = `${prefix}: ${n.message}`;
 
@@ -97,7 +97,7 @@ function flushBatch(): void {
   }
 
   for (const [agentId, group] of Object.entries(grouped)) {
-    const agent = OPERATIONAL_AGENTS.find(a => a.id === agentId);
+    const agent = getAnyPersonById(agentId);
     const name = agent ? `${agent.emoji} ${agent.name}` : 'Agent';
     const top = group.find(n => n.priority === 'high') ?? group[0];
 

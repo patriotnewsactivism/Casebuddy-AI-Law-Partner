@@ -395,11 +395,47 @@ class BackgroundAgentEngine {
     const activeCase = cases.find(c => c.id === task.caseId);
     if (!activeCase) return;
 
+    const agent = getAgentById(task.agentId);
+    const agentName = agent?.name ?? 'Doc';
+
+    // Determine document type from the task description
+    const docTypeHint = task.description || 'legal document';
+
+    const response = await deepseekChat({
+      systemInstruction: `You are ${agentName}, an expert legal document drafter at CaseBuddy Law Firm. Draft a complete, professional ${docTypeHint} for the following case. Be thorough and ready-to-use.`,
+      messages: [
+        {
+          role: 'user',
+          content: `Case: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary ?? 'No summary provided.'}\n\nDraft a complete ${docTypeHint}. Include all standard sections. Be specific to this case.`,
+        },
+      ],
+      temperature: 0.4,
+      maxTokens: 2000,
+      timeoutMs: 60_000,
+    });
+
+    // Save to drafted docs bucket
+    const DOCS_KEY = 'cb_drafted_docs';
+    let docs: any[] = [];
+    try { docs = JSON.parse(localStorage.getItem(DOCS_KEY) ?? '[]'); } catch {}
+    const docEntry = {
+      id: `doc_${Date.now()}`,
+      caseId: task.caseId,
+      caseTitle: activeCase.title,
+      agentId: task.agentId,
+      agentName,
+      docType: docTypeHint,
+      content: response,
+      createdAt: Date.now(),
+    };
+    docs.unshift(docEntry);
+    try { localStorage.setItem(DOCS_KEY, JSON.stringify(docs.slice(0, 100))); } catch {}
+
     pushTaskComplete(
       task.agentId,
       task.caseId,
       activeCase.title,
-      `Draft prepared by ${getAgentById(task.agentId)?.name ?? 'Doc'}. Review in Document Center.`
+      `${agentName} drafted a ${docTypeHint}. Review in Document Center.`
     );
   }
 

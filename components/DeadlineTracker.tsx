@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { AppContext } from '../App';
-import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X, Scale, Loader2, Gavel } from 'lucide-react';
+import { Clock, Plus, Trash2, AlertTriangle, CheckCircle, Bell, Calendar, ChevronDown, ChevronUp, X, Scale, Loader2, Gavel, MessageSquare } from 'lucide-react';
+import { scheduleDeadlineAlert } from '../services/integrationService';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { toast } from 'react-toastify';
@@ -132,7 +133,7 @@ const parseIsoDate = (s: string): string | null => {
 };
 
 const DeadlineTracker: React.FC = () => {
-  const { activeCase } = useContext(AppContext);
+  const { activeCase, updateCase } = useContext(AppContext);
   const [deadlines, setDeadlines] = useState<Deadline[]>(() => {
     try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : []; }
     catch { return []; }
@@ -266,6 +267,13 @@ Return ONLY a JSON object with exactly these string fields:
       createdAt: Date.now(),
     };
     setDeadlines(prev => [d, ...prev]);
+
+    // K1: if it's a trial/hearing date, sync it back to the active case
+    if (activeCase && (form.type === 'trial-date' || form.type === 'hearing-date') && form.dueDate) {
+      updateCase({ ...activeCase, nextCourtDate: form.dueDate });
+      toast.info('📅 Court date synced to case — monitor will watch this deadline.');
+    }
+
     setForm({ ...EMPTY_FORM, caseTitle: activeCase?.title ?? '' });
     setShowForm(false);
     toast.success('Deadline added');
@@ -585,6 +593,22 @@ Return ONLY a JSON object with exactly these string fields:
                             <Bell size={13} /> Reminder triggered — within {d.reminderDays}-day window
                           </div>
                         )}
+                        {/* S1: SMS Reminder button */}
+                        <button
+                          onClick={async () => {
+                            const phone = prompt('Enter phone number for SMS reminder (e.g. +12015550100):');
+                            if (!phone) return;
+                            try {
+                              await scheduleDeadlineAlert({ title: d.label, date: new Date(d.dueDate).toLocaleDateString(), phone });
+                              toast.success('📱 SMS reminder queued via Twilio!');
+                            } catch (err: any) {
+                              toast.error(err.message?.includes('not configured') ? 'Add VITE_TWILIO_ACCOUNT_SID to .env.local to enable SMS.' : 'SMS send failed.');
+                            }
+                          }}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-400 hover:bg-violet-500/20 transition-colors"
+                        >
+                          <MessageSquare size={11} /> Send SMS Reminder
+                        </button>
                       </div>
                     )}
                   </div>

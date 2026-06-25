@@ -191,14 +191,94 @@ const rules: Rule[] = [
         const key = `daily_${c.id}`;
         if (!hasFiredToday(key)) {
           fireTodayKey(key);
+          const agentId = c.assignedSpecialistId || 'lex';
           backgroundEngine.schedule({
-            agentId: 'lex',
+            agentId,
             caseId: c.id,
             taskType: 'research',
             schedule: 'daily',
             priority: 'low',
             description: `Daily background legal research for ${c.title}`,
           });
+        }
+      }
+    },
+  },
+
+  // ── Stale Case Monitor Rule (D1) ──────────────────────────────────────
+  {
+    id: 'stale-case-rule',
+    check: async (cases, now) => {
+      for (const c of cases) {
+        if (c.status === 'Closed') continue;
+        const lastUpdated = c.updatedAt ? new Date(c.updatedAt).getTime() : now;
+        const diffDays = Math.ceil((now - lastUpdated) / 86_400_000);
+        if (diffDays >= 30) {
+          const key = `stale_${c.id}`;
+          if (!hasFiredToday(key)) {
+            fireTodayKey(key);
+            backgroundEngine.schedule({
+              agentId: 'maya',
+              caseId: c.id,
+              taskType: 'analyze',
+              schedule: 'immediate',
+              priority: 'medium',
+              description: `Stale case review — no updates for ${diffDays} days`,
+            });
+            pushInsightAlert(
+              'maya',
+              c.id,
+              c.title,
+              'Stale Case Warning',
+              `Case "${c.title}" has had no status updates for ${diffDays} days. Maya has scheduled a status review.`,
+              'medium'
+            );
+          }
+        }
+      }
+    },
+  },
+
+  // ── Deposition Approaching Rule (D3) ──────────────────────────────────
+  {
+    id: 'deposition-approaching-rule',
+    check: async (cases, now) => {
+      let deadlines: any[] = [];
+      try {
+        deadlines = JSON.parse(localStorage.getItem('casebuddy_deadlines') ?? '[]');
+      } catch {}
+
+      for (const d of deadlines) {
+        if (d.completed) continue;
+        const isDepo = d.label?.toLowerCase().includes('deposition') || d.label?.toLowerCase().includes('depo');
+        if (!isDepo) continue;
+
+        const due = new Date(d.dueDate).getTime();
+        if (isNaN(due)) continue;
+        const days = Math.ceil((due - now) / 86_400_000);
+
+        if (days === 5) {
+          const matchingCase = cases.find(c => c.title === d.caseTitle);
+          if (!matchingCase) continue;
+
+          const key = `depo_${d.id}_5`;
+          if (!hasFiredToday(key)) {
+            fireTodayKey(key);
+            const wf = createWorkflow('witness-deposition-prep', matchingCase.id, {
+              witnessName: d.label.replace(/deposition|depo/gi, '').trim(),
+            });
+            if (wf) {
+              orchestrator.executeWorkflowAsync(wf, matchingCase);
+            }
+            pushInsightAlert(
+              'rex',
+              matchingCase.id,
+              matchingCase.title,
+              'Deposition Prep Triggered',
+              `Deposition for "${d.label}" is in 5 days. Lex and Rex are preparing outlines and cross-examinations.`,
+              'high'
+            );
+          }
         }
       }
     },

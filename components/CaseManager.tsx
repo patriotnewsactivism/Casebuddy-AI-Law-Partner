@@ -11,7 +11,7 @@ import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
 import AgentHeader from './AgentHeader';
 import CrossCasePanel from './CrossCasePanel';
-import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
@@ -31,7 +31,9 @@ const CaseManager = () => {
     client: '',
     opposingCounsel: '',
     judge: '',
-    summary: ''
+    summary: '',
+    caseType: 'Criminal Law',
+    assignedSpecialistId: 'criminal-defense'
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,12 +136,14 @@ const CaseManager = () => {
       judge: newCaseData.judge?.trim() || 'Unknown',
       nextCourtDate: 'TBD',
       summary: newCaseData.summary?.trim() || 'No summary provided.',
-      winProbability: 50
+      winProbability: 50,
+      caseType: newCaseData.caseType,
+      assignedSpecialistId: newCaseData.assignedSpecialistId
     };
     addCase(newCase);
     handleSuccess(`Case "${newCase.title}" created successfully`);
     setShowNewCaseModal(false);
-    setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '' });
+    setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '', caseType: 'Criminal Law', assignedSpecialistId: 'criminal-defense' });
     // Case handoff — brief Sol + open War Room
     setTimeout(() => {
       toast.info(
@@ -313,6 +317,20 @@ const CaseManager = () => {
                 <span className="text-slate-400 block">Summary</span>
                 <span className="text-slate-300 leading-relaxed">{activeCase.summary}</span>
               </div>
+              {activeCase.caseType && (
+                <div>
+                  <span className="text-slate-400 block">Case Type</span>
+                  <span className="text-slate-200">{activeCase.caseType}</span>
+                </div>
+              )}
+              {activeCase.assignedSpecialistId && (
+                <div>
+                  <span className="text-slate-400 block">Assigned Attorney</span>
+                  <span className="text-slate-200">
+                    {LEGAL_SPECIALISTS.find(s => s.id === activeCase.assignedSpecialistId)?.name ?? activeCase.assignedSpecialistId}
+                  </span>
+                </div>
+              )}
             </div>
             {/* Cross-agent quick actions */}
             <div className="mt-5 pt-4 border-t border-slate-700 space-y-2">
@@ -500,11 +518,67 @@ const CaseManager = () => {
                   <textarea 
                     required
                     rows={3}
-                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:border-gold-500 outline-none"
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:border-gold-500 outline-none mb-3"
                     placeholder="Briefly describe the charges or civil complaint..."
                     value={newCaseData.summary}
                     onChange={e => setNewCaseData({...newCaseData, summary: e.target.value})}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Case Type</label>
+                    <select
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white focus:border-gold-500 outline-none text-sm"
+                      value={newCaseData.caseType}
+                      onChange={e => {
+                        const ct = e.target.value;
+                        const mapping: Record<string, string> = {
+                          'Criminal Law': 'criminal-defense',
+                          'Personal Injury': 'personal-injury',
+                          'Family Law': 'family-law',
+                          'Immigration Law': 'immigration',
+                          'IP / Patent Law': 'intellectual-property',
+                          'Corporate / Business Law': 'corporate',
+                          'Employment / Labor Law': 'employment',
+                          'Real Estate Law': 'real-estate',
+                          'Bankruptcy / Insolvency': 'bankruptcy',
+                          'Civil Litigation': 'civil-litigation',
+                          'Estate Planning & Probate': 'estate-planning',
+                          'Tax Law': 'tax-law'
+                        };
+                        setNewCaseData({
+                          ...newCaseData,
+                          caseType: ct,
+                          assignedSpecialistId: mapping[ct] || 'criminal-defense'
+                        });
+                      }}
+                    >
+                      <option value="Criminal Law">Criminal Law</option>
+                      <option value="Personal Injury">Personal Injury</option>
+                      <option value="Family Law">Family Law</option>
+                      <option value="Immigration Law">Immigration Law</option>
+                      <option value="IP / Patent Law">IP / Patent Law</option>
+                      <option value="Corporate / Business Law">Corporate / Business Law</option>
+                      <option value="Employment / Labor Law">Employment / Labor Law</option>
+                      <option value="Real Estate Law">Real Estate Law</option>
+                      <option value="Bankruptcy / Insolvency">Bankruptcy / Insolvency</option>
+                      <option value="Civil Litigation">Civil Litigation</option>
+                      <option value="Estate Planning & Probate">Estate Planning & Probate</option>
+                      <option value="Tax Law">Tax Law</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Assigned Attorney</label>
+                    <select
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white focus:border-gold-500 outline-none text-sm"
+                      value={newCaseData.assignedSpecialistId}
+                      onChange={e => setNewCaseData({...newCaseData, assignedSpecialistId: e.target.value})}
+                    >
+                      {LEGAL_SPECIALISTS.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.practiceArea})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <button 
                   type="submit"

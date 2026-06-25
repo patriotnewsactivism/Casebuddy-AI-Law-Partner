@@ -11,6 +11,7 @@ import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
 import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
 import { createClientInvite, fetchClientInvites, deleteClientInvite, ClientInvite } from '../services/clientInviteStore';
 import { getSpecialistById } from '../agents/personas';
+import { onIntakeReceived } from '../services/caseEventHooks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const scoreColor = (s: number) =>
@@ -268,6 +269,7 @@ const IntakeInbox: React.FC = () => {
     const unsub = subscribeIntakes(row => {
       setIntakes(prev => [row, ...prev.filter(r => r.id !== row.id)]);
       toast.info(`New intake from ${row.full_name || 'unknown'}`, { autoClose: 4000 });
+      onIntakeReceived(row).catch(() => {});
     });
     return unsub;
   }, []);
@@ -281,6 +283,7 @@ const IntakeInbox: React.FC = () => {
     const newCase: Case = {
       id: `case_${Date.now()}`,
       title: `${intake.full_name} — ${intake.matter_type}`,
+      client: intake.full_name,
       clientName: intake.full_name,
       status: 'Active' as CaseStatus,
       caseType: intake.matter_type,
@@ -291,6 +294,7 @@ const IntakeInbox: React.FC = () => {
       notes: [],
       timeline: [],
       hearings: [],
+      assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
     } as unknown as Case;
     setCases((prev: Case[]) => [newCase, ...prev]);
     handleStatusChange(intake.id, 'routed');

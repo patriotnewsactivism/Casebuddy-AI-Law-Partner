@@ -38,6 +38,8 @@ export interface Case {
   summary: string;
   winProbability: number;
   updatedAt?: string;
+  caseType?: string;
+  assignedSpecialistId?: string;
 }
 
 // ── Intake pipeline ──────────────────────────────────────────────────────────

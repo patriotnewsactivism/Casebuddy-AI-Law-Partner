@@ -383,7 +383,12 @@ const LegalTeam: React.FC = () => {
     try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)); } catch {}
   }, [sessions]);
 
-  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId)!
+  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId);
+  const activeParalegal = PARALEGALS.find(p => p.id === activeId);
+  // Resolve the effective system instruction regardless of persona type
+  const effectiveInstruction: string = activeParalegal?.systemInstruction
+    ?? specialist?.systemInstruction
+    ?? LEGAL_SPECIALISTS[0].systemInstruction;
 
   const getSession = (id: string): ConsultationSession =>
     sessions[id] || { specialistId: id, messages: [] };
@@ -425,7 +430,7 @@ const LegalTeam: React.FC = () => {
         let accumulated = '';
         try {
           const stream = consultSpecialistStream(
-            specialist.systemInstruction,
+            effectiveInstruction,
             history,
             text,
             caseCtx,
@@ -435,10 +440,10 @@ const LegalTeam: React.FC = () => {
             accumulated += chunk;
             setStreamingText(accumulated);
           }
-          reply = accumulated || await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, fullMemCtx);
+          reply = accumulated || await consultSpecialist(effectiveInstruction, history, text, caseCtx, fullMemCtx);
         } catch {
           // Streaming failed — fall back to non-streaming
-          reply = await consultSpecialist(specialist.systemInstruction, history, text, caseCtx, fullMemCtx);
+          reply = await consultSpecialist(effectiveInstruction, history, text, caseCtx, fullMemCtx);
         }
       } else {
         // Deep reasoning modes
@@ -446,7 +451,7 @@ const LegalTeam: React.FC = () => {
           mode,
           agentId: activeId,
           caseId: activeCase?.id ?? 'general',
-          systemInstruction: specialist.systemInstruction,
+          systemInstruction: effectiveInstruction,
           task: text,
           caseContext: caseCtx ?? '',
         });
@@ -494,7 +499,8 @@ const LegalTeam: React.FC = () => {
         },
       }));
     } catch (err) {
-      handleError(err, `${specialist.name} is unavailable. Please try again.`, 'LegalTeam');
+      const label = activeParalegal?.name ?? specialist?.name ?? 'Agent';
+      handleError(err, `${label} is unavailable. Please try again.`, 'LegalTeam');
     } finally {
       setLoading(false);
       setStreamingText('');
@@ -672,6 +678,7 @@ const LegalTeam: React.FC = () => {
                   onSend={handleSend}
                   onReset={handleReset}
                   loading={loading}
+                  streamingText={streamingText}
                   onBack={() => setMobileShowChat(false)}
                   activeCase={activeCase}
                   onFeedback={handleFeedback}
@@ -686,6 +693,7 @@ const LegalTeam: React.FC = () => {
                 onSend={handleSend}
                 onReset={handleReset}
                 loading={loading}
+                streamingText={streamingText}
                 onBack={() => setMobileShowChat(false)}
                 activeCase={activeCase}
                 onFeedback={handleFeedback}
