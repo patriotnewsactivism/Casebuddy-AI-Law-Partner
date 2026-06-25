@@ -169,6 +169,41 @@ export const WORKFLOW_TEMPLATES: Record<string, Omit<Workflow, 'id' | 'createdAt
       makeStep('3', 'estate-planning', 'draft-action-plan', 'Grace Liu: draft client trust distribution action plan'),
     ],
   },
+
+  'client-milestone-update': {
+    name: 'Client Milestone Update',
+    description: 'Sierra drafts milestone update, attorney reviews it, and Sierra sends it to the client',
+    triggerEvent: 'milestone-reached',
+    steps: [
+      makeStep('1', 'sol', 'detect-milestone', 'Sol: check recent case actions and identify milestone'),
+      makeStep('2', 'sierra', 'draft-client-update', 'Sierra: draft clear, reassuring email update for client review'),
+      makeStep('3', 'assigned-paralegal-1', 'review-details', 'Paralegal: verify case billing or document references'),
+    ],
+  },
+
+  'foia-pipeline': {
+    name: 'FOIA Public Records Request Pipeline',
+    description: 'Maya analyzes request scope, Lex identifies agencies, Doc drafts request, and Sol sets follow-up deadline',
+    triggerEvent: 'foia-requested',
+    steps: [
+      makeStep('1', 'maya', 'analyze-foia-scope', 'Maya: analyze scope of public records sought'),
+      makeStep('2', 'lex', 'identify-agencies', 'Lex: identify responsive government agencies and controlling statutes'),
+      makeStep('3', 'doc', 'draft-foia-request', 'Doc: draft formal FOIA public records request'),
+      makeStep('4', 'sol', 'set-foia-deadline', 'Sol: set follow-up response deadline alert'),
+    ],
+  },
+
+  'post-trial-wrap': {
+    name: 'Post-Trial Settlement & Wrap',
+    description: 'Rex documents outcome, Lex flags appeal windows, Doc drafts fee petition, and Sol closes pending deadlines',
+    triggerEvent: 'post-trial-reached',
+    steps: [
+      makeStep('1', 'rex', 'document-trial-outcome', 'Rex: summarize trial verdict and outcome details'),
+      makeStep('2', 'lex', 'flag-appeal-deadlines', 'Lex: identify post-trial appeal windows and deadlines'),
+      makeStep('3', 'doc', 'draft-fee-petition', 'Doc: draft attorney fee petition or final judgment proposal'),
+      makeStep('4', 'sol', 'close-deadlines', 'Sol: close all open deadlines and archive calendar'),
+    ],
+  },
 };
 
 /** Clone a workflow template and bind it to a specific case */

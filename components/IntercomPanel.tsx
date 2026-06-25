@@ -9,7 +9,8 @@ interface AgentConfig {
   colorClass: string; personality: string; voiceModel: string;
 }
 
-import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS } from '../agents/personas';
+import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS, getSpecialistById, getParalegalById } from '../agents/personas';
+import { getVoiceProfile } from '../agents/voiceProfiles';
 
 type IntercomSection = 'ops' | 'attorneys' | 'paralegals';
 
@@ -138,9 +139,29 @@ const IntercomPanel: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const getReply = useCallback(async (userText: string, agent: AgentConfig, history: Message[]) => {
     const key = getKey();
     if (!key) return "No AI connection right now — try text mode.";
-    const sys = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm, on a live intercom call with the attorney.
-Personality: ${agent.personality}
-Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a quick call. Get to the point immediately. No filler phrases.`;
+    
+    const paralegal = getParalegalById(agent.id);
+    const specialist = getSpecialistById(agent.id);
+    const voiceProfile = getVoiceProfile(agent.id);
+    
+    let personaInstruction = '';
+    if (paralegal) {
+      personaInstruction = paralegal.systemInstruction;
+    } else if (specialist) {
+      personaInstruction = specialist.systemInstruction;
+    } else if (voiceProfile) {
+      personaInstruction = voiceProfile.systemInstruction;
+    } else {
+      personaInstruction = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm. Personality: ${agent.personality}`;
+    }
+
+    const sys = `${personaInstruction}
+
+Rules for this Intercom call:
+- You are on a live intercom call with the attorney.
+- Keep responses to 1-3 sentences max.
+- Sound like a real colleague on a quick call.
+- Get to the point immediately. No filler phrases.`;
     const contents = [
       { role: 'user',  parts: [{ text: sys }] },
       { role: 'model', parts: [{ text: `Got it — ${agent.name} here.` }] },

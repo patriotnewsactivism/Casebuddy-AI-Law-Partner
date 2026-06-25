@@ -206,6 +206,29 @@ Generate the complete document ready for attorney review.`;
       });
 
       setGeneratedContent(response || '');
+      if (response && activeCase) {
+        const DOCS_KEY = 'cb_drafted_docs';
+        let docs: any[] = [];
+        try {
+          docs = JSON.parse(localStorage.getItem(DOCS_KEY) ?? '[]');
+        } catch {}
+        const template = TEMPLATES.find(t => t.id === selectedTemplate);
+        const docTypeHint = template?.label || 'Legal Document';
+        const docEntry = {
+          id: `doc_${Date.now()}`,
+          caseId: activeCase.id,
+          caseTitle: activeCase.title,
+          agentId: 'doc',
+          agentName: 'Doc',
+          docType: docTypeHint,
+          content: response,
+          createdAt: Date.now(),
+        };
+        docs.unshift(docEntry);
+        try {
+          localStorage.setItem(DOCS_KEY, JSON.stringify(docs.slice(0, 100)));
+        } catch {}
+      }
     } catch (err: any) {
       console.error('Document generation failed', err);
       setError(`Generation failed: ${err.message || 'Unknown error'}`);

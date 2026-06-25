@@ -106,6 +106,85 @@ async function executeStep(
   return response;
 }
 
+async function saveDocumentAndEmailDraft(
+  step: WorkflowStep,
+  workflow: Workflow,
+  caseData: Case | undefined,
+  output: string
+) {
+  const isDocAction = step.action.startsWith('draft') || 
+                      step.action.includes('memo') || 
+                      step.action.includes('letter') || 
+                      step.action.includes('brief') || 
+                      step.action.includes('document');
+  if (!isDocAction) return;
+
+  let agentId = step.agentId;
+  if (agentId === 'assigned-paralegal-1' || agentId === 'assigned-paralegal-2') {
+    const attorneyId = caseData?.assignedSpecialistId || 'criminal-defense';
+    const pls = getParalegalsByAttorney(attorneyId);
+    const index = agentId === 'assigned-paralegal-1' ? 0 : 1;
+    agentId = pls[index]?.id ?? (index === 0 ? 'paralegal-criminal-1' : 'paralegal-criminal-2');
+  }
+
+  const agent = getAgentById(agentId) ?? getSpecialistById(agentId) ?? getParalegalById(agentId);
+  const agentName = agent?.name ?? 'Doc';
+  const docTypeHint = step.action.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  
+  // 1. Save completed draft to cb_drafted_docs
+  const DOCS_KEY = 'cb_drafted_docs';
+  let docs: any[] = [];
+  try {
+    docs = JSON.parse(localStorage.getItem(DOCS_KEY) ?? '[]');
+  } catch {}
+  
+  const docEntry = {
+    id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    caseId: workflow.caseId ?? 'general',
+    caseTitle: caseData?.title ?? 'General Matters',
+    agentId,
+    agentName,
+    docType: docTypeHint,
+    content: output,
+    createdAt: Date.now(),
+  };
+  
+  docs.unshift(docEntry);
+  try {
+    localStorage.setItem(DOCS_KEY, JSON.stringify(docs.slice(0, 100)));
+  } catch {}
+
+  // 2. Auto-draft email in MailRoom
+  const MAIL_KEY = 'casebuddy_mailroom_v2';
+  let emails: any[] = [];
+  try {
+    emails = JSON.parse(localStorage.getItem(MAIL_KEY) ?? '[]');
+  } catch {}
+
+  const draftEmail = {
+    id: `draft-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    from: `${agentId}@casebuddy.live`,
+    fromName: `${agentName} · CaseBuddy`,
+    fromAgent: agentId,
+    to: 'client@example.com',
+    subject: `Draft: [${workflow.name}] ${docTypeHint}`,
+    body: `Hi,\n\nHere is the generated ${docTypeHint} for your review:\n\n${output}\n\n— ${agentName}`,
+    timestamp: new Date().toISOString(),
+    read: true,
+    starred: false,
+    folder: 'drafts' as const,
+    tag: 'client-update',
+    priority: 'normal' as const,
+    aiSummary: `Draft of ${docTypeHint} from workflow ${workflow.name}`,
+    caseRef: caseData?.title ?? 'General Matters',
+  };
+
+  emails.unshift(draftEmail);
+  try {
+    localStorage.setItem(MAIL_KEY, JSON.stringify(emails));
+  } catch {}
+}
+
 // ── Orchestrator ───────────────────────────────────────────────────────────
 
 class AgentOrchestrator {
@@ -152,6 +231,8 @@ class AgentOrchestrator {
           step.outputs = { result: output };
           step.status = 'completed';
           step.completedAt = Date.now();
+          
+          await saveDocumentAndEmailDraft(step, workflow, caseData, output);
           
           cumulativeOutputs[`step_${i}_output`] = output.slice(0, 800);
           cumulativeOutputs[`${step.action}_result`] = output.slice(0, 400);
@@ -200,6 +281,8 @@ class AgentOrchestrator {
               item.step.outputs = { result: output };
               item.step.status = 'completed';
               item.step.completedAt = Date.now();
+              
+              await saveDocumentAndEmailDraft(item.step, workflow, caseData, output);
               
               await recordAction(item.step.agentId, workflow.caseId ?? '', {
                 type: 'workflow-step',
