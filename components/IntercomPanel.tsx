@@ -118,11 +118,17 @@ Rules: Keep responses to 1-3 sentences max. Sound like a real colleague on a qui
       const next = [...prev, userMsg];
       (async () => {
         setLoading(true);
-        const reply = await getReply(text, activeAgent, next);
-        const agentMsg: Message = { role: 'agent', text: reply, ts: Date.now() };
-        setMessages(pp => [...pp, agentMsg]);
-        setLoading(false);
-        await speak(reply, activeAgent);
+        try {
+          const reply = await getReply(text, activeAgent, next);
+          const agentMsg: Message = { role: 'agent', text: reply, ts: Date.now() };
+          setMessages(pp => [...pp, agentMsg]);
+          await speak(reply, activeAgent);
+        } catch {
+          const errMsg: Message = { role: 'agent', text: 'Connection issue — please try again.', ts: Date.now() };
+          setMessages(pp => [...pp, errMsg]);
+        } finally {
+          setLoading(false);
+        }
       })();
       return next;
     });
