@@ -437,9 +437,9 @@ const Dashboard = () => {
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <p className="font-semibold text-white text-sm leading-tight truncate">{c.title}</p>
                   <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                    c.status === 'Active' ? 'bg-green-900/50 text-green-400' :
-                    c.status === 'Pre-Trial' ? 'bg-yellow-900/50 text-yellow-400' :
-                    c.status === 'Closed' ? 'bg-slate-700 text-slate-400' :
+                    (c.status as string) === 'Active' || (c.status as string) === 'Pre-Trial' ? 'bg-yellow-900/50 text-yellow-400' :
+                    (c.status as string) === 'Trial' ? 'bg-red-900/50 text-red-400' :
+                    (c.status as string) === 'Closed' ? 'bg-slate-700 text-slate-400' :
                     'bg-blue-900/50 text-blue-400'
                   }`}>{c.status || 'Active'}</span>
                 </div>
