@@ -6,7 +6,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // ── run-migration ─────────────────────────────────────────────────────────────
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -181,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action || 'pacer-search');
   switch (action) {
     case 'run-migration': return handleRunMigration(req, res);
-    case 'pacer-search':  return handlePacerSearch(req, res);
-    default: return res.status(404).json({ error: `Unknown action: ${action}` });
+    case 'pacer-search':  return handlePacerSearch(req as any) as any;
+    default: res.status(404).json({ error: 'Unknown action: ' + action }); return;
   }
 }
