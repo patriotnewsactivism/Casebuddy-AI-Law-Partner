@@ -519,15 +519,9 @@ const App = () => {
     return unsub;
   }, []);
 
-  // Keep localStorage + Supabase in sync on every cases change.
-  const hasMounted = React.useRef(false);
+  // Keep localStorage in sync on every cases change.
   useEffect(() => {
     saveCases(cases);
-    if (hasMounted.current) {
-      syncLocalCasesToCloud(cases);
-    } else {
-      hasMounted.current = true;
-    }
   }, [cases]);
 
   const handleCloseOnboarding = () => {

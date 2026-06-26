@@ -23,6 +23,7 @@ import {
 } from '../agents/personas';
 import { AGENT_CONFIG } from '../config/agentConfig';
 import { loadCases } from '../utils/storage';
+import { deriveCaseRowId } from './caseStore';
 
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -273,7 +274,7 @@ export async function getOrCreateThread(
   const { data: existing } = await db()
     .from('case_threads')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', await deriveCaseRowId(caseId))
     .eq('firm_id', firmId)
     .eq('status', 'open')
     .order('created_at', { ascending: false })
@@ -286,7 +287,7 @@ export async function getOrCreateThread(
   const { data: created, error } = await db()
     .from('case_threads')
     .insert({
-      case_id: caseId,
+      case_id: await deriveCaseRowId(caseId),
       case_title: caseTitle,
       subject,
       firm_id: firmId,
@@ -305,7 +306,7 @@ export async function listThreadsForCase(caseId: string, firmId = 'default'): Pr
   const { data, error } = await db()
     .from('case_threads')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', await deriveCaseRowId(caseId))
     .eq('firm_id', firmId)
     .order('updated_at', { ascending: false });
 
@@ -362,7 +363,7 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
     .from('case_messages')
     .insert({
       thread_id: threadId,
-      case_id: caseId,
+      case_id: await deriveCaseRowId(caseId),
       firm_id: firmId,
       sender_type: 'user',
       sender_id: 'user',
@@ -420,7 +421,7 @@ export async function sendUserMessage(opts: SendMessageOptions): Promise<{ userM
     .from('case_messages')
     .insert({
       thread_id: threadId,
-      case_id: caseId,
+      case_id: await deriveCaseRowId(caseId),
       firm_id: firmId,
       sender_type: senderType,
       sender_id: targetAgentId,
@@ -468,7 +469,7 @@ export async function sendAgentMessage(
     .from('case_messages')
     .insert({
       thread_id: threadId,
-      case_id: caseId,
+      case_id: await deriveCaseRowId(caseId),
       firm_id: firmId,
       sender_type: senderType,
       sender_id: agentId,

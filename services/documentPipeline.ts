@@ -11,6 +11,7 @@
 
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { edgeFn, OcrResult } from './edgeFunctionClient';
+import { deriveCaseRowId } from './caseStore';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -129,7 +130,7 @@ export async function uploadDocument(
   const { data: doc, error: dbError } = await supabase
     .from('documents')
     .insert({
-      case_id: caseId,
+      case_id: await deriveCaseRowId(caseId),
       user_id: user.id,
       name: file.name,
       file_type: file.type,
@@ -208,7 +209,7 @@ export async function bulkUploadDocuments(
     const { data: maxBates } = await supabase
       .from('documents')
       .select('bates_formatted')
-      .eq('case_id', options.caseId)
+      .eq('case_id', await deriveCaseRowId(options.caseId))
       .eq('bates_prefix', options.batesPrefix)
       .order('bates_formatted', { ascending: false })
       .limit(1);
@@ -261,7 +262,7 @@ export async function getCaseDocuments(caseId: string): Promise<DocumentRecord[]
   const { data, error } = await supabase
     .from('documents')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', await deriveCaseRowId(caseId))
     .order('created_at', { ascending: false });
 
   if (error) {
