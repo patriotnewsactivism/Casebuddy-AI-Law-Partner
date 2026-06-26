@@ -22,6 +22,45 @@ export default defineConfig(({ mode }) => {
         proxy: {
           // Fallback for /api routes during local Vite development.
           // In production (Vercel), these are handled by actual edge functions.
+          '/api/ai/gemini': {
+            target: 'http://localhost:5000',
+            bypass: (req, res) => {
+              if (req.method === 'POST') {
+                // Proxy bypass: forward to actual Gemini API
+                const geminiKey = env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '';
+                if (!geminiKey) {
+                  res.writeHead(503, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Gemini API key not configured' }));
+                  return false;
+                }
+                try {
+                  const body = JSON.parse(req.body || '{}');
+                  const model = body.model || 'gemini-2.5-flash';
+                  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+                  fetch(geminiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      contents: body.contents,
+                      systemInstruction: body.systemInstruction,
+                      generationConfig: body.config || {}
+                    })
+                  }).then(async r => {
+                    const data = await r.json();
+                    res.writeHead(r.ok ? 200 : r.status, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify(data));
+                  }).catch(err => {
+                    res.writeHead(502, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Gemini API error: ' + err.message }));
+                  });
+                } catch {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Invalid request' }));
+                }
+                return false;
+              }
+            }
+          },
           '/api/ai/voice-keys': {
             target: 'http://localhost:5000',
             bypass: (req, res) => {

@@ -195,10 +195,10 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       if (clientInvite?.invite_id && result?.id) {
         void markInviteCompleted(clientInvite.invite_id, result.id);
       }
-    } catch {
+    } catch (saveErr: any) {
       // submitIntake already falls back to localStorage on Supabase errors, so
-      // reaching here is rare — don't surface it to the caller, the firm still
-      // has the record on this device.
+      // reaching here is rare — but log what happened for debugging.
+      console.error('[PublicIntake] submitIntake failed:', saveErr?.message);
     }
     // Hand the case off to the routed specialist by email (best-effort — never
     // blocks the prospect's confirmation screen).

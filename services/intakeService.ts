@@ -3,56 +3,57 @@ import { getGeminiKey } from './runtimeKeys';
 import { IntakeData, IntakeScore } from '../types';
 import { LEGAL_SPECIALISTS } from '../agents/personas';
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
+import { deepseekChat } from './deepseek';
+
+// Intake text analysis uses DeepSeek as primary (per project architecture).
+// Gemini is only used for multimodal (OCR/transcription).
+const callDeepSeekJson = async (system: string, user: string, maxTokens = 3000): Promise<string> => {
+  const text = await deepseekChat({
+    systemInstruction: system,
+    messages: [{ role: 'user', content: user }],
+    temperature: 0.3,
+    jsonMode: true,
+    maxTokens,
+    timeoutMs: 30000,
+  });
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+};
 
 // Intake AI calls go through the server-side proxy (/api/ai/gemini), which holds
 // the GEMINI_API_KEY. This keeps the key out of the browser and avoids depending
 // on a per-session client key that may be missing or restricted — the cause of
 // intakes silently failing at the extraction step. If the proxy isn't reachable
-// (e.g. a host without the edge function) we fall back to a direct browser call,
-// but only when a runtime key is actually available.
+// (e.g. a host without the edge function) we fall back to direct browser call.
 const callGeminiProxy = async (params: {
   model: string;
   contents: unknown;
   config?: unknown;
 }): Promise<string> => {
-  const resp = await fetch('/api/ai/gemini', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-  if (!resp.ok) {
-    let message = `Gemini proxy error (${resp.status})`;
-    try {
-      const body = await resp.json();
-      if (body?.error) message = body.error;
-    } catch { /* non-JSON error body */ }
-    throw new Error(message);
-  }
-  const data: any = await resp.json();
-  const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
-    .map((p: any) => p?.text ?? '')
-    .join('')
-    .trim();
-  if (!text) throw new Error('Gemini proxy returned an empty response');
-  return text;
-};
-
-const generateStructured = async (params: {
-  model: string;
-  contents: any;
-  config: any;
-}): Promise<string> => {
-  try {
-    return await callGeminiProxy(params);
-  } catch (proxyError) {
-    // Fall back to a direct browser call only if we actually have a key to use.
-    const key = getGeminiKey();
-    if (!key) throw proxyError;
-    const response = await new GoogleGenAI({ apiKey: key }).models.generateContent(params);
-    const text = response.text;
-    if (!text) throw proxyError;
+  // Retry on rate limit or transient errors
+  return retryWithBackoff(async () => {
+    const resp = await fetch('/api/ai/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!resp.ok) {
+      let message = `Gemini proxy error (${resp.status})`;
+      try {
+        const body = await resp.json();
+        if (body?.error) message = body.error;
+      } catch { /* non-JSON error body */ }
+      // Retry on rate limit, throw on other errors
+      if (resp.status === 429) throw new Error(message);
+      throw new Error(message);
+    }
+    const data: any = await resp.json();
+    const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+      .map((p: any) => p?.text ?? '')
+      .join('')
+      .trim();
+    if (!text) throw new Error('Gemini proxy returned an empty response');
     return text;
-  }
+  }, 3);
 };
 
 /** Export the proxy caller for use by IntakePage.tsx */
@@ -71,12 +72,7 @@ const transcriptToText = (transcript: Turn[]): string =>
     .join('\n');
 
 /**
- * Parse a model's JSON response defensively. Models occasionally wrap JSON in
- * markdown fences or emit a trailing note even under responseMimeType:json, and
- * a truncated response yields invalid JSON. For an intake — where a silent parse
- * failure means a client's entire story is lost — we strip fences, try to
- * recover the outermost JSON object, and THROW on real failure so retryWithBackoff
- * gets another attempt instead of persisting an empty record.
+ * Parse a model's JSON response defensively.
  */
 const safeParseJson = <T = any>(raw: string | undefined, context: string): T => {
   const text = (raw || '').trim();
@@ -90,7 +86,6 @@ const safeParseJson = <T = any>(raw: string | undefined, context: string): T => 
   try {
     return JSON.parse(cleaned) as T;
   } catch {
-    // Last resort: grab the first '{' … last '}' span and try that.
     const start = cleaned.indexOf('{');
     const end = cleaned.lastIndexOf('}');
     if (start !== -1 && end > start) {
@@ -104,20 +99,14 @@ const safeParseJson = <T = any>(raw: string | undefined, context: string): T => 
 
 /**
  * Distill a free-form intake conversation into a structured IntakeData record.
+ * Uses DeepSeek as primary (per project architecture) with Gemini fallback.
  */
 export const extractIntake = async (transcript: Turn[]): Promise<IntakeData> => {
   const convo = transcriptToText(transcript);
   return retryWithBackoff(async () => {
-    const text = await withTimeout(
-      generateStructured({
-        // Pro, not Flash: this is the firm's case report. Pro captures more
-        // detail from a long, rambling call and is far less prone to inventing
-        // facts that weren't said.
-        model: 'gemini-2.5-pro',
-        contents: {
-          parts: [
-            {
-              text: `You are the senior intake analyst for a law firm. Read the full intake call between MAYA (the firm's intake specialist) and a prospective CLIENT, and produce a thorough, faithful case report the attorneys can act on.
+    // DeepSeek is the primary text model per project architecture
+    const text = await callDeepSeekJson(
+      `You are the senior intake analyst for a law firm. Read the full intake call between MAYA (the firm's intake specialist) and a prospective CLIENT, and produce a thorough, faithful case report the attorneys can act on.
 
 ABSOLUTE RULE — NO HALLUCINATION:
 - Every single field must be grounded in what the CLIENT actually said in this transcript. Do NOT infer, assume, embellish, or fill gaps with plausible-sounding detail.
@@ -129,72 +118,17 @@ CAPTURE EVERYTHING — this caller may be long-winded, upset, or out of order. P
 
 FIELD GUIDANCE:
 - "summary": ONE tight sentence for a list view.
-- "detailedNarrative": a complete, well-organized factual write-up (multiple short paragraphs) of what happened, in plain English, strictly from what the client said. This is the heart of the report — be thorough.
+- "detailedNarrative": a complete, well-organized factual write-up (multiple short paragraphs) of what happened, in plain English, strictly from what the client said.
 - "keyFacts": the concrete facts the client stated, each as its own short bullet.
-- "timeline": events in chronological order with whatever date/time reference the client gave ("last March", "the next morning") — leave date empty if they didn't say.
-- "parties": every person or entity named, with their role ("landlord", "the other driver", "my employer").
-- "clientQuotes": a few short, exact verbatim quotes in the client's own words that capture the matter.
-- "openQuestions": important things that are still unknown or unclear and the firm should follow up on. THIS is where uncertainty goes — list the gap here instead of inventing an answer.
-- "matterType": the legal practice area in plain English (e.g. "Personal Injury", "Criminal Defense", "Family Law", "Employment", "Immigration", "Landlord-Tenant / Real Estate", "Civil Rights", "Contract Dispute"). If genuinely unclear, give your best single-label guess and note the uncertainty in openQuestions.
+- "timeline": events in chronological order with whatever date/time reference the client gave.
+- "parties": every person or entity named, with their role.
+- "clientQuotes": a few short, exact verbatim quotes in the client's own words.
+- "openQuestions": important things that are still unknown or unclear.
+- "matterType": the legal practice area in plain English.
 
-CONVERSATION:
-${convo}`,
-            },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              fullName: { type: Type.STRING },
-              contact: { type: Type.STRING },
-              matterType: { type: Type.STRING },
-              jurisdiction: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              detailedNarrative: { type: Type.STRING },
-              incidentDate: { type: Type.STRING },
-              opposingParties: { type: Type.STRING },
-              deadlines: { type: Type.STRING },
-              injuriesOrDamages: { type: Type.STRING },
-              desiredOutcome: { type: Type.STRING },
-              priorCounsel: { type: Type.STRING },
-              witnesses: { type: Type.STRING },
-              evidenceMentioned: { type: Type.STRING },
-              financialImpact: { type: Type.STRING },
-              priorLegalActions: { type: Type.STRING },
-              emotionalState: { type: Type.STRING },
-              keyFacts: { type: Type.ARRAY, items: { type: Type.STRING } },
-              clientQuotes: { type: Type.ARRAY, items: { type: Type.STRING } },
-              openQuestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              timeline: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    date: { type: Type.STRING },
-                    event: { type: Type.STRING },
-                  },
-                  required: ['event'],
-                },
-              },
-              parties: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                  },
-                  required: ['name'],
-                },
-              },
-            },
-            required: ['fullName', 'matterType', 'summary', 'detailedNarrative'],
-          },
-        },
-      }),
-      45000
+Return ONLY valid JSON with these fields: fullName, contact, matterType, jurisdiction, summary, detailedNarrative, incidentDate, opposingParties, deadlines, injuriesOrDamages, desiredOutcome, priorCounsel, witnesses, evidenceMentioned, financialImpact, priorLegalActions, emotionalState, keyFacts, clientQuotes, openQuestions, timeline, parties.`,
+      `CONVERSATION:\n${convo}`,
+      4000
     );
     const data = safeParseJson<Partial<IntakeData>>(text, 'extractIntake');
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -222,7 +156,7 @@ ${convo}`,
       timeline: arr<{ date: string; event: string }>(data.timeline),
       parties: arr<{ name: string; role: string }>(data.parties),
     };
-  }, 3);
+}, 3);
 };
 
 const specialistList = LEGAL_SPECIALISTS.map(
@@ -231,17 +165,12 @@ const specialistList = LEGAL_SPECIALISTS.map(
 
 /**
  * Score the intake for case strength + firm fit, decide a disposition, and route
- * it to the right specialist department.
+ * it to the right specialist department. Uses DeepSeek as primary.
  */
 export const scoreIntake = async (intake: IntakeData): Promise<IntakeScore> => {
   return retryWithBackoff(async () => {
-    const text = await withTimeout(
-      generateStructured({
-        model: 'gemini-2.5-flash',
-        contents: {
-          parts: [
-            {
-              text: `You are the case evaluation committee for a law firm. Score this intake from 0-100 on overall case strength and firm fit, then route it.
+    const text = await callDeepSeekJson(
+      `You are the case evaluation committee for a law firm. Score this intake from 0-100 on overall case strength and firm fit, then route it.
 
 Scoring guidance:
 - Strong liability/merits, clear damages, within deadlines, and a viable defendant → high score (75-100).
@@ -260,49 +189,17 @@ ${specialistList}
 "clientMessage" is shown directly to the prospective client — make it warm, professional, and human:
 - accepted: tell them the firm is taking a close look and the relevant team will reach out, reference their matter type.
 - review: tell them their matter is under review and someone will follow up.
-- denied: kindly explain the firm may not be the right fit, encourage them to seek other counsel promptly (especially if deadlines apply), and stay respectful and supportive. Never be cold or dismissive.
+- denied: kindly explain the firm may not be the right fit, encourage them to seek other counsel promptly.
 
-INTAKE RECORD:
-${JSON.stringify(intake, null, 2)}`,
-            },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              score: { type: Type.NUMBER },
-              recommendedDepartment: { type: Type.STRING },
-              recommendedAgentId: { type: Type.STRING },
-              urgency: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
-              reasoning: { type: Type.STRING },
-              clientMessage: { type: Type.STRING },
-              factors: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    label: { type: Type.STRING },
-                    impact: { type: Type.STRING, enum: ['positive', 'negative', 'neutral'] },
-                    note: { type: Type.STRING },
-                  },
-                  required: ['label', 'impact'],
-                },
-              },
-            },
-            required: ['score', 'recommendedAgentId', 'clientMessage', 'urgency'],
-          },
-        },
-      }),
-      30000
+Return ONLY valid JSON with fields: score, recommendedDepartment, recommendedAgentId, urgency, reasoning, clientMessage, factors[].`,
+      `INTAKE RECORD:\n${JSON.stringify(intake, null, 2)}`,
+      3000
     );
     const data = safeParseJson<any>(text, 'scoreIntake');
     const rawScore = Math.max(0, Math.min(100, Math.round(Number(data.score) || 0)));
     const disposition =
       rawScore >= ACCEPT_BENCHMARK ? 'accepted' : rawScore >= REVIEW_BENCHMARK ? 'review' : 'denied';
 
-    // Resolve the routed specialist (fall back gracefully if the model picked an unknown id).
     const matched = LEGAL_SPECIALISTS.find(s => s.id === data.recommendedAgentId);
 
     return {

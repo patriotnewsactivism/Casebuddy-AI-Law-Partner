@@ -2,13 +2,12 @@
 import React, { useState, useMemo, useCallback} from 'react';
 import { Link } from 'react-router-dom';
 import { Gavel, ArrowRight, ChevronRight, CheckCircle, AlertCircle, Loader2, Clock, Phone, Mail, User, FileText, Calendar, ShieldCheck, ShieldAlert, ScrollText, Copy, Download, Printer } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
-import { getGeminiKey } from '../services/runtimeKeys';
 import AgentHeader from './AgentHeader';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
 import { submitIntake } from '../services/intakeStore';
 import { scoreIntake, callGeminiProxy } from '../services/intakeService';
+import { deepseekChat } from '../services/deepseek';
 import type { IntakeData, IntakeScore } from '../types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -338,8 +337,19 @@ Respond in JSON with these exact keys:
 - recommendation: "proceed" | "schedule-consult" | "refer-out" | "decline"
 - score: 0-100 viability score`;
 
+      // Use DeepSeek for intake assessment (primary text model)
       let raw: string;
       try {
+        raw = await deepseekChat({
+          systemInstruction: 'Return ONLY valid JSON. No markdown, no explanation.',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          jsonMode: true,
+          maxTokens: 1000,
+          timeoutMs: 30000,
+        });
+      } catch {
+        // Fallback to Gemini proxy if DeepSeek fails
         raw = await callGeminiProxy({
           model: 'gemini-2.5-flash',
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -347,16 +357,6 @@ Respond in JSON with these exact keys:
             responseMimeType: 'application/json',
           },
         });
-      } catch (proxyErr) {
-        // Fall back to direct key if available (local dev)
-        const key = getGeminiKey();
-        if (!key) throw proxyErr;
-        const fallbackResp = await new GoogleGenAI({ apiKey: key }).models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: { responseMimeType: 'application/json' },
-        });
-        raw = fallbackResp.text ?? '';
       }
 
       // Strip markdown fences defensively
@@ -486,18 +486,24 @@ Keep it professional, clear, and use placeholders like [FIRM NAME], [ATTORNEY NA
 
       let letterText: string;
       try {
-        letterText = await callGeminiProxy({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        // Use DeepSeek as primary text model
+        letterText = await deepseekChat({
+          systemInstruction: 'You are a legal document drafting assistant. Output ONLY plain text, no markdown.',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          maxTokens: 2000,
+          timeoutMs: 30000,
         });
       } catch (proxyErr) {
-        const key = getGeminiKey();
-        if (!key) throw proxyErr;
-        const fallbackResp = await new GoogleGenAI({ apiKey: key }).models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        });
-        letterText = fallbackResp.text ?? '';
+        // Fallback to Gemini proxy
+        try {
+          letterText = await callGeminiProxy({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          });
+        } catch {
+          throw proxyErr;
+        }
       }
 
       setLetter(letterText);
