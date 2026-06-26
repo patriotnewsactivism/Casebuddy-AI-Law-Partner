@@ -33,15 +33,10 @@ export default async function handler(req: Request): Promise<Response> {
     ''
   ).trim();
 
-  const geminiKey = (
-    process.env.GEMINI_API_KEY ||
-    process.env.VITE_GEMINI_KEY ||
-    ''
-  ).trim();
-
   if (!deepgramKey) {
     return json({ error: 'Voice service not configured.' }, 503);
   }
 
-  return json({ deepgramKey, geminiKey });
+  // Only return the Deepgram key — Gemini key must NOT be exposed publicly.
+  return json({ deepgramKey });
 }

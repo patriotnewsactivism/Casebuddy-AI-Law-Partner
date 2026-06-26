@@ -14,6 +14,7 @@ import { backgroundEngine } from './backgroundAgentEngine';
 import { orchestrator } from './agentOrchestrator';
 import { createWorkflow } from './workflows';
 import type { Case } from '../types';
+import { loadCases as loadCasesFromStorage } from '../utils/storage';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function daysBetween(from: number, toDateStr: string | undefined): number | null
 
 function loadCases(): Case[] {
   try {
-    return JSON.parse(localStorage.getItem('lexsim_cases') ?? '[]');
+    return loadCasesFromStorage();
   } catch {
     return [];
   }
