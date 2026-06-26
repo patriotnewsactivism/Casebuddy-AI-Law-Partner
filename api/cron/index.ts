@@ -72,7 +72,7 @@ async function handle_dailyBriefing(req: Request): Promise<Response> {
   const SG_KEY   = process.env.SENDGRID_API_KEY || '';
   const TW_SID   = process.env.TWILIO_ACCOUNT_SID || '';
   const TW_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-  const TW_FROM  = process.env.TWILIO_FROM_NUMBER || '';
+  const TW_FROM  = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '';
   const OWNER_EMAIL = process.env.FIRM_OWNER_EMAIL || '';
   const OWNER_PHONE = process.env.FIRM_OWNER_PHONE || '';
   const today    = new Date().toISOString().split('T')[0];
@@ -81,10 +81,10 @@ async function handle_dailyBriefing(req: Request): Promise<Response> {
   try {
     const sevenDays = new Date(Date.now() + 7 * 864e5).toISOString().split('T')[0];
     const deadlines = await _sb(SB_URL, SB_KEY,
-      `deadlines?deadline_date=lte.${sevenDays}&status=eq.pending&order=deadline_date.asc`);
+      `deadlines?due_date=lte.${sevenDays}&status=eq.pending&order=due_date.asc`);
     for (const d of (Array.isArray(deadlines) ? deadlines : [])) {
-      const daysLeft = Math.ceil((new Date(d.deadline_date).getTime() - Date.now()) / 864e5);
-      const msg = `CaseBuddy Deadline Alert: "${d.title || d.description || 'Deadline'}" is due in ${daysLeft} day(s) on ${d.deadline_date}.`;
+      const daysLeft = Math.ceil((new Date(d.due_date).getTime() - Date.now()) / 864e5);
+      const msg = `CaseBuddy Deadline Alert: "${d.title || d.description || 'Deadline'}" is due in ${daysLeft} day(s) on ${d.due_date}.`;
       if (OWNER_PHONE) await _sms(TW_SID, TW_TOKEN, TW_FROM, OWNER_PHONE, msg);
       await _email(SG_KEY, OWNER_EMAIL, `Deadline Alert: ${d.title}`, `<p>${msg}</p>`);
       log.push(`Sol: alerted deadline "${d.title}" (${daysLeft}d)`);
@@ -120,7 +120,7 @@ async function handle_caseStatusMonitor(_req: Request): Promise<Response> {
   const SG_KEY   = process.env.SENDGRID_API_KEY || '';
   const TW_SID   = process.env.TWILIO_ACCOUNT_SID || '';
   const TW_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-  const TW_FROM  = process.env.TWILIO_FROM_NUMBER || '';
+  const TW_FROM  = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '';
   const OWNER_EMAIL = process.env.FIRM_OWNER_EMAIL || '';
   const OWNER_PHONE = process.env.FIRM_OWNER_PHONE || '';
   const today    = new Date().toISOString().split('T')[0];
