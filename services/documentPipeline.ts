@@ -11,6 +11,14 @@
 
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { edgeFn, OcrResult } from './edgeFunctionClient';
+import { deriveCaseRowId } from './caseStore';
+
+// Resolve app-level case ID to deterministic UUID for Supabase columns.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveCaseId(appId: string): Promise<string> {
+  if (UUID_RE.test(appId)) return appId;
+  return deriveCaseRowId(appId);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -103,7 +111,8 @@ export async function uploadDocument(
   if (!user) throw new Error('Not authenticated');
 
   const safeName = sanitizeFileName(file.name);
-  const storagePath = `${user.id}/${caseId}/${Date.now()}-${safeName}`;
+  const dbCaseId = await resolveCaseId(caseId);
+  const storagePath = `${user.id}/${dbCaseId}/${Date.now()}-${safeName}`;
   const contentHash = await computeContentHash(file);
 
   // 1. Upload to Supabase Storage
@@ -129,7 +138,7 @@ export async function uploadDocument(
   const { data: doc, error: dbError } = await supabase
     .from('documents')
     .insert({
-      case_id: caseId,
+      case_id: dbCaseId,
       user_id: user.id,
       name: file.name,
       file_type: file.type,
@@ -202,13 +211,14 @@ export async function bulkUploadDocuments(
   updateProgress();
 
   // Get next Bates number if prefix provided
+  const dbCaseId = await resolveCaseId(options.caseId);
   let nextBates = options.batesStartNumber || 1;
   if (options.batesPrefix && !options.batesStartNumber) {
     // Query highest existing Bates number for this prefix
     const { data: maxBates } = await supabase
       .from('documents')
       .select('bates_formatted')
-      .eq('case_id', options.caseId)
+      .eq('case_id', dbCaseId)
       .eq('bates_prefix', options.batesPrefix)
       .order('bates_formatted', { ascending: false })
       .limit(1);
@@ -258,10 +268,11 @@ export async function getCaseDocuments(caseId: string): Promise<DocumentRecord[]
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  const dbCaseId = await resolveCaseId(caseId);
   const { data, error } = await supabase
     .from('documents')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', dbCaseId)
     .order('created_at', { ascending: false });
 
   if (error) {

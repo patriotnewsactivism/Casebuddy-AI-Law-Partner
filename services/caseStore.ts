@@ -140,7 +140,7 @@ const CASE_ID_NAMESPACE = Uint8Array.from(
   '6ba7b8109dad11d180b400c04fd430c8'.match(/.{2}/g)!.map(h => parseInt(h, 16))
 );
 
-const deriveCaseRowId = async (appId: string): Promise<string> => {
+export const deriveCaseRowId = async (appId: string): Promise<string> => {
   const idBytes = new TextEncoder().encode(appId);
   const input = new Uint8Array(CASE_ID_NAMESPACE.length + idBytes.length);
   input.set(CASE_ID_NAMESPACE, 0);

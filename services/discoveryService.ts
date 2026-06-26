@@ -7,6 +7,20 @@
 
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { edgeFn } from './edgeFunctionClient';
+import { deriveCaseRowId } from './caseStore';
+
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Resolve an app-level case ID (e.g. Date.now() string) to the
+ * deterministic UUID used in the Supabase `case_id` column.
+ * If the id already looks like a UUID, pass it through unchanged.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveCaseId(appId: string): Promise<string> {
+  if (UUID_RE.test(appId)) return appId;
+  return deriveCaseRowId(appId);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -71,10 +85,11 @@ export async function getDiscoveryRequests(
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  const dbCaseId = await resolveCaseId(caseId);
   let query = supabase
     .from('discovery_requests')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', dbCaseId)
     .order('request_number', { ascending: true });
 
   if (options?.type) query = query.eq('request_type', options.type);
@@ -102,10 +117,11 @@ export async function createDiscoveryRequest(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  const dbCaseId = await resolveCaseId(caseId);
   const { data, error } = await supabase
     .from('discovery_requests')
     .insert({
-      case_id: caseId,
+      case_id: dbCaseId,
       user_id: user.id,
       request_type: input.request_type,
       request_number: input.request_number || `REQ-${Date.now()}`,
@@ -259,8 +275,9 @@ export async function bulkImportDiscoveryRequests(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  const dbCaseId = await resolveCaseId(caseId);
   const rows = items.map(item => ({
-    case_id: caseId,
+    case_id: dbCaseId,
     user_id: user.id,
     request_type: item.request_type,
     request_number: item.request_number || `REQ-${Date.now()}`,
