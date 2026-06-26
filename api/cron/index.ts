@@ -81,20 +81,22 @@ async function handle_dailyBriefing(req: Request): Promise<Response> {
   try {
     const sevenDays = new Date(Date.now() + 7 * 864e5).toISOString().split('T')[0];
     const deadlines = await _sb(SB_URL, SB_KEY,
-      `case_deadlines?deadline_date=lte.${sevenDays}&status=eq.pending&select=*,cases(title,client_name)&order=deadline_date.asc`);
+      `deadlines?deadline_date=lte.${sevenDays}&status=eq.pending&order=deadline_date.asc`);
     for (const d of (Array.isArray(deadlines) ? deadlines : [])) {
       const daysLeft = Math.ceil((new Date(d.deadline_date).getTime() - Date.now()) / 864e5);
-      const msg = `CaseBuddy Deadline Alert: "${d.title}" for ${d.cases?.client_name || 'client'} is due in ${daysLeft} day(s) on ${d.deadline_date}.`;
+      const msg = `CaseBuddy Deadline Alert: "${d.title || d.description || 'Deadline'}" is due in ${daysLeft} day(s) on ${d.deadline_date}.`;
       if (OWNER_PHONE) await _sms(TW_SID, TW_TOKEN, TW_FROM, OWNER_PHONE, msg);
       await _email(SG_KEY, OWNER_EMAIL, `Deadline Alert: ${d.title}`, `<p>${msg}</p>`);
       log.push(`Sol: alerted deadline "${d.title}" (${daysLeft}d)`);
     }
 
     const cases = await _sb(SB_URL, SB_KEY,
-      'cases?status=neq.Closed&select=id,title,status,client_name,next_court_date&order=updated_at.desc&limit=20');
-    const caseList = (Array.isArray(cases) ? cases : []).map((c: any) =>
-      `- ${c.title} (${c.client_name}) - Status: ${c.status}${c.next_court_date ? ', Court: ' + c.next_court_date : ''}`
-    ).join('\n');
+      'cases?select=id,data&order=updated_at.desc&limit=20');
+    const activeCases = (Array.isArray(cases) ? cases : []).filter((c: any) => c.data?.status !== 'Closed');
+    const caseList = activeCases.map((c: any) => {
+      const d = c.data || {};
+      return `- ${d.title || 'Untitled'} (${d.clientName || d.client_name || 'Unknown'}) - Status: ${d.status || 'Unknown'}${d.next_court_date ? ', Court: ' + d.next_court_date : ''}`;
+    }).join('\n');
 
     if (caseList && GEMINI) {
       const summary = await _gemini(GEMINI,
@@ -125,24 +127,27 @@ async function handle_caseStatusMonitor(_req: Request): Promise<Response> {
   const log: string[] = [];
 
   try {
-    const trialCases = await _sb(SB_URL, SB_KEY,
-      `cases?status=eq.Trial&next_court_date=eq.${today}&select=id,title,client_name`);
-    for (const c of (Array.isArray(trialCases) ? trialCases : [])) {
-      const msg = `COURT TODAY: "${c.title}" for ${c.client_name} has a court date today!`;
+    const allCases = await _sb(SB_URL, SB_KEY, 'cases?select=id,data&limit=100');
+    const trialCases = (Array.isArray(allCases) ? allCases : []).filter((c: any) =>
+      c.data?.status === 'Trial' && c.data?.next_court_date === today);
+    for (const c of trialCases) {
+      const d = c.data || {};
+      const msg = `COURT TODAY: "${d.title}" for ${d.clientName || d.client_name || 'client'} has a court date today!`;
       if (OWNER_PHONE) await _sms(TW_SID, TW_TOKEN, TW_FROM, OWNER_PHONE, msg);
-      await _email(SG_KEY, OWNER_EMAIL, `Court Date Today: ${c.title}`, `<p>${msg}</p>`);
-      log.push(`Rex: alerted trial "${c.title}"`);
+      await _email(SG_KEY, OWNER_EMAIL, `Court Date Today: ${d.title}`, `<p>${msg}</p>`);
+      log.push(`Rex: alerted trial "${d.title}"`);
     }
 
     const cutoff = new Date(Date.now() - 30 * 864e5).toISOString();
     const staleCases = await _sb(SB_URL, SB_KEY,
-      `cases?updated_at=lt.${cutoff}&status=neq.Closed&select=id,title,client_name,updated_at`);
-    for (const c of (Array.isArray(staleCases) ? staleCases : [])) {
+      `cases?updated_at=lt.${cutoff}&select=id,data,updated_at`);
+    for (const c of (Array.isArray(staleCases) ? staleCases : []).filter((c: any) => c.data?.status !== 'Closed')) {
+      const d = c.data || {};
       const days = Math.floor((Date.now() - new Date(c.updated_at).getTime()) / 864e5);
       await _email(SG_KEY, OWNER_EMAIL,
-        `Stale Case Alert: ${c.title}`,
-        `<p>Case "${c.title}" for ${c.client_name} has had no activity in ${days} days.</p>`);
-      log.push(`Sol: stale alert "${c.title}" (${days}d)`);
+        `Stale Case Alert: ${d.title || 'Untitled'}`,
+        `<p>Case "${d.title || 'Untitled'}" for ${d.clientName || d.client_name || 'client'} has had no activity in ${days} days.</p>`);
+      log.push(`Sol: stale alert "${d.title || 'Untitled'}" (${days}d)`);
     }
     return _ok({ ok: true, log });
   } catch (e: any) {
@@ -162,7 +167,7 @@ async function handle_intakeProcessor(_req: Request): Promise<Response> {
 
   try {
     const intakes = await _sb(SB_URL, SB_KEY,
-      'intake_submissions?processed=eq.false&order=created_at.asc&limit=10');
+      'intake_cases?processed=eq.false&order=created_at.asc&limit=10');
     for (const intake of (Array.isArray(intakes) ? intakes : [])) {
       let analysis: any = {
         urgency: 'medium',
@@ -180,7 +185,7 @@ async function handle_intakeProcessor(_req: Request): Promise<Response> {
         } catch { /* keep defaults */ }
       }
 
-      await _sb(SB_URL, SB_KEY, `intake_submissions?id=eq.${intake.id}`, {
+      await _sb(SB_URL, SB_KEY, `intake_cases?id=eq.${intake.id}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' } as Record<string, string>,
         body: JSON.stringify({ processed: true, ai_analysis: analysis, processed_at: new Date().toISOString() }),
@@ -266,27 +271,30 @@ async function handle_weeklyClientUpdates(_req: Request): Promise<Response> {
 
   try {
     const cases = await _sb(SB_URL, SB_KEY,
-      'cases?status=neq.Closed&select=*,clients(email,full_name)&limit=50');
+      'cases?select=id,data,firm_id&limit=50');
     for (const c of (Array.isArray(cases) ? cases : [])) {
-      const clientEmail = c.clients?.email || c.client_email;
+      // Case data lives inside the JSONB `data` column
+      const d = c.data || {};
+      if (d.status === 'Closed') continue;
+      const clientEmail = d.clientEmail || d.client_email;
       if (!clientEmail) continue;
 
-      let emailBody = `<p>Dear ${c.clients?.full_name || c.client_name || 'Valued Client'},</p>` +
-        `<p>We wanted to update you on your case "${c.title}". Current status: ${c.status}. ` +
+      let emailBody = `<p>Dear ${d.clientName || d.client_name || 'Valued Client'},</p>` +
+        `<p>We wanted to update you on your case "${d.title}". Current status: ${d.status}. ` +
         `We will be in touch with any developments.</p>` +
         `<p>Best regards,<br>CaseBuddy Legal Team</p>`;
 
       if (GEMINI) {
         try {
           const aiText = await _gemini(GEMINI,
-            `You are Sierra, a client relations specialist for a law firm. Write a brief, warm weekly update email to a client about their case. Under 150 words, professional but friendly.\nCase: ${c.title}\nStatus: ${c.status}\nNext steps: ${c.next_steps || 'Attorney reviewing'}\nNext court date: ${c.next_court_date || 'TBD'}`);
+            `You are Sierra, a client relations specialist for a law firm. Write a brief, warm weekly update email to a client about their case. Under 150 words, professional but friendly.\nCase: ${d.title}\nStatus: ${d.status}\nNext steps: ${d.next_steps || 'Attorney reviewing'}\nNext court date: ${d.next_court_date || 'TBD'}`);
           emailBody = `<p>${aiText.split('\n').join('</p><p>')}</p>`;
         } catch { /* use default */ }
       }
 
       await _email(SG_KEY, clientEmail,
-        `Weekly Update: ${c.title} - ${today}`, emailBody);
-      log.push(`Sierra: updated ${c.clients?.full_name || c.client_name}`);
+        `Weekly Update: ${d.title} - ${today}`, emailBody);
+      log.push(`Sierra: updated ${d.clientName || d.client_name}`);
     }
     return _ok({ ok: true, sent: log.length, log });
   } catch (e: any) {
@@ -325,6 +333,15 @@ async function handle_health(_req: Request): Promise<Response> {
 export default async function handler(req: Request): Promise<Response> {
   const url    = new URL(req.url);
   const action = url.searchParams.get('action') || 'health';
+
+  // ── Authenticate cron requests (skip health checks) ─────────────────────
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && action !== 'health') {
+    const auth = req.headers.get('authorization');
+    if (auth !== `Bearer ${cronSecret}`) {
+      return _ok({ error: 'Unauthorized' }, 401);
+    }
+  }
 
   switch (action) {
     case 'daily-briefing':        return handle_dailyBriefing(req);

@@ -10,6 +10,7 @@ import { createWorkflow } from './workflows';
 import { pushNotification } from './notificationManager';
 import { deepseekChat } from './deepseek';
 import type { Case, IntakeCase } from '../types';
+import { loadCases } from '../utils/storage';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ export async function onEvidenceConcernsFound(caseId: string, analysis: { concer
 export async function onIntakeReceived(intake: IntakeCase): Promise<void> {
   let cases: Case[] = [];
   try {
-    cases = JSON.parse(localStorage.getItem('lexsim_cases') ?? '[]');
+    cases = loadCases();
   } catch {}
   const clientNames = cases.map(c => c.client).filter(Boolean);
 

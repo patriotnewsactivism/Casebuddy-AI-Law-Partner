@@ -22,6 +22,7 @@ import {
   OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS,
 } from '../agents/personas';
 import { AGENT_CONFIG } from '../config/agentConfig';
+import { loadCases } from '../utils/storage';
 
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -147,8 +148,7 @@ export async function broadcastToAllStaff(
 
   if (caseId && caseId !== 'global') {
     try {
-      const casesRaw = localStorage.getItem('lexsim_cases');
-      const cases: any[] = casesRaw ? JSON.parse(casesRaw) : [];
+      const cases: any[] = loadCases();
       const currentCase = cases.find((c: any) => c.id === caseId);
       if (currentCase && currentCase.assignedSpecialistId) {
         const attorneyId = currentCase.assignedSpecialistId;

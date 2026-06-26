@@ -8,11 +8,12 @@ An AI-powered all in one agentic lawfirm with secure, server-side API handling.
 
 ## Architecture Overview
 
-CaseBuddy AI Lawfirm uses a modern, secure architecture with **Convex** as the backend:
+CaseBuddy AI Lawfirm uses a modern, secure architecture with **Supabase** as the backend:
 
-- **Frontend**: React + TypeScript + Tailwind CSS
-- **Backend**: Convex
-- **AI Integration**
+- **Frontend**: React 19 + TypeScript + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth + RLS + Realtime)
+- **Hosting**: Vercel (static build + serverless API routes)
+- **AI**: Google Gemini (primary), Deepgram (voice)
 ┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
 │   React App     │─────▶│  Supabase Edge   │─────▶│  External APIs  │
 │   (Frontend)    │      │    Functions     │      │  (Gemini, etc.) │
@@ -88,8 +89,9 @@ The app will be available at `http://localhost:5000`.
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS
 - **Build Tool**: Vite
-- **Backend**: Convex
-- **AI**: Google Gemini, OpenAI GPT-4, Deepgram, ElevenLabs
+- **Backend**: Supabase (PostgreSQL, Auth, RLS, Realtime)
+- **Hosting**: Vercel (serverless API routes + cron jobs)
+- **AI**: Google Gemini (primary), Deepgram (voice/STT)
 
 ## License
 

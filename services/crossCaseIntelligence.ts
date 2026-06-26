@@ -8,12 +8,13 @@
 import { deepseekChat } from './deepseek';
 import { AGENT_CONFIG } from '../config/agentConfig';
 import type { Case, CrossCaseInsight } from '../types';
+import { loadCases } from '../utils/storage';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function loadAllCases(): Case[] {
   try {
-    return JSON.parse(localStorage.getItem('lexsim_cases') ?? '[]');
+    return loadCases();
   } catch {
     return [];
   }
