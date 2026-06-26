@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -54,6 +54,8 @@ const AuthPage         = React.lazy(() => import('./components/AuthPage'));
 const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
 const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'));
 const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
+const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
+const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -86,6 +88,8 @@ const NAV_GROUPS = [
       { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
+      { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
+      { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
       { path: '/app/war-room', icon: Shield, label: 'War Room' },
     ]
   },
@@ -583,6 +587,8 @@ const App = () => {
             <Route path="/app/firm-admin" element={<AuthGate><Layout><FirmAdminPanel /></Layout></AuthGate>} />
             <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
             <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
+            <Route path="/app/discovery" element={<AuthGate><Layout><DiscoveryManager /></Layout></AuthGate>} />
+            <Route path="/app/upload" element={<AuthGate><Layout><BulkDocumentUpload /></Layout></AuthGate>} />
             <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
             <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
             <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
