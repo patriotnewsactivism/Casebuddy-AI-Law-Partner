@@ -20,6 +20,7 @@ import { recordAction, addInsight, loadMemory } from './agentMemory';
 import { pushInsightAlert, pushTaskComplete, pushDeadlineAlert } from './notificationManager';
 import { AGENT_CONFIG } from '../config/agentConfig';
 import { getAgentById, OPERATIONAL_AGENTS } from '../agents/personas';
+import { loadCases } from '../utils/storage';
 import type {
   BackgroundTask,
   BackgroundTaskType,
@@ -557,7 +558,7 @@ Be extremely concise, professional, and actionable. Do not use placeholders or g
 
   private loadCasesFromStorage(): Case[] {
     try {
-      return JSON.parse(localStorage.getItem('lexsim_cases') ?? '[]');
+      return loadCases();
     } catch {
       return [];
     }

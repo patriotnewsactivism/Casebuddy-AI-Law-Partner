@@ -15,6 +15,7 @@ import { getAgentById, getSpecialistById, getParalegalById, getParalegalsByAttor
 import { backgroundEngine } from './backgroundAgentEngine';
 import { AGENT_CONFIG } from '../config/agentConfig';
 import type { Workflow, WorkflowStep, Case } from '../types';
+import { loadCases } from '../utils/storage';
 
 // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -344,7 +345,7 @@ class AgentOrchestrator {
 
     // Notify user
     if (workflow.caseId) {
-      const cases: Case[] = JSON.parse(localStorage.getItem('lexsim_cases') ?? '[]');
+      const cases: Case[] = loadCases();
       const c = cases.find(cs => cs.id === workflow.caseId);
 
       await addInsight('maya', workflow.caseId, {
