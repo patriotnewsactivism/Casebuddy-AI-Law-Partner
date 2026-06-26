@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -56,6 +56,7 @@ const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'))
 const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
 const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
 const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
+const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -91,6 +92,7 @@ const NAV_GROUPS = [
       { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
       { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
       { path: '/app/war-room', icon: Shield, label: 'War Room' },
+      { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
     ]
   },
   {
@@ -563,9 +565,11 @@ const App = () => {
             <Route path="/start" element={<IntakePage />} />
             <Route path="/intake" element={<PublicIntake />} />
             <Route path="/intake/:token" element={<PublicIntake />} />
+            <Route path="/client" element={<ClientPortal />} />
 
             {/* Protected routes — require authentication */}
             <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
+            <Route path="/app/client-portal" element={<AuthGate><Layout><ClientPortal /></Layout></AuthGate>} />
             <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
             <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
             <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
