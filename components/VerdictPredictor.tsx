@@ -1,12 +1,15 @@
-import React, { useState, useContext, useMemo} from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { predictVerdictAndSettlement } from '../services/geminiService';
-import { TrendingUp, Loader, AlertTriangle, CheckCircle, DollarSign, Scale, RefreshCw, Clock, MessageSquare } from 'lucide-react';
+import { TrendingUp, Loader, AlertTriangle, CheckCircle, DollarSign, Scale, RefreshCw, Clock, MessageSquare, GitBranch } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
 import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import { findSimilarCases, generateCrossCaseInsights } from '../services/crossCaseIntelligence';
+import { recordLearningEvent } from '../services/agentLearning';
+import type { CrossCaseInsight } from '../types';
 
 const JULES = OPERATIONAL_AGENTS.find(a => a.id === 'jules')!;
 
@@ -62,6 +65,19 @@ const VerdictPredictor = () => {
   const setAdditionalFactors = (v: string) => setVpForm(f => ({...f, additionalFactors: v}));
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [crossCaseInsights, setCrossCaseInsights] = useState<CrossCaseInsight[]>([]);
+
+  useEffect(() => {
+    if (!activeCase) { setCrossCaseInsights([]); return; }
+    const similar = findSimilarCases(activeCase.id, 3);
+    if (similar.length >= 2) {
+      generateCrossCaseInsights(activeCase.id)
+        .then(setCrossCaseInsights)
+        .catch(() => {});
+    } else {
+      setCrossCaseInsights([]);
+    }
+  }, [activeCase?.id]);
   const [history, setHistory] = useState<Prediction[]>(() => {
     try { return JSON.parse(localStorage.getItem('verdict_predictions') || '[]'); } catch { return []; }
   });
@@ -93,6 +109,15 @@ const VerdictPredictor = () => {
       if (activeCase && typeof p.winProbability === 'number') {
         updateCase({ ...activeCase, winProbability: p.winProbability });
       }
+
+      // Record learning event for Jules
+      recordLearningEvent({
+        agentId: 'jules',
+        caseId: activeCase.id,
+        action: `verdict_prediction:${caseType}:${jurisdiction}`,
+        outcome: 'success',
+        context: { caseType, jurisdiction, evidenceStrength, winProbability: p.winProbability, verdictLikely: p.verdictLikely },
+      }).catch(() => {});
 
       toast.success('Prediction complete!');
     } catch (e) {
@@ -304,6 +329,29 @@ const VerdictPredictor = () => {
                 <Scale className="mx-auto mb-3 text-slate-600" size={48} />
                 <p className="text-slate-400">Configure inputs and run a prediction.</p>
                 <p className="text-slate-500 text-sm mt-1">AI will analyze your case and project outcomes.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Cross-case benchmarks */}
+          {crossCaseInsights.length > 0 && (
+            <div className="bg-slate-800/40 border border-cyan-500/20 rounded-xl p-5">
+              <h3 className="text-cyan-400 font-bold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                <GitBranch size={14} /> Similar Case Benchmarks
+              </h3>
+              <div className="space-y-2">
+                {crossCaseInsights.slice(0, 3).map((ins, i) => (
+                  <div key={i} className="flex gap-3 p-2.5 rounded-lg bg-slate-900/50 border border-slate-700">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-200">{ins.title}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{ins.description}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-bold text-cyan-400">{ins.confidence}%</p>
+                      <p className="text-[9px] text-slate-600">conf.</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

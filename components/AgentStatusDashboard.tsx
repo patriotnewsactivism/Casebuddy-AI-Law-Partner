@@ -4,6 +4,8 @@ import { Activity, CheckCircle2, Clock, Loader2, BrainCircuit, Zap, RefreshCw } 
 import { subscribeAgentStatuses, backgroundEngine } from '../services/backgroundAgentEngine';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import type { AgentStatus } from '../types';
+import AgentPerformanceChart from './AgentPerformanceChart';
+import TaskQueueVisualizer from './TaskQueueVisualizer';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -130,6 +132,12 @@ const AgentStatusDashboard: React.FC = () => {
       <p className="text-[10px] text-slate-600 mt-3 text-center">
         Agents work autonomously in the background · Click to interact
       </p>
+
+      {/* Performance metrics + live task queue */}
+      <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <AgentPerformanceChart />
+        <TaskQueueVisualizer />
+      </div>
     </div>
   );
 };

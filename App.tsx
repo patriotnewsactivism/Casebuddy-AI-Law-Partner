@@ -64,6 +64,8 @@ import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferenc
 import { backgroundEngine } from './services/backgroundAgentEngine';
 import { caseMonitor } from './services/caseMonitor';
 import { orchestrator } from './services/agentOrchestrator';
+import { consolidateMemory } from './services/agentMemory';
+import { OPERATIONAL_AGENTS } from './agents/personas';
 import { flushRetryQueue } from './services/intakeStore';
 import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
 import NotificationCenter from './components/NotificationCenter';
@@ -537,9 +539,20 @@ const App = () => {
     caseMonitor.start();
     orchestrator.cleanup(); // clean up stale completed workflows
     flushRetryQueue().catch(() => {}); // retry any intakes that failed to save
+
+    // Periodic memory consolidation — runs every 6 hours while the app is open
+    const consolidationInterval = setInterval(() => {
+      const storedCaseId = loadActiveCaseId();
+      if (!storedCaseId) return;
+      for (const agent of OPERATIONAL_AGENTS) {
+        consolidateMemory(agent.id, storedCaseId).catch(() => {});
+      }
+    }, 6 * 60 * 60 * 1000);
+
     return () => {
       backgroundEngine.stop();
       caseMonitor.stop();
+      clearInterval(consolidationInterval);
     };
   }, []);
 
