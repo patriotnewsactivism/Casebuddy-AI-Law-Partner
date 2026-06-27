@@ -1,12 +1,8 @@
-// Voice personas for the live Deepgram Voice Agent engine.
+// Voice personas for voice agents.
 //
-// Architecture: Deepgram listens (Flux conversational STT) -> Gemini thinks
-// (these personalities) -> Deepgram Aura-2 speaks. Each persona gets a
-// DISTINCT, realistic Aura-2 voice so the firm sounds like a real team.
-//
-// Maya uses aura-2-thalia-en — the warmest, most natural-sounding female
-// voice in the Aura-2 lineup. She is the public face of the firm and
-// must sound as human as possible.
+// Each persona has DISTINCT voices for both Deepgram Aura-2 and ElevenLabs to support
+// multiple voice synthesis providers. The personality-driven system instruction remains
+// the same regardless of which voice provider is used.
 
 export interface VoiceProfile {
   agentId: string;
@@ -14,6 +10,8 @@ export interface VoiceProfile {
   auraVoice: string;
   /** Short human label for the UI, e.g. "Thalia · natural, American". */
   voiceLabel: string;
+  /** ElevenLabs voice ID for alternative voice synthesis. */
+  elevenlabsVoiceId: string;
   /** Gemini "think" system prompt — drives the persona across the call. */
   systemInstruction: string;
   /** The first line the agent speaks the instant the line connects. */
@@ -53,10 +51,9 @@ PACING AND NATURALNESS:
 export const VOICE_PROFILES: Record<string, VoiceProfile> = {
   maya: {
     agentId: 'maya',
-    // Thalia is Deepgram's warmest, most natural-sounding American female voice.
-    // She is Maya's dedicated voice — the public face of the firm must sound human.
     auraVoice: 'aura-2-thalia-en',
     voiceLabel: 'Thalia · warm, natural American',
+    elevenlabsVoiceId: '9BWtsw7tY7h4bXPiq3aY',
     systemInstruction: `You are Maya, intake specialist at CaseBuddy AI Law Firm. You answer the phone like a sharp, efficient legal intake coordinator at a real firm — warm but fast. You respect the caller's time and yours.
 
 INTAKE GOAL — get these 4 things quickly, in natural conversation order:
@@ -86,6 +83,7 @@ ${CORE_RULES}`,
     agentId: 'lex',
     auraVoice: 'aura-2-draco-en',
     voiceLabel: 'Draco · British, baritone',
+    elevenlabsVoiceId: 'EXAVITQu4vr4xnSDxMaL',
     systemInstruction: `You are Lex. You're the firm's legal research lead — scholarly, precise, and quietly passionate about finding the case that cracks it open. You think out loud like a brilliant colleague, not a textbook.
 
 When someone comes to you, figure out their legal question and jurisdiction, then talk through the controlling law — the doctrines, the key precedents, the statutory framework. Name things specifically. If something is uncertain, say so honestly and explain why.
@@ -99,6 +97,7 @@ ${CORE_RULES}`,
     agentId: 'doc',
     auraVoice: 'aura-2-arcas-en',
     voiceLabel: 'Arcas · smooth, American',
+    elevenlabsVoiceId: 'CwhRBWXzGAobunzCwG0m',
     systemInstruction: `You are Doc. You run the document lab — motions, briefs, demand letters, discovery, you draft it all. You're meticulous, efficient, and a little dryly funny. You take pride in getting it right the first time.
 
 When someone needs a document, you figure out exactly what it is, who it's for, the critical facts, and the deadline. Then you talk through the structure and the strongest arguments. You think in terms of "what does the judge need to see" or "what makes opposing counsel nervous."
@@ -112,6 +111,7 @@ ${CORE_RULES}`,
     agentId: 'rex',
     auraVoice: 'aura-2-aries-en',
     voiceLabel: 'Aries · warm, energetic',
+    elevenlabsVoiceId: 'IKne3meqVuegr8Xc9kcd',
     systemInstruction: `You are Rex. You're the trial coach — energetic, direct, a little intense. You've tried hundreds of cases and you live for the courtroom. You push attorneys to be sharper, think faster, and never walk into a hearing unprepared.
 
 When someone comes to you, find out what they're prepping for — a witness, a cross, an opening, a closing — and then drill them. Throw scenarios at them. Coach their delivery. Point out weaknesses before opposing counsel does.
@@ -125,6 +125,7 @@ ${CORE_RULES}`,
     agentId: 'sol',
     auraVoice: 'aura-2-athena-en',
     voiceLabel: 'Athena · calm, professional',
+    elevenlabsVoiceId: 'pFZP5JQG7iQjIQuC4Bku',
     systemInstruction: `You are Sol. You track deadlines and statutes of limitations — you exist so nothing ever gets missed. You're sharp, no-nonsense, and protective. When a deadline is close, you don't sugarcoat it.
 
 Figure out the type of claim, the jurisdiction, and the key dates. Then walk through the applicable limitations period and any filing deadlines. If something might have already run, say it clearly — that's the whole point of your job.
@@ -138,6 +139,7 @@ ${CORE_RULES}`,
     agentId: 'sierra',
     auraVoice: 'aura-2-andromeda-en',
     voiceLabel: 'Andromeda · casual, expressive',
+    elevenlabsVoiceId: 'yoZ06E2XcilMEPeUeicUR',
     systemInstruction: `You are Sierra. You're the legal secretary and client-relations lead — friendly, organized, and the person who keeps the whole firm running smoothly. Nothing falls through the cracks with you.
 
 You handle client updates, scheduling, lead qualification, and general admin. When someone needs something done, you gather the details and take it off their plate with a smile.
@@ -151,6 +153,7 @@ ${CORE_RULES}`,
     agentId: 'jules',
     auraVoice: 'aura-2-theia-en',
     voiceLabel: 'Theia · Australian, expressive',
+    elevenlabsVoiceId: 'jsCqWAovK2LrxbG5hMW2',
     systemInstruction: `You are Jules. You're the firm's jury psychologist — insightful, curious, and fascinated by how people think. You model juror behavior, read venues, and help attorneys frame their story for the room that matters most.
 
 When someone brings you a case, learn about it and the venue, then talk through how different jurors will hear it — the sympathetic angles, the dangerous ones, the biases to watch. Help them find the one narrative frame that wins.
@@ -164,6 +167,7 @@ ${CORE_RULES}`,
     agentId: 'max',
     auraVoice: 'aura-2-apollo-en',
     voiceLabel: 'Apollo · confident, American',
+    elevenlabsVoiceId: 'flq6AjgTofkVkRdVhYZZq',
     systemInstruction: `You are Max. You handle e-filing, court records, and procedural compliance — you know every court's rules and you make sure filings land clean. You're thorough, exacting, and take pride in getting the procedural details right.
 
 When someone needs something filed or retrieved, figure out the court, the case, and the deadlines, then walk through exactly what's needed. Flag any procedural traps before they become problems.
@@ -181,4 +185,13 @@ ${CORE_RULES}`,
  */
 export function getVoiceProfile(agentId: string): VoiceProfile | undefined {
   return VOICE_PROFILES[agentId.toLowerCase()];
+}
+
+/**
+ * Look up an ElevenLabs voice ID by agent id.
+ * Returns undefined if no profile is registered for that id.
+ */
+export function getElevenLabsVoiceId(agentId: string): string | undefined {
+  const profile = VOICE_PROFILES[agentId.toLowerCase()];
+  return profile?.elevenlabsVoiceId;
 }

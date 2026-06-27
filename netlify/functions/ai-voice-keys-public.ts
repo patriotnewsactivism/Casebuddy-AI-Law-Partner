@@ -3,7 +3,7 @@
  * Ported from api/ai/voice-keys-public.ts
  *
  * POST /api/ai/voice-keys-public
- * Response: { deepgramKey }
+ * Response: { deepgramKey, elevenlabsKey }
  */
 
 const CORS: Record<string, string> = {
@@ -28,9 +28,15 @@ export default async function handler(req: Request): Promise<Response> {
     ''
   ).trim();
 
-  if (!deepgramKey) return json({ error: 'Voice service not configured.' }, 503);
+  const elevenlabsKey = (
+    process.env.ELEVENLABS_API_KEY ||
+    process.env.VITE_ELEVENLABS_API_KEY ||
+    ''
+  ).trim();
 
-  return json({ deepgramKey });
+  if (!deepgramKey && !elevenlabsKey) return json({ error: 'Voice service not configured.' }, 503);
+
+  return json({ deepgramKey, elevenlabsKey });
 }
 
 export const config = { path: "/api/ai/voice-keys-public" };

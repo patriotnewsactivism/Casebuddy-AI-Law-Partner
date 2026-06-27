@@ -4,7 +4,7 @@
  *
  * POST /api/ai/voice-keys
  * Headers: { Authorization: Bearer <supabase_access_token> }
- * Response: { deepgramKey, geminiKey }
+ * Response: { deepgramKey, geminiKey, elevenlabsKey }
  */
 
 const CORS: Record<string, string> = {
@@ -45,11 +45,16 @@ export default async function handler(req: Request): Promise<Response> {
 
   const deepgramKey = (process.env.DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_API_KEY || '').trim();
   const geminiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY || '').trim();
+  const elevenlabsKey = (
+    process.env.ELEVENLABS_API_KEY ||
+    process.env.VITE_ELEVENLABS_API_KEY ||
+    ''
+  ).trim();
 
-  if (!deepgramKey && !geminiKey)
+  if (!deepgramKey && !geminiKey && !elevenlabsKey)
     return json({ error: 'No AI API keys configured on server.' }, 503);
 
-  return json({ deepgramKey, geminiKey });
+  return json({ deepgramKey, geminiKey, elevenlabsKey });
 }
 
 export const config = { path: "/api/ai/voice-keys" };

@@ -8,11 +8,13 @@
 
 let _geminiKey = '';
 let _deepgramKey = '';
+let _elevenlabsKey = '';
 
 /** Called once by the voice hook after successfully fetching keys from the server. */
-export function setRuntimeKeys(keys: { deepgramKey?: string; geminiKey?: string }) {
+export function setRuntimeKeys(keys: { deepgramKey?: string; geminiKey?: string; elevenlabsKey?: string }) {
   if (keys.deepgramKey) _deepgramKey = keys.deepgramKey;
   if (keys.geminiKey)   _geminiKey   = keys.geminiKey;
+  if (keys.elevenlabsKey) _elevenlabsKey = keys.elevenlabsKey;
 }
 
 /**
@@ -36,6 +38,15 @@ export function getDeepgramKey(): string {
     _deepgramKey ||
     (import.meta.env.VITE_DEEPGRAM_API_KEY as string) ||
     ((window as any).__DEEPGRAM_API_KEY as string) ||
+    ''
+  );
+}
+
+export function getElevenLabsKey(): string {
+  return (
+    _elevenlabsKey ||
+    (import.meta.env.VITE_ELEVENLABS_API_KEY as string) ||
+    ((window as any).__ELEVENLABS_API_KEY as string) ||
     ''
   );
 }

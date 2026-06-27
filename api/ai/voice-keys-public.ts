@@ -1,11 +1,11 @@
 /**
  * Vercel Edge Function — Public voice key exchange (no auth required).
  * Used by the public intake page where visitors are not signed in.
- * Only returns the Deepgram key — Gemini key is NOT exposed here.
- * The Deepgram key is rate-limited per IP by Vercel edge middleware.
+ * Returns Deepgram + ElevenLabs keys for client-side TTS.
+ * The keys are rate-limited per IP by Vercel edge middleware.
  *
  * POST /api/ai/voice-keys-public
- * Response: { deepgramKey }
+ * Response: { deepgramKey, elevenlabsKey }
  */
 
 export const config = { runtime: 'edge' };
@@ -33,10 +33,15 @@ export default async function handler(req: Request): Promise<Response> {
     ''
   ).trim();
 
-  if (!deepgramKey) {
+  const elevenlabsKey = (
+    process.env.ELEVENLABS_API_KEY ||
+    process.env.VITE_ELEVENLABS_API_KEY ||
+    ''
+  ).trim();
+
+  if (!deepgramKey && !elevenlabsKey) {
     return json({ error: 'Voice service not configured.' }, 503);
   }
 
-  // Only return the Deepgram key — Gemini key must NOT be exposed publicly.
-  return json({ deepgramKey });
+  return json({ deepgramKey, elevenlabsKey });
 }

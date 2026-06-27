@@ -82,6 +82,16 @@ export default defineConfig(({ mode }) => {
                 res.end(JSON.stringify({
                   deepgramKey: env.VITE_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || '',
                   geminiKey: env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '',
+                  elevenlabsKey: env.VITE_ELEVENLABS_API_KEY || env.ELEVENLABS_API_KEY || '',
+                }));
+                return;
+              }
+              
+              if (req.method === 'POST' && req.url === '/api/ai/voice-keys-public') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  deepgramKey: env.VITE_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || '',
+                  elevenlabsKey: env.VITE_ELEVENLABS_API_KEY || env.ELEVENLABS_API_KEY || '',
                 }));
                 return;
               }
@@ -110,6 +120,8 @@ export default defineConfig(({ mode }) => {
         'process.env.DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY || env.VITE_DEEPSEEK_API_KEY || ''),
         // Deepgram — DEV ONLY
         'import.meta.env.VITE_DEEPGRAM_API_KEY': JSON.stringify(env.VITE_DEEPGRAM_API_KEY || (mode === 'development' ? env.DEEPGRAM_API_KEY : '') || ''),
+        // ElevenLabs — DEV ONLY
+        'import.meta.env.VITE_ELEVENLABS_API_KEY': JSON.stringify(env.VITE_ELEVENLABS_API_KEY || (mode === 'development' ? env.ELEVENLABS_API_KEY : '') || ''),
         // Firm ID — canonical UUID for this deployment (used to scope intake
         // submissions to the correct firm dashboard in multi-firm RLS).
         // Set VITE_FIRM_ID in .env.local or Vercel env vars. Falls back to the

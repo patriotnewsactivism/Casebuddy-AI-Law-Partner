@@ -1,3 +1,6 @@
+import { getElevenLabsKey } from './runtimeKeys';
+import { streamElevenLabsTTS } from './elevenlabsService';
+
 // Deepgram Aura-2 TTS + STT service
 // TTS: REST streaming → PCM audio chunks
 // STT: WebSocket live transcription
@@ -27,6 +30,61 @@ export async function* streamTTS(
     method: 'POST',
     headers: {
       Authorization: `Token ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Deepgram TTS error ${response.status}: ${err}`);
+  }
+
+  const reader = response.body!.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) yield value;
+  }
+}
+
+/**
+ * Stream TTS audio with ElevenLabs as primary, Deepgram Aura-2 as fallback.
+ * Returns an async generator of PCM chunks.
+ */
+export async function* streamTTSWithFallback(
+  text: string,
+  elevenlabsVoiceId?: string,
+  fallbackAuraVoice: string = 'aura-2-thalia-en',
+): AsyncGenerator<Uint8Array> {
+  const elevenlabsKey = getElevenLabsKey();
+
+  if (elevenlabsVoiceId && elevenlabsKey) {
+    try {
+      const elevenlabsChunks = streamElevenLabsTTS(text, elevenlabsVoiceId);
+      for await (const chunk of elevenlabsChunks) {
+        yield chunk;
+      }
+      return;
+    } catch (err) {
+      console.warn('ElevenLabs TTS failed, falling back to Deepgram:', err);
+    }
+  }
+
+  const deepgramKey = getDeepgramKey();
+  if (!deepgramKey) {
+    const keyErr = elevenlabsVoiceId
+      ? new Error('Both ElevenLabs and Deepgram API keys not found.')
+      : new Error('Deepgram API key not found (VITE_DEEPGRAM_API_KEY).');
+    throw keyErr;
+  }
+
+  const url = `${DEEPGRAM_TTS_URL}?model=${fallbackAuraVoice}&encoding=linear16&sample_rate=24000&container=none&speed=1.15`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${deepgramKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ text }),
