@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network, Calculator,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, Calendar
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -65,6 +65,7 @@ const CourtRules        = React.lazy(() => import('./components/CourtRules'));
 const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashboard'));
 const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
 const PracticeTools     = React.lazy(() => import('./components/PracticeTools'));
+const DocumentCompare   = React.lazy(() => import('./components/DocumentCompare'));
 const CalendarView      = React.lazy(() => import('./components/CalendarView'));
 const EvidenceMapper    = React.lazy(() => import('./components/EvidenceMapper'));
 const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
@@ -98,73 +99,74 @@ const PageSpinner = () => (
 
 const NAV_GROUPS = [
   {
-    label: 'Case Management',
+    label: 'Cases',
     items: [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
-      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
-      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
-      { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/timeline', icon: Clock, label: 'Case Timeline' },
-      { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
-      { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
-      { path: '/app/war-room', icon: Shield, label: 'War Room' },
       { path: '/app/pipeline', icon: BrainCircuit, label: 'Case Pipeline', badge: 'NEW' },
       { path: '/app/mapper', icon: Network, label: 'Evidence Mapper', badge: 'NEW' },
+      { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
+      { path: '/app/timeline', icon: Clock, label: 'Case Timeline' },
+      { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
+      { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
+      { path: '/app/war-room', icon: Shield, label: 'War Room' },
+    ]
+  },
+  {
+    label: 'Clients',
+    items: [
+      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
       { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
-    ]
-  },
-  {
-    label: 'Legal Team',
-    items: [
-      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
-      { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
-      { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
-      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
-      { path: '/app/case-thread', icon: MessageSquare, label: 'Case Threads', badge: 'New' },
-    ]
-  },
-  {
-    label: 'Growth',
-    items: [
+      { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
       { path: '/app/growth', icon: TrendingUp, label: 'CRM & Marketing', badge: 'NEW' },
     ]
   },
   {
-    label: 'Courtroom Prep',
+    label: 'Courtroom',
     items: [
       { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
       { path: '/app/witness-lab', icon: Users, label: 'Witness Lab' },
       { path: '/app/witnesses', icon: UserCheck, label: 'Witness Prep' },
+      { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
       { path: '/app/jury', icon: UserCircle2, label: 'Jury Analyzer' },
       { path: '/app/jury-sim', icon: Users, label: 'Jury Simulator' },
-      { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
       { path: '/app/calculator', icon: Calculator, label: 'Practice Tools', badge: 'NEW' },
     ]
   },
   {
-    label: 'Drafting & Strategy',
+    label: 'Research',
     items: [
-      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
-      { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
       { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
       { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
-      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
+      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
+      { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
+      { path: '/app/compare', icon: GitCompare, label: 'Doc Compare', badge: 'NEW' },
       { path: '/app/court-rules', icon: Gavel, label: 'Court Rules', badge: 'NEW' },
-      { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
+      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
     ]
   },
   {
-    label: 'Tools',
+    label: 'AI Team',
     items: [
-      { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
-      { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
-      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
+      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
+      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
+      { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
+      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
+      { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
+      { path: '/app/case-thread', icon: MessageSquare, label: 'Case Threads', badge: 'New' },
+      { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
+    ]
+  },
+  {
+    label: 'Operations',
+    items: [
       { path: '/app/calendar', icon: Calendar, label: 'Calendar', badge: 'NEW' },
+      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
       { path: '/app/billing', icon: DollarSign, label: 'Billing & Invoices', badge: 'NEW' },
       { path: '/app/payments', icon: CreditCard, label: 'Payments', badge: 'NEW' },
+      { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
-      { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
+      { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
       { path: '/app/firm-admin', icon: Shield, label: 'Firm Admin', badge: 'Secure' },
       { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
@@ -183,27 +185,40 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
     let groups = NAV_GROUPS;
     if (operatingMode === 'companion') {
       groups = groups.map(group => {
-        if (group.label === 'Case Management') {
+        if (group.label === 'Cases') {
           return {
             ...group,
             label: 'My Cases',
-            items: group.items.filter(item => !['Firm Command', 'Intake Inbox'].includes(item.label)),
+            items: group.items.filter(item => !['Firm Command'].includes(item.label)),
           };
         }
-        if (group.label === 'Tools') {
+        if (group.label === 'AI Team') {
           return {
             ...group,
-            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations', 'Billing & Invoices', 'Payments', 'Calendar'].includes(item.label)),
+            items: group.items.filter(item => ['Firm Command', 'AI Lawyers', 'Talk to the Firm'].includes(item.label)),
+          };
+        }
+        if (group.label === 'Operations') {
+          return {
+            ...group,
+            items: group.items.filter(item => !['Firm Admin', 'Integrations', 'Billing & Invoices', 'Payments', 'Analytics'].includes(item.label)),
           };
         }
         return group;
-      }).filter(group => group.label === 'My Cases' || group.label === 'Tools' || group.label === 'Courtroom Prep');
+      }).filter(group => 
+        group.label === 'My Cases' || 
+        group.label === 'Courtroom' || 
+        group.label === 'Research' || 
+        (group.label === 'Clients' && group.items.length > 0) ||
+        (group.label === 'AI Team' && group.items.length > 0) ||
+        (group.label === 'Operations' && group.items.length > 0)
+      );
     }
 
     // Enterprise tier gate: hide enterprise-only features if not enterprise
     if (productTier !== 'enterprise') {
       groups = groups.map(group => {
-        if (group.label === 'Tools') {
+        if (group.label === 'Operations') {
           return {
             ...group,
             items: group.items.filter(item => item.label !== 'Firm Admin'),
@@ -694,6 +709,7 @@ const App = () => {
             <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
             <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
             <Route path="/app/knowledge" element={<AuthGate><Layout><KnowledgeBase /></Layout></AuthGate>} />
+            <Route path="/app/compare" element={<AuthGate><Layout><DocumentCompare /></Layout></AuthGate>} />
             <Route path="/app/court-rules" element={<AuthGate><Layout><CourtRules /></Layout></AuthGate>} />
             <Route path="/app/analytics" element={<AuthGate><Layout><AnalyticsDashboard /></Layout></AuthGate>} />
             <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
