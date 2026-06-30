@@ -416,35 +416,35 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
                     </div>
                   )}
                 </div>
-                {/* Document Upload CTA */}
-                {docRequest && (
-                  <div className="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                    <div className="flex items-start gap-3">
-                      <Upload size={18} className="text-blue-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-blue-300">
-                          {storedLang === 'es' ? 'Subir Documentos' : 'Upload Documents'}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {storedLang === 'es'
-                            ? 'Use este enlace para subir fotos, informes policiales, registros médicos o cualquier documento relacionado con su caso.'
-                            : 'Use this link to upload photos, police reports, medical records, or any documents related to your case.'
-                          }
-                        </p>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(docRequest.uploadUrl);
-                            toast.success(storedLang === 'es' ? 'Enlace copiado' : 'Link copied');
-                          }}
-                          className="mt-2 flex items-center gap-1.5 text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg hover:bg-blue-500/30 transition-all"
-                        >
-                          <Copy size={12} />
-                          {storedLang === 'es' ? 'Copiar Enlace' : 'Copy Upload Link'}
-                        </button>
-                      </div>
+              )}
+              {/* Document Upload CTA */}
+              {docRequest && (
+                <div className="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <Upload size={18} className="text-blue-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-300">
+                        {storedLang === 'es' ? 'Subir Documentos' : 'Upload Documents'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {storedLang === 'es'
+                          ? 'Use este enlace para subir fotos, informes policiales, registros médicos o cualquier documento relacionado con su caso.'
+                          : 'Use this link to upload photos, police reports, medical records, or any documents related to your case.'
+                        }
+                      </p>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(docRequest.uploadUrl);
+                          toast.success(storedLang === 'es' ? 'Enlace copiado' : 'Link copied');
+                        }}
+                        className="mt-2 flex items-center gap-1.5 text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg hover:bg-blue-500/30 transition-all"
+                      >
+                        <Copy size={12} />
+                        {storedLang === 'es' ? 'Copiar Enlace' : 'Copy Upload Link'}
+                      </button>
                     </div>
                   </div>
-                )}
+                </div>
               )}
             </div>
           )}
