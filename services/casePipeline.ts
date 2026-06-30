@@ -1075,6 +1075,123 @@ export const runPipeline = async (
 
 // ── Re-export for convenience ─────────────────────────────────────────────────
 
+// ── Understanding Synthesis ────────────────────────────────────────────────────
+
+export interface UnderstandingReport {
+  executiveSummary: string;
+  confidenceScore: number;
+  whatWeKnow: {
+    category: string;
+    items: { finding: string; confidence: number; source: string }[];
+  }[];
+  keyPlayers: {
+    name: string;
+    role: string;
+    relevance: string;
+    connections: string[];
+  }[];
+  timelineNarrative: string;
+  contradictions: {
+    description: string;
+    significance: string;
+    resolution: string;
+  }[];
+  whatWeDontKnow: string[];
+  recommendedInvestigations: {
+    action: string;
+    reason: string;
+    priority: 'critical' | 'high' | 'medium' | 'low';
+  }[];
+  generatedAt: number;
+}
+
+export const generateUnderstandingReport = async (
+  state: PipelineState
+): Promise<UnderstandingReport> => {
+  const context = buildCaseContext(
+    { title: state.caseTitle, client: '', status: '' as any, opposingCounsel: '', judge: '', nextCourtDate: '', summary: '', winProbability: 0 } as any,
+    state
+  );
+
+  const prompt = `You are an intelligence analyst for CaseBuddy. You have just finished processing a legal case through a multi-stage AI pipeline. Synthesize EVERYTHING into a single comprehensive understanding report.
+
+Your job: tell me what the system actually UNDERSTOOD from all these documents.
+
+CASE DATA:
+${context}
+
+Produce a JSON object with these exact fields:
+{
+  "executiveSummary": "2-3 paragraph executive summary of what we know about this case",
+  "confidenceScore": 65,
+  "whatWeKnow": [
+    {
+      "category": "string",
+      "items": [
+        { "finding": "string", "confidence": 85, "source": "which doc/entity" }
+      ]
+    }
+  ],
+  "keyPlayers": [
+    {
+      "name": "string",
+      "role": "string",
+      "relevance": "string",
+      "connections": ["other player names"]
+    }
+  ],
+  "timelineNarrative": "narrative prose telling the story of this case chronologically",
+  "contradictions": [
+    {
+      "description": "string",
+      "significance": "string",
+      "resolution": "string"
+    }
+  ],
+  "whatWeDontKnow": ["string", "string"],
+  "recommendedInvestigations": [
+    {
+      "action": "string",
+      "reason": "string",
+      "priority": "critical"
+    }
+  ]
+}
+
+IMPORTANT RULES:
+- Base everything on the actual pipeline data provided. Do NOT invent facts.
+- If the pipeline data is sparse or low-quality, reflect that in lower confidence scores.
+- whatWeKnow should be organized by category (Incident, Witnesses, Evidence, Timeline, Legal Issues, etc.)
+- whatWeDontKnow is just as important as whatWeKnow — be honest about gaps.
+- recommendedInvestigations should be specific and actionable.
+- confidenceScore should reflect how complete and consistent the evidence is.
+`;
+
+  const response = await deepseekChat({
+    systemInstruction: 'You are a legal intelligence analyst. Synthesize evidence into actionable understanding reports. Be precise, honest about gaps, and never invent facts.',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.4,
+    maxTokens: 4096,
+    jsonMode: true,
+    timeoutMs: 60000,
+  });
+
+  const parsed = parseDeepSeekJson<UnderstandingReport>(response, {
+    executiveSummary: 'Unable to generate understanding report.',
+    confidenceScore: 30,
+    whatWeKnow: [],
+    keyPlayers: [],
+    timelineNarrative: '',
+    contradictions: [],
+    whatWeDontKnow: ['Report generation failed — try again.'],
+    recommendedInvestigations: [],
+    generatedAt: Date.now(),
+  });
+
+  parsed.generatedAt = Date.now();
+  return parsed;
+};
+
 export { PIPELINE_STAGES };
 
 // ── Background Pipeline Scheduler ──────────────────────────────────────────────

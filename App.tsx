@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network, Calculator,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar, Download
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar, Download, Youtube
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -62,6 +62,7 @@ const CasePipeline     = React.lazy(() => import('./components/CasePipeline'));
 const KnowledgeBase     = React.lazy(() => import('./components/KnowledgeBase'));
 const GrowthDashboard   = React.lazy(() => import('./components/GrowthDashboard'));
 const CourtRules        = React.lazy(() => import('./components/CourtRules'));
+const TubeScribe        = React.lazy(() => import('./components/TubeScribe'));
 const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashboard'));
 const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
 const PracticeTools     = React.lazy(() => import('./components/PracticeTools'));
@@ -144,6 +145,7 @@ const NAV_GROUPS = [
       { path: '/app/compare', icon: GitCompare, label: 'Doc Compare', badge: 'NEW' },
       { path: '/app/court-rules', icon: Gavel, label: 'Court Rules', badge: 'NEW' },
       { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
+      { path: '/app/tubescribe', icon: Youtube, label: 'TubeScribe', badge: 'NEW' },
     ]
   },
   {
@@ -711,6 +713,7 @@ const App = () => {
             <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
             <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
             <Route path="/app/knowledge" element={<AuthGate><Layout><KnowledgeBase /></Layout></AuthGate>} />
+            <Route path="/app/tubescribe" element={<AuthGate><Layout><TubeScribe /></Layout></AuthGate>} />
             <Route path="/app/compare" element={<AuthGate><Layout><DocumentCompare /></Layout></AuthGate>} />
             <Route path="/app/court-rules" element={<AuthGate><Layout><CourtRules /></Layout></AuthGate>} />
             <Route path="/app/analytics" element={<AuthGate><Layout><AnalyticsDashboard /></Layout></AuthGate>} />

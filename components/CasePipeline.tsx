@@ -9,7 +9,7 @@ import {
   ArrowRight, Trash2
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { runPipeline, scheduleBackgroundPipeline, loadPipelineState, savePipelineState, deletePipelineState, PIPELINE_STAGES } from '../services/casePipeline';
+import { runPipeline, scheduleBackgroundPipeline, loadPipelineState, savePipelineState, deletePipelineState, generateUnderstandingReport, PIPELINE_STAGES } from '../services/casePipeline';
 import type {
   PipelineState, PipelineStage, PipelineStageStatus, PipelineBriefing,
   PipelineInventoryItem, PipelineEntity, PipelineChronologyEntry,
@@ -17,6 +17,7 @@ import type {
   PipelineDiscoveryItem, PipelineGap, PipelineImpeachment,
   PipelineWitnessQuestions, PipelineStageId
 } from '../types';
+import type { UnderstandingReport } from '../services/casePipeline';
 
 const SUPPORTED_FORMATS = ['PDF', 'DOCX', 'JPG', 'PNG', 'MP3', 'MP4', 'WAV', 'TXT', 'EML'];
 const MAX_FILES = 50;
@@ -213,6 +214,8 @@ const CasePipeline: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageListRef = useRef<HTMLDivElement>(null);
   const [lastStageCount, setLastStageCount] = useState(0);
+  const [understandingReport, setUnderstandingReport] = useState<UnderstandingReport | null>(null);
+  const [generatingUnderstanding, setGeneratingUnderstanding] = useState(false);
 
   useEffect(() => {
     if (activeCase?.id) {
@@ -392,6 +395,19 @@ const CasePipeline: React.FC = () => {
     deleteResults();
   };
 
+  const generateReport = async () => {
+    if (!pipelineState || generatingUnderstanding) return;
+    setGeneratingUnderstanding(true);
+    try {
+      const report = await generateUnderstandingReport(pipelineState);
+      setUnderstandingReport(report);
+    } catch (err) {
+      toast.error('Failed to generate understanding report');
+    } finally {
+      setGeneratingUnderstanding(false);
+    }
+  };
+
   const copyBriefing = () => {
     if (!pipelineState?.briefing) return;
     const b = pipelineState.briefing;
@@ -468,6 +484,7 @@ const CasePipeline: React.FC = () => {
   const tabs = useMemo(() => {
     if (!pipelineState) return [];
     return [
+      { id: 'understanding', label: 'Understanding', count: understandingReport ? 1 : 0 },
       { id: 'briefing', label: 'Briefing', count: pipelineState.briefing ? 1 : 0 },
       { id: 'documents', label: 'Documents', count: pipelineState.inventory.length },
       { id: 'timeline', label: 'Timeline', count: pipelineState.chronology.length },
@@ -480,7 +497,7 @@ const CasePipeline: React.FC = () => {
       { id: 'impeachment', label: 'Impeachment', count: pipelineState.impeachments.length },
       { id: 'questions', label: 'Witness Qs', count: pipelineState.witnessQuestions.length },
     ];
-  }, [pipelineState]);
+  }, [pipelineState, understandingReport]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // UPLOAD STATE
@@ -839,7 +856,10 @@ const CasePipeline: React.FC = () => {
               label={tab.label}
               count={tab.count}
               active={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === 'understanding' && !understandingReport && pipelineState) generateReport();
+              }}
             />
           ))}
         </div>
@@ -847,6 +867,154 @@ const CasePipeline: React.FC = () => {
 
       {/* Tab Content */}
       <div className="min-h-[400px]">
+        {/* ── UNDERSTANDING ────────────────────────────────────────────────── */}
+        {activeTab === 'understanding' && (
+          <div className="space-y-6">
+            {generatingUnderstanding ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={24} className="text-gold-500 animate-spin" />
+                <span className="ml-3 text-slate-400">Synthesizing understanding...</span>
+              </div>
+            ) : understandingReport ? (
+              <>
+                {/* Executive Summary */}
+                <div className="bg-slate-900/60 border border-gold-500/20 rounded-xl p-5">
+                  <h3 className="text-sm font-bold text-gold-400 uppercase tracking-wider mb-3">Executive Summary</h3>
+                  <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{understandingReport.executiveSummary}</p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="text-xs text-slate-500">System confidence:</span>
+                    <div className="flex-1 max-w-[200px] bg-slate-800 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all ${
+                          understandingReport.confidenceScore >= 70 ? 'bg-green-500' :
+                          understandingReport.confidenceScore >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${understandingReport.confidenceScore}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-slate-300">{understandingReport.confidenceScore}%</span>
+                  </div>
+                </div>
+
+                {/* What We Know */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">What We Know</h3>
+                  <div className="space-y-4">
+                    {understandingReport.whatWeKnow.map((category, ci) => (
+                      <div key={ci} className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-4">
+                        <h4 className="text-sm font-semibold text-gold-400 mb-2">{category.category}</h4>
+                        <div className="space-y-2">
+                          {category.items.map((item, ii) => (
+                            <div key={ii} className="flex items-start gap-3">
+                              <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                item.confidence >= 80 ? 'bg-green-400' :
+                                item.confidence >= 50 ? 'bg-amber-400' : 'bg-red-400'
+                              }`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-slate-200">{item.finding}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs text-slate-500">Confidence: {item.confidence}%</span>
+                                  <span className="text-xs text-slate-600">Source: {item.source}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Key Players */}
+                {understandingReport.keyPlayers.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Key Players</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {understandingReport.keyPlayers.map((player, pi) => (
+                        <div key={pi} className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-3">
+                          <p className="text-sm font-bold text-white">{player.name}</p>
+                          <p className="text-xs text-gold-400">{player.role}</p>
+                          <p className="text-xs text-slate-400 mt-1">{player.relevance}</p>
+                          {player.connections.length > 0 && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Connected to: {player.connections.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline Narrative */}
+                {understandingReport.timelineNarrative && (
+                  <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Timeline Narrative</h3>
+                    <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{understandingReport.timelineNarrative}</p>
+                  </div>
+                )}
+
+                {/* Contradictions */}
+                {understandingReport.contradictions.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Contradictions & Their Significance</h3>
+                    <div className="space-y-3">
+                      {understandingReport.contradictions.map((c, ci) => (
+                        <div key={ci} className="bg-red-900/10 border border-red-500/20 rounded-xl p-4">
+                          <p className="text-sm text-red-300 font-medium">{c.description}</p>
+                          <p className="text-xs text-slate-400 mt-1">Significance: {c.significance}</p>
+                          <p className="text-xs text-green-400 mt-1">Suggested resolution: {c.resolution}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* What We Don't Know */}
+                {understandingReport.whatWeDontKnow.length > 0 && (
+                  <div className="bg-amber-900/10 border border-amber-500/20 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider mb-3">What We Don't Know</h3>
+                    <ul className="space-y-1.5">
+                      {understandingReport.whatWeDontKnow.map((gap, gi) => (
+                        <li key={gi} className="flex items-start gap-2 text-sm text-slate-300">
+                          <span className="text-amber-400 mt-0.5">•</span>
+                          {gap}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Recommended Investigations */}
+                {understandingReport.recommendedInvestigations.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Recommended Next Steps</h3>
+                    <div className="space-y-2">
+                      {understandingReport.recommendedInvestigations.map((rec, ri) => (
+                        <div key={ri} className="flex items-start gap-3 bg-slate-900/60 border border-slate-700/50 rounded-xl p-3">
+                          <PriorityBadge priority={rec.priority} />
+                          <div>
+                            <p className="text-sm text-white">{rec.action}</p>
+                            <p className="text-xs text-slate-400">{rec.reason}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <BrainCircuit size={32} className="text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400">Generate a system understanding report</p>
+                <button onClick={generateReport} className="mt-3 px-4 py-2 bg-gold-500/20 border border-gold-500/30 text-gold-400 rounded-lg hover:bg-gold-500/30 transition-all text-sm font-medium">
+                  Generate Report
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── BRIEFING ──────────────────────────────────────────────────────── */}
         {activeTab === 'briefing' && briefing && (
           <div className="space-y-6">
