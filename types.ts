@@ -872,6 +872,75 @@ export const TIER_FEATURES: TierFeature[] = [
   { id: 'sso', label: 'SSO Integration', description: 'Single sign-on support', requiredTier: 'enterprise' },
 ];
 
+// ── Knowledge Base ─────────────────────────────────────────────────────────────
+
+export type KBArticleStatus = 'draft' | 'published' | 'archived';
+
+export type KBCategory =
+  | 'case-strategy'
+  | 'motion-drafting'
+  | 'evidence-rules'
+  | 'discovery'
+  | 'witness-examination'
+  | 'jury-selection'
+  | 'constitutional-law'
+  | 'criminal-procedure'
+  | 'civil-procedure'
+  | 'appellate'
+  | 'settlement'
+  | 'trial-technique'
+  | 'legal-research'
+  | 'client-management'
+  | 'firm-operations';
+
+export interface KBArticle {
+  id: string;
+  title: string;
+  content: string;               // markdown content
+  category: KBCategory;
+  tags: string[];
+  status: KBArticleStatus;
+  author: string;                // agent name or 'user'
+  caseReference?: string;        // caseId this was learned from
+  relatedCaseIds: string[];      // cases this article is relevant to
+  citations: string[];           // legal citations referenced
+  viewCount: number;
+  helpfulCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KBSearchResult {
+  article: KBArticle;
+  relevanceScore: number;        // 0-100
+  matchedOn: string[];           // which fields matched
+}
+
+export interface KBCategoryInfo {
+  id: KBCategory;
+  label: string;
+  description: string;
+  icon: string;                  // emoji
+}
+
+export const KB_CATEGORIES: KBCategoryInfo[] = [
+  { id: 'case-strategy', label: 'Case Strategy', description: 'Strategic approaches and frameworks', icon: '🎯' },
+  { id: 'motion-drafting', label: 'Motion Drafting', description: 'Motion templates and arguments', icon: '📝' },
+  { id: 'evidence-rules', label: 'Evidence Rules', description: 'Rules of evidence and admissibility', icon: '🔍' },
+  { id: 'discovery', label: 'Discovery', description: 'Discovery tactics and management', icon: '🔎' },
+  { id: 'witness-examination', label: 'Witness Examination', description: 'Direct and cross techniques', icon: '👤' },
+  { id: 'jury-selection', label: 'Jury Selection', description: 'Voir dire and jury strategy', icon: '🧠' },
+  { id: 'constitutional-law', label: 'Constitutional Law', description: '4th/5th/6th Amendment issues', icon: '🏛️' },
+  { id: 'criminal-procedure', label: 'Criminal Procedure', description: 'Criminal case process', icon: '⚖️' },
+  { id: 'civil-procedure', label: 'Civil Procedure', description: 'Civil litigation rules', icon: '📋' },
+  { id: 'appellate', label: 'Appellate Practice', description: 'Appeals and post-conviction', icon: '📚' },
+  { id: 'settlement', label: 'Settlement', description: 'Negotiation and ADR', icon: '🤝' },
+  { id: 'trial-technique', label: 'Trial Technique', description: 'Courtroom advocacy skills', icon: '🎭' },
+  { id: 'legal-research', label: 'Legal Research', description: 'Research methods and resources', icon: '📖' },
+  { id: 'client-management', label: 'Client Management', description: 'Client relations and intake', icon: '👥' },
+  { id: 'firm-operations', label: 'Firm Operations', description: 'Practice management', icon: '🏢' },
+];
+
 export const ROLE_DEFINITIONS: RoleDefinition[] = [
   {
     role: 'admin',

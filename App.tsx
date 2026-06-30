@@ -4,9 +4,9 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
-  Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User
+  Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
+  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network,
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, Calendar
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -55,9 +55,17 @@ const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
 const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'));
 const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
 const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
+const EvidenceTimeline = React.lazy(() => import('./components/EvidenceTimeline'));
 const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
 const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
 const CasePipeline     = React.lazy(() => import('./components/CasePipeline'));
+const KnowledgeBase     = React.lazy(() => import('./components/KnowledgeBase'));
+const GrowthDashboard   = React.lazy(() => import('./components/GrowthDashboard'));
+const CourtRules        = React.lazy(() => import('./components/CourtRules'));
+const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashboard'));
+const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
+const CalendarView      = React.lazy(() => import('./components/CalendarView'));
+const EvidenceMapper    = React.lazy(() => import('./components/EvidenceMapper'));
 const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
 const ProSeIntakeWizard= React.lazy(() => import('./components/ProSeIntakeWizard'));
 
@@ -96,10 +104,12 @@ const NAV_GROUPS = [
       { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
+      { path: '/app/timeline', icon: Clock, label: 'Case Timeline' },
       { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
       { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
       { path: '/app/war-room', icon: Shield, label: 'War Room' },
       { path: '/app/pipeline', icon: BrainCircuit, label: 'Case Pipeline', badge: 'NEW' },
+      { path: '/app/mapper', icon: Network, label: 'Evidence Mapper', badge: 'NEW' },
       { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
     ]
   },
@@ -111,6 +121,12 @@ const NAV_GROUPS = [
       { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
       { path: '/app/case-thread', icon: MessageSquare, label: 'Case Threads', badge: 'New' },
+    ]
+  },
+  {
+    label: 'Growth',
+    items: [
+      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Marketing', badge: 'NEW' },
     ]
   },
   {
@@ -131,6 +147,9 @@ const NAV_GROUPS = [
       { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
       { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
       { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
+      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
+      { path: '/app/court-rules', icon: Gavel, label: 'Court Rules', badge: 'NEW' },
+      { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
     ]
   },
   {
@@ -139,7 +158,9 @@ const NAV_GROUPS = [
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
+      { path: '/app/calendar', icon: Calendar, label: 'Calendar', badge: 'NEW' },
       { path: '/app/billing', icon: DollarSign, label: 'Billing & Invoices', badge: 'NEW' },
+      { path: '/app/payments', icon: CreditCard, label: 'Payments', badge: 'NEW' },
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
@@ -170,7 +191,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         if (group.label === 'Tools') {
           return {
             ...group,
-            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations', 'Billing & Invoices'].includes(item.label)),
+            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations', 'Billing & Invoices', 'Payments', 'Calendar'].includes(item.label)),
           };
         }
         return group;
@@ -662,12 +683,16 @@ const App = () => {
             <Route path="/app/firm-admin" element={<AuthGate><Layout><FirmAdminPanel /></Layout></AuthGate>} />
             <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
             <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
+            <Route path="/app/timeline" element={<AuthGate><Layout><EvidenceTimeline /></Layout></AuthGate>} />
             <Route path="/app/discovery" element={<AuthGate><Layout><DiscoveryManager /></Layout></AuthGate>} />
             <Route path="/app/upload" element={<AuthGate><Layout><BulkDocumentUpload /></Layout></AuthGate>} />
             <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
             <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
             <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
             <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
+            <Route path="/app/knowledge" element={<AuthGate><Layout><KnowledgeBase /></Layout></AuthGate>} />
+            <Route path="/app/court-rules" element={<AuthGate><Layout><CourtRules /></Layout></AuthGate>} />
+            <Route path="/app/analytics" element={<AuthGate><Layout><AnalyticsDashboard /></Layout></AuthGate>} />
             <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
             <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
             <Route path="/app/agent-status" element={<AuthGate><Layout><AgentStatusDashboard /></Layout></AuthGate>} />
@@ -676,7 +701,11 @@ const App = () => {
             <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
             <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
             <Route path="/app/pipeline" element={<AuthGate><Layout><CasePipeline /></Layout></AuthGate>} />
+            <Route path="/app/mapper" element={<AuthGate><Layout><EvidenceMapper /></Layout></AuthGate>} />
             <Route path="/app/billing" element={<AuthGate><Layout><BillingDashboard /></Layout></AuthGate>} />
+            <Route path="/app/calendar" element={<AuthGate><Layout><CalendarView /></Layout></AuthGate>} />
+            <Route path="/app/payments" element={<AuthGate><Layout><PaymentCenter /></Layout></AuthGate>} />
+            <Route path="/app/growth" element={<AuthGate><Layout><GrowthDashboard /></Layout></AuthGate>} />
             <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
             <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
             <Route path="/app/companion-setup" element={<AuthGate><Layout><ProSeIntakeWizard /></Layout></AuthGate>} />
