@@ -368,7 +368,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
       <div className="md:ml-64 min-h-screen flex flex-col">
-        <header className="h-14 glass-dark border-b border-white/5 sticky top-0 z-30 px-6 flex items-center justify-between">
+        <header className="h-14 glass-dark border-b border-white/5 sticky top-0 z-30 px-3 sm:px-4 md:px-6 flex items-center justify-between">
           <button className="md:hidden text-slate-400" onClick={() => setIsSidebarOpen(true)}>
             <Menu size={22} />
           </button>
@@ -400,7 +400,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
-              className="flex-1 p-4 sm:p-6 md:p-8"
+              className="flex-1 p-3 sm:p-4 md:p-6 lg:p-8"
             >
               <ErrorBoundary label={location.pathname.split('/').pop() || 'Page'}>
                 <Suspense fallback={<PageSpinner />}>

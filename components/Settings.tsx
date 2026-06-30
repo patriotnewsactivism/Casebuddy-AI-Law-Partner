@@ -5,6 +5,7 @@ import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle,
 import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
 import { getFirmId, setFirmId, syncLabel } from '../services/caseStore';
 import { updatePassword, signOut as signOutUser } from '../services/authService';
+import { getThemePresets, applyPreset, resetToDefault, getThemeConfig, computeDerivedColors, saveThemeConfig, type ThemePreset, type ThemeConfig } from '../services/themeEngine';
 
 const FIRM_BRANDING_KEY = 'casebuddy_firm_branding';
 const FIRM_LOGO_KEY = 'casebuddy_firm_logo';
@@ -142,6 +143,13 @@ const Settings = () => {
   const [firmIdInput, setFirmIdInput] = useState(() => getFirmId());
   const [firmIdCopied, setFirmIdCopied] = useState(false);
 
+  // Theme engine state
+  const themePresets = getThemePresets();
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [customPrimary, setCustomPrimary] = useState('#D4AF37');
+  const [customAccent, setCustomAccent] = useState('#F59E0B');
+  const [customSaved, setCustomSaved] = useState(false);
+
   const currentApiKey = process.env.API_KEY || '';
   const isApiKeyConfigured = currentApiKey && currentApiKey !== '';
 
@@ -158,6 +166,15 @@ const Settings = () => {
     setTagline(branding.tagline);
     setWhiteLabel(branding.whiteLabel);
     setFirmLogo(loadFirmLogo());
+
+    // Load theme config
+    const currentConfig = getThemeConfig();
+    if (currentConfig) {
+      setCustomPrimary(currentConfig.primaryColor);
+      setCustomAccent(currentConfig.accentColor);
+      const matchingPreset = getThemePresets().find(p => p.colors.primary === currentConfig.primaryColor);
+      if (matchingPreset) setActivePresetId(matchingPreset.id);
+    }
   }, []);
 
   useEffect(() => {
@@ -636,29 +653,158 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* Appearance */}
+      {/* Theme */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-5">
           <Palette className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Appearance</h2>
+          <h2 className="text-xl font-semibold text-white">Theme</h2>
         </div>
 
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {theme === 'dark' ? <Moon size={20} className="text-gold-500" /> : <Sun size={20} className="text-gold-500" />}
-              <span className="text-slate-300">Theme</span>
+        <div className="space-y-6">
+          {/* Dark / Light Toggle */}
+          <div>
+            <p className="text-sm font-medium text-slate-300 mb-3">Mode</p>
+            <div className="inline-flex bg-slate-900 border border-slate-700 rounded-lg p-1">
+              <button
+                onClick={() => { handleThemeChange('dark'); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  theme === 'dark' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Moon size={16} />
+                Dark
+              </button>
+              <button
+                onClick={() => { handleThemeChange('light'); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  theme === 'light' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sun size={16} />
+                Light
+              </button>
             </div>
-            <select
-              value={theme}
-              onChange={(e) => handleThemeChange(e.target.value as 'dark' | 'light')}
-              className="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-600 transition-colors cursor-pointer"
-            >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
           </div>
-          <p className="text-xs text-slate-400 italic">Theme preference is saved and applied instantly across the app.</p>
+
+          {/* Theme Presets */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-medium text-slate-300">Presets</p>
+              <button
+                onClick={() => {
+                  resetToDefault();
+                  setActivePresetId(null);
+                  setCustomPrimary('#D4AF37');
+                  setCustomAccent('#F59E0B');
+                  setCustomSaved(false);
+                }}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Reset to Default
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {themePresets.map(preset => {
+                const isActive = activePresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      const cfg = applyPreset(preset.id);
+                      setActivePresetId(preset.id);
+                      setCustomPrimary(cfg.primaryColor);
+                      setCustomAccent(cfg.accentColor);
+                      setCustomSaved(false);
+                      if (preset.id === 'classic-ivory') {
+                        handleThemeChange('light');
+                      } else {
+                        handleThemeChange('dark');
+                      }
+                    }}
+                    className={`text-left p-3 rounded-lg border transition-all ${
+                      isActive
+                        ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_12px_rgba(212,175,55,0.15)]'
+                        : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-white mb-1">{preset.name}</p>
+                    <p className="text-xs text-slate-400 mb-2 line-clamp-2">{preset.description}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.primary }} title="Primary" />
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.accent }} title="Accent" />
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.background }} title="Background" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Colors */}
+          <div>
+            <p className="text-sm font-medium text-slate-300 mb-3">Custom Colors</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Primary Color</label>
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: customPrimary }} />
+                  <input
+                    type="text"
+                    value={customPrimary}
+                    onChange={e => setCustomPrimary(e.target.value)}
+                    placeholder="#D4AF37"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gold-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Accent Color</label>
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: customAccent }} />
+                  <input
+                    type="text"
+                    value={customAccent}
+                    onChange={e => setCustomAccent(e.target.value)}
+                    placeholder="#F59E0B"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gold-500"
+                  />
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const existing = getThemeConfig();
+                const derived = computeDerivedColors(customPrimary);
+                const config: ThemeConfig = {
+                  id: existing?.id || '',
+                  firmName: existing?.firmName || 'CaseBuddy',
+                  primaryColor: customPrimary,
+                  primaryHover: derived.primaryHover,
+                  accentColor: customAccent,
+                  backgroundColor: existing?.backgroundColor || '#020617',
+                  cardBackground: existing?.cardBackground || '#0F172A',
+                  sidebarBackground: existing?.sidebarBackground || '#020617',
+                  textPrimary: existing?.textPrimary || '#F8FAFC',
+                  textSecondary: existing?.textSecondary || '#94A3B8',
+                  borderColor: existing?.borderColor || '#334155',
+                  fontFamily: existing?.fontFamily || 'Inter, sans-serif',
+                  headingFont: existing?.headingFont || 'Inter, sans-serif',
+                  cssVariables: '',
+                  applied: false,
+                  createdAt: existing?.createdAt || Date.now(),
+                  updatedAt: Date.now(),
+                };
+                saveThemeConfig(config);
+                setActivePresetId(null);
+                setCustomSaved(true);
+                setTimeout(() => setCustomSaved(false), 2000);
+              }}
+              className="mt-3 w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg py-2 text-sm font-medium text-slate-300 transition-colors"
+            >
+              {customSaved ? <CheckCircle size={16} className="text-green-400" /> : null}
+              Apply Custom Colors
+            </button>
+          </div>
         </div>
       </div>
 
