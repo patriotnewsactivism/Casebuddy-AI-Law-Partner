@@ -57,12 +57,16 @@ const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
 const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
 const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
 const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
+const CasePipeline     = React.lazy(() => import('./components/CasePipeline'));
+const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
 const ProSeIntakeWizard= React.lazy(() => import('./components/ProSeIntakeWizard'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
 import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences, OperatingMode } from './utils/storage';
 import { backgroundEngine } from './services/backgroundAgentEngine';
+import { getCurrentTier, isFeatureAvailable, getTierLabel } from './services/tierService';
+import type { ProductTier } from './types';
 import { caseMonitor } from './services/caseMonitor';
 import { orchestrator } from './services/agentOrchestrator';
 import { consolidateMemory } from './services/agentMemory';
@@ -95,6 +99,7 @@ const NAV_GROUPS = [
       { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
       { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
       { path: '/app/war-room', icon: Shield, label: 'War Room' },
+      { path: '/app/pipeline', icon: BrainCircuit, label: 'Case Pipeline', badge: 'NEW' },
       { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
     ]
   },
@@ -134,6 +139,7 @@ const NAV_GROUPS = [
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
       { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
       { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
+      { path: '/app/billing', icon: DollarSign, label: 'Billing & Invoices', badge: 'NEW' },
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
@@ -148,7 +154,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const isActive = (path: string) => location.pathname === path;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [navSearch, setNavSearch] = useState('');
-  const { syncStatus, operatingMode } = React.useContext(AppContext);
+  const { syncStatus, operatingMode, productTier } = React.useContext(AppContext);
 
   const filteredNavGroups = React.useMemo(() => {
     let groups = NAV_GROUPS;
@@ -164,11 +170,24 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         if (group.label === 'Tools') {
           return {
             ...group,
-            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations'].includes(item.label)),
+            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations', 'Billing & Invoices'].includes(item.label)),
           };
         }
         return group;
       }).filter(group => group.label === 'My Cases' || group.label === 'Tools' || group.label === 'Courtroom Prep');
+    }
+
+    // Enterprise tier gate: hide enterprise-only features if not enterprise
+    if (productTier !== 'enterprise') {
+      groups = groups.map(group => {
+        if (group.label === 'Tools') {
+          return {
+            ...group,
+            items: group.items.filter(item => item.label !== 'Firm Admin'),
+          };
+        }
+        return group;
+      });
     }
 
     if (!navSearch.trim()) return groups;
@@ -177,7 +196,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
       ...group,
       items: group.items.filter((item: any) => item.label.toLowerCase().includes(q)),
     })).filter(group => group.items.length > 0);
-  }, [navSearch, operatingMode]);
+  }, [navSearch, operatingMode, productTier]);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -261,6 +280,17 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
             {syncStatus === 'error' && <><CloudOff size={13} className="text-amber-400" /><span className="text-amber-400">Cloud unavailable</span></>}
             {syncStatus === 'local-only' && <><CloudOff size={13} className="text-slate-600" /><span className="text-slate-600">Local only</span></>}
           </div>
+          {/* Product tier badge */}
+          <Link to="/app/firm-admin" onClick={() => setIsOpen(false)}
+            className="flex items-center gap-2 px-5 py-2 text-xs">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              productTier === 'enterprise' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+              productTier === 'professional' ? 'bg-gold-500/20 text-gold-400 border border-gold-500/30' :
+              'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+            }`}>
+              {getTierLabel(productTier)}
+            </span>
+          </Link>
           <Link to="/pricing" onClick={() => setIsOpen(false)}
             className="flex items-center gap-3 px-5 py-2.5 text-sm text-slate-400 hover:text-white transition-all">
             <DollarSign size={17} />
@@ -385,6 +415,7 @@ export const AppContext = React.createContext<{
   setTheme: (t: 'dark' | 'light') => void;
   operatingMode: OperatingMode;
   setOperatingMode: (m: OperatingMode) => void;
+  productTier: ProductTier;
   syncStatus: SyncStatus;
   user: User | null;
   authLoading: boolean;
@@ -399,6 +430,7 @@ export const AppContext = React.createContext<{
   setTheme: () => {},
   operatingMode: 'partner',
   setOperatingMode: () => {},
+  productTier: 'professional',
   syncStatus: 'local-only',
   user: null,
   authLoading: true,
@@ -420,6 +452,7 @@ const App = () => {
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
   const [operatingMode, setOperatingModeState] = useState<OperatingMode>(() => loadPreferences().operatingMode ?? 'partner');
+  const [productTier, setProductTierState] = useState<ProductTier>(() => getCurrentTier());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -588,7 +621,7 @@ const App = () => {
   }, []);
 
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, operatingMode, setOperatingMode, syncStatus, user, authLoading }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, operatingMode, setOperatingMode, productTier, syncStatus, user, authLoading }}>
       <BrowserRouter>
         {showOnboarding && user && (
           <Suspense fallback={null}>
@@ -642,6 +675,8 @@ const App = () => {
             <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
             <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
             <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
+            <Route path="/app/pipeline" element={<AuthGate><Layout><CasePipeline /></Layout></AuthGate>} />
+            <Route path="/app/billing" element={<AuthGate><Layout><BillingDashboard /></Layout></AuthGate>} />
             <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
             <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
             <Route path="/app/companion-setup" element={<AuthGate><Layout><ProSeIntakeWizard /></Layout></AuthGate>} />

@@ -2,11 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Shield, Users, Key, Copy, Trash2, Plus, RefreshCw,
   CheckCircle, XCircle, Clock, AlertTriangle, Lock,
-  Eye, EyeOff, LogOut, Loader2, ChevronRight, UserX, UserCheck
+  Eye, EyeOff, LogOut, Loader2, ChevronRight, UserX, UserCheck,
+  DollarSign, TrendingUp, Cpu, Settings as SettingsIcon, BarChart3, Star, Zap, ArrowUp
 } from 'lucide-react';
 import { getSupabase } from '../services/supabaseClient';
 import { getFirmId } from '../services/caseStore';
 import { toast } from 'react-toastify';
+import { getCurrentTier, setCurrentTier, getTierLabel, getTierFeatures, getUpgradeFeatures, isFeatureAvailable } from '../services/tierService';
+import { loadPreferences, savePreferences } from '../utils/storage';
+import type { ProductTier, UserRole, ApiKey, FirmSettings, UsageMetrics, TierFeature, RoleDefinition } from '../types';
+import { TIER_FEATURES, ROLE_DEFINITIONS } from '../types';
 
 interface InviteCode {
   code: string;
@@ -35,6 +40,12 @@ const daysLeft = (iso: string) => {
   return d <= 0 ? 'Expired' : d === 1 ? '1 day left' : `${d} days left`;
 };
 
+const tierOrder: Record<ProductTier, number> = { personal: 0, professional: 1, enterprise: 2 };
+const tierPrices: Record<ProductTier, string> = { personal: '$29', professional: '$149', enterprise: '$499' };
+const apiScopes = ['read:cases', 'write:cases', 'read:documents', 'write:documents', 'read:billing', 'read:admin'];
+const usTimezones = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu'];
+const currencies = ['USD', 'CAD', 'EUR', 'GBP'];
+
 const FirmAdminPanel: React.FC = () => {
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
   const [members, setMembers] = useState<FirmMember[]>([]);
@@ -43,7 +54,35 @@ const FirmAdminPanel: React.FC = () => {
   const [firmId, setFirmId] = useState('');
   const [showFirmId, setShowFirmId] = useState(false);
   const [expiryDays, setExpiryDays] = useState(7);
-  const [activeTab, setActiveTab] = useState<'members' | 'invites' | 'security'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'invites' | 'tier' | 'api-keys' | 'settings' | 'security'>('members');
+
+  const [currentTier, setCurrentTierState] = useState<ProductTier>(() => getCurrentTier());
+  const [firmSettings, setFirmSettings] = useState<FirmSettings>(() => {
+    const prefs = loadPreferences() as any;
+    return {
+      firmName: prefs.firmName || 'CaseBuddy Law Firm',
+      firmEmail: prefs.firmEmail || '',
+      firmPhone: prefs.firmPhone || '',
+      firmAddress: prefs.firmAddress || '',
+      firmWebsite: prefs.firmWebsite || '',
+      logoUrl: prefs.logoUrl || '',
+      primaryColor: prefs.primaryColor || '#D4AF37',
+      timezone: prefs.timezone || 'America/Chicago',
+      currency: prefs.currency || 'USD',
+      defaultBillingRate: prefs.defaultBillingRate || 350,
+      invoicePrefix: prefs.invoicePrefix || 'INV',
+      invoiceFooter: prefs.invoiceFooter || 'Thank you for your business.',
+      requireMFA: prefs.requireMFA || false,
+      sessionTimeoutMinutes: prefs.sessionTimeoutMinutes || 480,
+    };
+  });
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>(() => {
+    try { return JSON.parse(localStorage.getItem('casebuddy_api_keys') || '[]'); }
+    catch { return []; }
+  });
+  const [showKey, setShowKey] = useState<Set<string>>(new Set());
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>([]);
 
   const sb = getSupabase();
 
@@ -98,7 +137,6 @@ const FirmAdminPanel: React.FC = () => {
 
   const revokeCode = async (code: string) => {
     if (!sb) return;
-    // Mark as used so it can't be claimed
     const { error } = await sb
       .from('invite_codes')
       .update({ is_used: true, used_at: new Date().toISOString() })
@@ -120,6 +158,37 @@ const FirmAdminPanel: React.FC = () => {
   const copyFirmId = () => {
     navigator.clipboard.writeText(firmId);
     toast.success('Firm ID copied');
+  };
+
+  const generateApiKey = (name: string, scopes: string[]): ApiKey => {
+    const prefix = 'cb_' + Math.random().toString(36).slice(2, 8);
+    const key = prefix + '_' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    return { id: `key_${Date.now()}`, name, key, prefix, scopes, createdAt: Date.now(), enabled: true };
+  };
+
+  const saveApiKeys = (keys: ApiKey[]) => {
+    localStorage.setItem('casebuddy_api_keys', JSON.stringify(keys));
+    setApiKeys(keys);
+  };
+
+  const handleCreateKey = () => {
+    if (!newKeyName.trim()) { toast.error('Name is required'); return; }
+    if (newKeyScopes.length === 0) { toast.error('Select at least one scope'); return; }
+    const newKey = generateApiKey(newKeyName.trim(), newKeyScopes);
+    saveApiKeys([newKey, ...apiKeys]);
+    setNewKeyName('');
+    setNewKeyScopes([]);
+    toast.success('API key created');
+  };
+
+  const toggleScope = (scope: string) => {
+    setNewKeyScopes(prev => prev.includes(scope) ? prev.filter(s => s !== scope) : [...prev, scope]);
+  };
+
+  const handleSaveSettings = () => {
+    (savePreferences as any)(firmSettings);
+    toast.success('Firm settings saved');
   };
 
   const activeInvites  = inviteCodes.filter(c => !c.is_used && new Date(c.expires_at) > new Date());
@@ -187,7 +256,7 @@ const FirmAdminPanel: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-900/40 border border-slate-700/60 rounded-xl p-1">
-        {(['members', 'invites', 'security'] as const).map(tab => (
+        {(['members', 'invites', 'tier', 'api-keys', 'settings', 'security'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`flex-1 py-2 text-sm font-medium rounded-lg capitalize transition-all ${
               activeTab === tab
@@ -329,6 +398,287 @@ const FirmAdminPanel: React.FC = () => {
           {inviteCodes.length === 0 && (
             <div className="text-center py-8 text-slate-500 text-sm">No invite codes yet — generate one above</div>
           )}
+        </div>
+      )}
+
+      {/* ── TIER TAB ── */}
+      {activeTab === 'tier' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(Object.keys(tierPrices) as ProductTier[]).map(tier => {
+              const isCurrent = currentTier === tier;
+              const isHigher = tierOrder[tier] > tierOrder[currentTier];
+              const isLower = tierOrder[tier] < tierOrder[currentTier];
+              const features = getTierFeatures(tier);
+              return (
+                <div key={tier} className={`bg-slate-900/60 border rounded-xl p-5 flex flex-col ${isCurrent ? 'border-gold-500 shadow-lg shadow-gold-500/10' : 'border-slate-700/60'}`}>
+                  {isCurrent && (
+                    <span className="text-xs bg-gold-500/20 border border-gold-500/40 text-gold-400 px-2 py-0.5 rounded-full font-bold self-start mb-3">
+                      Current Plan
+                    </span>
+                  )}
+                  <h3 className="text-lg font-bold text-white capitalize mb-1">{tier}</h3>
+                  <div className="flex items-baseline gap-1 mb-4">
+                    <span className="text-3xl font-bold text-white">{tierPrices[tier]}</span>
+                    <span className="text-sm text-slate-400">/mo</span>
+                  </div>
+                  <div className="space-y-2 mb-4 flex-1">
+                    {features.slice(0, 8).map(f => (
+                      <div key={f.id} className="flex items-start gap-2">
+                        <CheckCircle size={14} className="text-green-400 shrink-0 mt-0.5" />
+                        <span className="text-xs text-slate-300">{f.label}</span>
+                      </div>
+                    ))}
+                    {features.length > 8 && (
+                      <p className="text-xs text-slate-500 pl-6">+{features.length - 8} more features</p>
+                    )}
+                  </div>
+                  {isCurrent ? (
+                    <button disabled className="w-full py-2 rounded-lg text-sm font-bold bg-gold-500/20 text-gold-400 border border-gold-500/30 cursor-not-allowed">
+                      Current Plan
+                    </button>
+                  ) : isHigher ? (
+                    <button onClick={() => { setCurrentTier(tier); setCurrentTierState(tier); toast.success(`Upgraded to ${getTierLabel(tier)}`); }}
+                      className="w-full py-2 rounded-lg text-sm font-bold bg-gold-500 hover:bg-gold-600 text-black transition-all">
+                      <span className="flex items-center justify-center gap-1.5">
+                        <ArrowUp size={14} />
+                        Upgrade
+                      </span>
+                    </button>
+                  ) : (
+                    <button onClick={() => { setCurrentTier(tier); setCurrentTierState(tier); toast.success(`Downgraded to ${getTierLabel(tier)}`); }}
+                      className="w-full py-2 rounded-lg text-sm font-bold border border-slate-600 text-slate-300 hover:border-gold-500/50 hover:text-gold-400 transition-all">
+                      Downgrade
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {getUpgradeFeatures(currentTier).length > 0 && (
+            <div className="bg-slate-900/60 border border-amber-500/20 rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap size={16} className="text-amber-400" />
+                <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider">
+                  You're missing {getUpgradeFeatures(currentTier).length} higher-tier features
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {getUpgradeFeatures(currentTier).map(f => (
+                  <div key={f.id} className="flex items-start gap-2">
+                    <Star size={12} className="text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-xs font-medium text-slate-200">{f.label}</span>
+                      <p className="text-xs text-slate-500">{f.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => { setCurrentTier('enterprise'); setCurrentTierState('enterprise'); toast.success('Upgraded to CaseBuddy Enterprise'); }}
+                className="mt-4 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-black font-bold text-sm px-4 py-2 rounded-lg transition-all">
+                <ArrowUp size={14} />
+                Upgrade to Enterprise
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── API KEYS TAB ── */}
+      {activeTab === 'api-keys' && (
+        <div className="space-y-4">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-200">API keys grant programmatic access to your firm's data. Treat them like passwords.</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 space-y-3">
+            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Generate API Key</h2>
+            <input type="text" value={newKeyName} onChange={e => setNewKeyName(e.target.value)}
+              placeholder="Key name (e.g. Integration, Webhook)"
+              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 placeholder-slate-500" />
+            <div>
+              <p className="text-xs text-slate-400 mb-2">Scopes</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {apiScopes.map(scope => (
+                  <label key={scope} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={newKeyScopes.includes(scope)} onChange={() => toggleScope(scope)}
+                      className="accent-gold-500" />
+                    {scope}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <button onClick={handleCreateKey}
+              className="flex items-center gap-2 bg-gold-500 hover:bg-gold-600 text-black font-bold text-sm px-4 py-2 rounded-lg transition-all">
+              <Plus size={14} />
+              Generate Key
+            </button>
+          </div>
+
+          {apiKeys.length === 0 ? (
+            <div className="text-center py-8 text-slate-500 text-sm">No API keys yet. Generate one to integrate with external systems.</div>
+          ) : (
+            <div className="space-y-2">
+              {apiKeys.map(k => (
+                <div key={k.id} className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-white">{k.name}</span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => {
+                        navigator.clipboard.writeText(k.key);
+                        toast.success('API key copied');
+                      }} className="p-1.5 text-slate-400 hover:text-gold-400 rounded transition-all">
+                        <Copy size={14} />
+                      </button>
+                      <button onClick={() => {
+                        saveApiKeys(apiKeys.filter(ak => ak.id !== k.id));
+                        toast.success('API key deleted');
+                      }} className="p-1.5 text-slate-400 hover:text-red-400 rounded transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono text-slate-400 bg-slate-800 border border-slate-700 rounded px-2 py-1">
+                      {showKey.has(k.id) ? k.key : k.prefix + '••••••••••••••••••••••••••••••••'}
+                    </code>
+                    <button onClick={() => {
+                      setShowKey(prev => { const next = new Set(prev); next.has(k.id) ? next.delete(k.id) : next.add(k.id); return next; });
+                    }} className="text-xs text-slate-400 hover:text-white transition-colors">
+                      {showKey.has(k.id) ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {k.scopes.map(s => (
+                      <span key={s} className="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-full">{s}</span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>Created {new Date(k.createdAt).toLocaleDateString()}</span>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <span className={k.enabled ? 'text-green-400' : 'text-slate-500'}>{k.enabled ? 'Enabled' : 'Disabled'}</span>
+                      <button onClick={() => {
+                        saveApiKeys(apiKeys.map(ak => ak.id === k.id ? { ...ak, enabled: !ak.enabled } : ak));
+                      }} className={`relative w-8 h-4 rounded-full transition-colors ${k.enabled ? 'bg-green-500' : 'bg-slate-600'}`}>
+                        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${k.enabled ? 'left-4' : 'left-0.5'}`} />
+                      </button>
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SETTINGS TAB ── */}
+      {activeTab === 'settings' && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Firm Settings</h2>
+          <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Firm Name</label>
+                <input type="text" value={firmSettings.firmName}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, firmName: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Firm Email</label>
+                <input type="email" value={firmSettings.firmEmail}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, firmEmail: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Firm Phone</label>
+                <input type="tel" value={firmSettings.firmPhone || ''}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, firmPhone: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Firm Website</label>
+                <input type="url" value={firmSettings.firmWebsite || ''}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, firmWebsite: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Timezone</label>
+                <select value={firmSettings.timezone}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, timezone: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2">
+                  {usTimezones.map(tz => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Currency</label>
+                <select value={firmSettings.currency}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, currency: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2">
+                  {currencies.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Default Billing Rate ($/hr)</label>
+                <input type="number" value={firmSettings.defaultBillingRate}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, defaultBillingRate: Number(e.target.value) }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Invoice Prefix</label>
+                <input type="text" value={firmSettings.invoicePrefix}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, invoicePrefix: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs text-slate-400 block mb-1">Firm Address</label>
+                <textarea value={firmSettings.firmAddress || ''}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, firmAddress: e.target.value }))}
+                  rows={2}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 resize-none" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs text-slate-400 block mb-1">Invoice Footer</label>
+                <input type="text" value={firmSettings.invoiceFooter || ''}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, invoiceFooter: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2" />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-700/60 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm text-white">Require MFA</span>
+                  <p className="text-xs text-slate-500">Mandate multi-factor authentication for all firm members</p>
+                </div>
+                <button onClick={() => setFirmSettings(prev => ({ ...prev, requireMFA: !prev.requireMFA }))}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${firmSettings.requireMFA ? 'bg-green-500' : 'bg-slate-600'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${firmSettings.requireMFA ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm text-white">Session Timeout (minutes)</span>
+                  <p className="text-xs text-slate-500">Auto-logout after inactivity</p>
+                </div>
+                <input type="number" value={firmSettings.sessionTimeoutMinutes}
+                  onChange={e => setFirmSettings(prev => ({ ...prev, sessionTimeoutMinutes: Number(e.target.value) }))}
+                  className="w-24 bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 text-center" />
+              </div>
+            </div>
+
+            <button onClick={handleSaveSettings}
+              className="flex items-center gap-2 bg-gold-500 hover:bg-gold-600 text-black font-bold text-sm px-4 py-2 rounded-lg transition-all">
+              <SettingsIcon size={14} />
+              Save Settings
+            </button>
+          </div>
         </div>
       )}
 

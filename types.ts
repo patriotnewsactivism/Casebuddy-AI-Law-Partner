@@ -473,3 +473,435 @@ export interface WarRoomBriefing {
   summary: string;
   tasks: WarRoomTask[];
 }
+
+// ── CasePipeline — Autonomous Evidence Intelligence Engine ────────────────────
+
+export type PipelineStageId =
+  | 'inventory'
+  | 'extraction'
+  | 'indexing'
+  | 'entities'
+  | 'chronology'
+  | 'contradictions'
+  | 'constitutional'
+  | 'motions'
+  | 'discovery-plan'
+  | 'gap-analysis'
+  | 'impeachment'
+  | 'witness-questions'
+  | 'briefing';
+
+export interface PipelineStageDef {
+  id: PipelineStageId;
+  label: string;
+  description: string;
+  icon: string; // emoji
+}
+
+export type PipelineStageStatus = 'pending' | 'running' | 'completed' | 'error' | 'skipped';
+
+export interface PipelineStage {
+  id: PipelineStageId;
+  label: string;
+  status: PipelineStageStatus;
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+  output?: any;
+}
+
+export interface PipelineInventoryItem {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  batesNumber?: string;
+  category?: string; // 'police-report' | 'witness-statement' | 'medical-record' | 'photo' | 'video' | 'audio' | 'correspondence' | 'legal-filing' | 'other'
+  extractedText?: string;
+  summary?: string;
+}
+
+export interface PipelineEntity {
+  name: string;
+  type: 'person' | 'organization' | 'location' | 'date' | 'statute' | 'case-law';
+  role?: string; // 'witness' | 'opposing-party' | 'victim' | 'officer' | 'expert' | 'judge' | 'other'
+  mentions: number;
+  documents: string[]; // inventory item ids
+}
+
+export interface PipelineChronologyEntry {
+  date: string;
+  title: string;
+  description: string;
+  source: string; // inventory item id
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface PipelineContradiction {
+  id: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  sourceA: string; // inventory item id
+  sourceB: string;
+  detail: string;
+  implication: string;
+}
+
+export interface PipelineConstitutionalIssue {
+  amendment: string; // e.g. '4th', '5th', '6th', '8th', '14th'
+  issue: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  recommendation: string;
+  relevantFacts: string[];
+}
+
+export interface PipelineMotion {
+  title: string;
+  type: string; // 'motion-to-suppress' | 'motion-to-dismiss' | 'motion-in-limine' | 'motion-for-summary-judgment' | 'other'
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  basis: string;
+  draftContent?: string;
+}
+
+export interface PipelineDiscoveryItem {
+  type: 'interrogatory' | 'request-for-production' | 'request-for-admission' | 'subpoena' | 'deposition-notice';
+  target: string; // who/what it's directed at
+  description: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  draftContent?: string;
+}
+
+export interface PipelineGap {
+  description: string;
+  category: 'missing-evidence' | 'missing-witness' | 'missing-document' | 'incomplete-record' | 'chain-of-custody' | 'other';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  recommendation: string;
+}
+
+export interface PipelineImpeachment {
+  targetName: string;
+  targetRole: string;
+  statement: string;
+  source: string; // inventory item id
+  contradiction: string;
+  impeachmentValue: 'critical' | 'high' | 'medium' | 'low';
+  suggestedQuestions: string[];
+}
+
+export interface PipelineWitnessQuestions {
+  witnessName: string;
+  witnessRole: string;
+  directExamination: string[];
+  crossExamination: string[];
+  keyTopics: string[];
+}
+
+export interface PipelineBriefing {
+  executiveSummary: string;
+  casePosture: string;
+  topRisks: string[];
+  topOpportunities: string[];
+  keyFindings: string[];
+  recommendedActions: { action: string; priority: 'critical' | 'high' | 'medium' | 'low'; assignedTo: string }[];
+  nextSteps: string[];
+  generatedAt: number;
+}
+
+export interface PipelineState {
+  id: string;
+  caseId: string;
+  caseTitle: string;
+  status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+  stages: PipelineStage[];
+  inventory: PipelineInventoryItem[];
+  entities: PipelineEntity[];
+  chronology: PipelineChronologyEntry[];
+  contradictions: PipelineContradiction[];
+  constitutionalIssues: PipelineConstitutionalIssue[];
+  motions: PipelineMotion[];
+  discoveryItems: PipelineDiscoveryItem[];
+  gaps: PipelineGap[];
+  impeachments: PipelineImpeachment[];
+  witnessQuestions: PipelineWitnessQuestions[];
+  briefing?: PipelineBriefing;
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+  currentStageId?: PipelineStageId;
+  overallProgress: number; // 0-100
+}
+
+export const PIPELINE_STAGES: PipelineStageDef[] = [
+  { id: 'inventory', label: 'Upload & Inventory', description: 'Scanning all files, creating document inventory', icon: '📋' },
+  { id: 'extraction', label: 'Text Extraction', description: 'Extracting text from all documents via OCR', icon: '🔍' },
+  { id: 'indexing', label: 'Document Indexing', description: 'Categorizing and assigning exhibit numbers', icon: '🏷️' },
+  { id: 'entities', label: 'Entity Extraction', description: 'Identifying people, places, organizations, dates', icon: '👥' },
+  { id: 'chronology', label: 'Chronology', description: 'Building a timeline of all events', icon: '📅' },
+  { id: 'contradictions', label: 'Contradiction Detection', description: 'Cross-referencing documents for inconsistencies', icon: '⚠️' },
+  { id: 'constitutional', label: 'Constitutional Analysis', description: 'Identifying constitutional issues and violations', icon: '🏛️' },
+  { id: 'motions', label: 'Motion Drafting', description: 'Drafting relevant motions based on findings', icon: '📝' },
+  { id: 'discovery-plan', label: 'Discovery Planning', description: 'Recommending interrogatories, RFPs, RFAs, subpoenas', icon: '🔎' },
+  { id: 'gap-analysis', label: 'Evidence Gap Analysis', description: 'Identifying missing evidence and records', icon: '🕳️' },
+  { id: 'impeachment', label: 'Impeachment Material', description: 'Finding statements that can impeach witnesses', icon: '🎯' },
+  { id: 'witness-questions', label: 'Witness Questions', description: 'Generating examination and cross-examination questions', icon: '❓' },
+  { id: 'briefing', label: 'Final Briefing', description: 'Compiling comprehensive morning briefing', icon: '📊' },
+];
+
+// ── Billing & Time Tracking ────────────────────────────────────────────────────
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'partial';
+
+export type BillingFrequency = 'hourly' | 'flat-fee' | 'contingency' | 'retainer' | 'subscription';
+
+export interface BillingRate {
+  id: string;
+  caseId?: string;
+  name: string;
+  rate: number;
+  frequency: BillingFrequency;
+  currency: string;
+}
+
+export interface TimeEntry {
+  id: string;
+  caseId: string;
+  caseTitle: string;
+  date: string;
+  description: string;
+  hours: number;
+  rate: number;
+  amount: number;
+  billed: boolean;
+  invoiceId?: string;
+  createdAt: number;
+}
+
+export interface Expense {
+  id: string;
+  caseId: string;
+  caseTitle: string;
+  date: string;
+  description: string;
+  category: string;
+  amount: number;
+  billed: boolean;
+  invoiceId?: string;
+  createdAt: number;
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  type: 'time' | 'expense' | 'flat-fee' | 'retainer-draw';
+  description: string;
+  date?: string;
+  hours?: number;
+  rate?: number;
+  amount: number;
+  sourceId?: string;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  caseId: string;
+  caseTitle: string;
+  clientName: string;
+  clientEmail?: string;
+  status: InvoiceStatus;
+  issueDate: string;
+  dueDate: string;
+  lineItems: InvoiceLineItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+  amountPaid: number;
+  notes?: string;
+  terms?: string;
+  createdAt: number;
+  updatedAt: number;
+  paidAt?: string;
+}
+
+export interface Retainer {
+  id: string;
+  caseId: string;
+  caseTitle: string;
+  clientName: string;
+  totalAmount: number;
+  remainingAmount: number;
+  hourlyRate: number;
+  minimumBalance: number;
+  lastDrawAt?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Payment {
+  id: string;
+  invoiceId: string;
+  caseId: string;
+  amount: number;
+  date: string;
+  method: string;
+  reference?: string;
+  notes?: string;
+  createdAt: number;
+}
+
+export interface BillingDashboard {
+  totalInvoiced: number;
+  totalCollected: number;
+  totalOutstanding: number;
+  overdueCount: number;
+  overdueAmount: number;
+  thisMonthBilled: number;
+  thisMonthCollected: number;
+  thisMonthHours: number;
+  activeRetainers: number;
+  retainerBalance: number;
+}
+
+
+// ── Enterprise: Multi-user, RBAC, Product Tiers ───────────────────────────────
+
+export type ProductTier = 'personal' | 'professional' | 'enterprise';
+
+export type UserRole = 'admin' | 'attorney' | 'paralegal' | 'viewer';
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  title?: string;
+  avatarInitials: string;
+  status: 'active' | 'invited' | 'disabled';
+  joinedAt?: string;
+  lastActiveAt?: string;
+}
+
+export interface Permission {
+  action: string;                // e.g. 'cases:create', 'billing:view', 'admin:settings'
+  description: string;
+}
+
+export interface RoleDefinition {
+  role: UserRole;
+  label: string;
+  permissions: string[];         // list of permission actions
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  key: string;                   // the actual key (masked in UI)
+  prefix: string;                // first 8 chars for identification
+  scopes: string[];              // e.g. ['read:cases', 'write:documents']
+  createdAt: number;
+  lastUsedAt?: number;
+  enabled: boolean;
+}
+
+export interface TierFeature {
+  id: string;
+  label: string;
+  description: string;
+  requiredTier: ProductTier;
+}
+
+export interface FirmSettings {
+  firmName: string;
+  firmEmail: string;
+  firmPhone?: string;
+  firmAddress?: string;
+  firmWebsite?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  timezone: string;
+  currency: string;
+  defaultBillingRate: number;
+  invoicePrefix: string;         // e.g. 'INV'
+  invoiceFooter?: string;
+  requireMFA: boolean;
+  sessionTimeoutMinutes: number;
+}
+
+export interface UsageMetrics {
+  totalCases: number;
+  activeCases: number;
+  totalDocuments: number;
+  totalTimeEntries: number;
+  totalApiCalls: number;
+  storageUsedMB: number;
+  teamMembers: number;
+  month: string;
+}
+
+// Tier feature definitions
+export const TIER_FEATURES: TierFeature[] = [
+  { id: 'cases', label: 'Case Management', description: 'Create and manage cases', requiredTier: 'personal' },
+  { id: 'evidence', label: 'Evidence Vault', description: 'Upload and organize evidence', requiredTier: 'personal' },
+  { id: 'timeline', label: 'Case Timeline', description: 'Visual case chronology', requiredTier: 'personal' },
+  { id: 'documents', label: 'Document Drafting', description: 'AI-powered document generation', requiredTier: 'personal' },
+  { id: 'strategy', label: 'AI Strategy', description: 'Case strategy analysis', requiredTier: 'personal' },
+  { id: 'deadlines', label: 'Deadline Tracking', description: 'Court deadline management', requiredTier: 'personal' },
+  { id: 'witness-prep', label: 'Witness Preparation', description: 'Witness interview and prep tools', requiredTier: 'personal' },
+  { id: 'jury', label: 'Jury Analysis', description: 'Voir dire and jury simulation', requiredTier: 'personal' },
+  { id: 'trial-sim', label: 'Trial Simulator', description: 'Live voice trial practice', requiredTier: 'personal' },
+  { id: 'transcriber', label: 'Transcriber & OCR', description: 'Audio transcription and document OCR', requiredTier: 'personal' },
+  { id: 'foia', label: 'FOIA & Records', description: 'Public records requests', requiredTier: 'personal' },
+  { id: 'pipeline', label: 'Case Pipeline', description: 'Autonomous evidence analysis', requiredTier: 'professional' },
+  { id: 'billing', label: 'Billing & Invoices', description: 'Time tracking and invoicing', requiredTier: 'professional' },
+  { id: 'intake', label: 'Client Intake', description: 'Automated client intake system', requiredTier: 'professional' },
+  { id: 'discovery', label: 'Discovery Manager', description: 'Full discovery management', requiredTier: 'professional' },
+  { id: 'crm', label: 'Client Portal', description: 'Client-facing portal', requiredTier: 'professional' },
+  { id: 'mail-room', label: 'Mail Room', description: 'AI email management', requiredTier: 'professional' },
+  { id: 'legal-team', label: 'AI Legal Team', description: '12 specialist AI attorneys', requiredTier: 'professional' },
+  { id: 'firm-command', label: 'Firm Command', description: 'Multi-agent orchestration', requiredTier: 'professional' },
+  { id: 'intercom', label: 'Intercom', description: 'Live voice intercom', requiredTier: 'professional' },
+  { id: 'case-threads', label: 'Case Threads', description: 'Threaded team discussions', requiredTier: 'professional' },
+  { id: 'integrations', label: 'Integrations', description: 'Third-party service connections', requiredTier: 'professional' },
+  { id: 'agent-status', label: 'Agent Status', description: 'AI agent monitoring', requiredTier: 'professional' },
+  { id: 'team-management', label: 'Team Management', description: 'Multi-user accounts and roles', requiredTier: 'enterprise' },
+  { id: 'rbac', label: 'Role-Based Access', description: 'Granular permissions control', requiredTier: 'enterprise' },
+  { id: 'api-access', label: 'API Access', description: 'Programmatic API integration', requiredTier: 'enterprise' },
+  { id: 'white-label', label: 'White Label', description: 'Custom branding and domain', requiredTier: 'enterprise' },
+  { id: 'audit-log', label: 'Audit Logs', description: 'Compliance activity tracking', requiredTier: 'enterprise' },
+  { id: 'sso', label: 'SSO Integration', description: 'Single sign-on support', requiredTier: 'enterprise' },
+];
+
+export const ROLE_DEFINITIONS: RoleDefinition[] = [
+  {
+    role: 'admin',
+    label: 'Administrator',
+    permissions: ['*'],
+  },
+  {
+    role: 'attorney',
+    label: 'Attorney',
+    permissions: [
+      'cases:*', 'evidence:*', 'documents:*', 'strategy:*', 'billing:*',
+      'witness:*', 'jury:*', 'discovery:*', 'deadlines:*', 'pipeline:*',
+      'intake:*', 'clients:*', 'transcriber:*', 'foia:*', 'team:view',
+    ],
+  },
+  {
+    role: 'paralegal',
+    label: 'Paralegal',
+    permissions: [
+      'cases:view', 'cases:edit', 'evidence:*', 'documents:view', 'documents:create',
+      'deadlines:*', 'discovery:view', 'discovery:create', 'transcriber:*',
+      'clients:view', 'foia:view', 'foia:create', 'billing:view', 'billing:create',
+    ],
+  },
+  {
+    role: 'viewer',
+    label: 'Viewer',
+    permissions: [
+      'cases:view', 'evidence:view', 'documents:view', 'deadlines:view',
+      'discovery:view', 'clients:view',
+    ],
+  },
+];
