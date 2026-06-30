@@ -1,12 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2, Copy, Upload } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
 import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
 import { emailIntakeHandoff } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
+import { toast } from 'react-toastify';
+import {
+  detectAndSwitchLanguage, getMayaLanguageProfile, getMayaWrapUpText,
+  generateDocumentRequestLink, getDocumentRequestText,
+  type SupportedLanguage, type MayaLanguageProfile
+} from '../services/mayaEnhancementsService';
 
 // Public, link-shareable voice intake. A prospect opens the link, Maya picks up
 // in her own voice, greets them, and conducts the intake. On finish we distill
@@ -123,13 +129,22 @@ const PublicIntake: React.FC = () => {
   const [phase, setPhase] = useState<Phase>('welcome');
   const [result, setResult] = useState<IntakeScore | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [docRequest, setDocRequest] = useState<ReturnType<typeof generateDocumentRequestLink> | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   // When a client token resolves, inject client context so Maya greets by name
   // and skips re-asking for info the attorney already captured
   const firstName = clientInvite?.client_name?.split(' ')[0] ?? '';
+
+  // Get Maya's language profile (defaults to English, switches if Spanish detected)
+  const storedLang = (localStorage.getItem('casebuddy_maya_language') || 'en') as SupportedLanguage;
+  const mayaProfile = getMayaLanguageProfile(storedLang);
+
+  // Build system instruction with language-aware Maya prompt
+  const basePrompt = mayaProfile.systemPrompt || MAYA_INTAKE_PROMPT;
+
   const systemInstruction = clientInvite?.client_name
-    ? `${MAYA_INTAKE_PROMPT}
+    ? `${basePrompt}
 
 IMPORTANT — you already know who you are speaking with:
 Client name: ${clientInvite.client_name}${clientInvite.client_phone ? `
@@ -138,14 +153,14 @@ Email on file: ${clientInvite.client_email}` : ''}${clientInvite.notes ? `
 Attorney notes: ${clientInvite.notes}` : ''}
 
 Open with: "Hi ${firstName}, thanks for calling in — " and use their name naturally. You already have their contact info so skip asking for it unless they want to update it.`
-    : MAYA_INTAKE_PROMPT;
+    : basePrompt;
 
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
     agentId: 'maya',
     useElevenLabs: true,
     systemInstruction,
-    greeting: MAYA_GREETING,
+    greeting: mayaProfile.greeting,
     publicEndpoint: true,
   });
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
@@ -153,6 +168,14 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, liveCaption]);
+
+  // Detect language from the first few exchanges
+  useEffect(() => {
+    if (transcript.length >= 3 && transcript.length <= 5) {
+      const text = transcript.map(t => t.text).join(' ');
+      detectAndSwitchLanguage(text).catch(() => {});
+    }
+  }, [transcript.length]);
 
   const begin = async () => {
     setSubmitError(null);
@@ -186,6 +209,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       score = fallbackScore();
     }
 
+    let intakeId: string | undefined;
     try {
       const result = await submitIntake({
         firmId:         firmId ?? undefined,
@@ -194,6 +218,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         score,
         transcript,
       });
+      intakeId = result?.id;
       // Mark the invite as completed so attorney can track it
       if (clientInvite?.invite_id && result?.id) {
         void markInviteCompleted(clientInvite.invite_id, result.id);
@@ -207,6 +232,11 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     // blocks the prospect's confirmation screen).
     void emailIntakeHandoff(intake, score);
     setResult(score);
+    // Generate document upload request for this intake
+    if (intakeId) {
+      const docReq = generateDocumentRequestLink(intakeId);
+      setDocRequest(docReq);
+    }
     setPhase('result');
   };
 
@@ -386,6 +416,35 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
                     </div>
                   )}
                 </div>
+                {/* Document Upload CTA */}
+                {docRequest && (
+                  <div className="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <Upload size={18} className="text-blue-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-300">
+                          {storedLang === 'es' ? 'Subir Documentos' : 'Upload Documents'}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {storedLang === 'es'
+                            ? 'Use este enlace para subir fotos, informes policiales, registros médicos o cualquier documento relacionado con su caso.'
+                            : 'Use this link to upload photos, police reports, medical records, or any documents related to your case.'
+                          }
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(docRequest.uploadUrl);
+                            toast.success(storedLang === 'es' ? 'Enlace copiado' : 'Link copied');
+                          }}
+                          className="mt-2 flex items-center gap-1.5 text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg hover:bg-blue-500/30 transition-all"
+                        >
+                          <Copy size={12} />
+                          {storedLang === 'es' ? 'Copiar Enlace' : 'Copy Upload Link'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               )}
             </div>
           )}

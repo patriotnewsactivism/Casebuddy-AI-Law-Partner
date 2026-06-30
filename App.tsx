@@ -106,12 +106,26 @@ const NAV_GROUPS = [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
       { path: '/app/pipeline', icon: BrainCircuit, label: 'Case Pipeline', badge: 'NEW' },
-      { path: '/app/mapper', icon: Network, label: 'Evidence Mapper', badge: 'NEW' },
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/timeline', icon: Clock, label: 'Case Timeline' },
-      { path: '/app/upload', icon: Upload, label: 'Document Upload', badge: 'OCR' },
-      { path: '/app/discovery', icon: FileSearch, label: 'Discovery Manager', badge: 'AI' },
-      { path: '/app/war-room', icon: Shield, label: 'War Room' },
+      { path: '/app/discovery', icon: FileSearch, label: 'Discovery', badge: 'AI' },
+    ]
+  },
+  {
+    label: 'Courtroom',
+    items: [
+      { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
+      { path: '/app/witnesses', icon: UserCheck, label: 'Witness Prep' },
+      { path: '/app/jury-sim', icon: Users, label: 'Jury Analysis' },
+      { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
+    ]
+  },
+  {
+    label: 'Research',
+    items: [
+      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
+      { path: '/app/docs', icon: FileText, label: 'Document Drafting' },
+      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
+      { path: '/app/tubescribe', icon: Youtube, label: 'TubeScribe', badge: 'NEW' },
     ]
   },
   {
@@ -119,61 +133,20 @@ const NAV_GROUPS = [
     items: [
       { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
       { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
-      { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
-      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Marketing', badge: 'NEW' },
+      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Pipeline', badge: 'NEW' },
     ]
   },
   {
-    label: 'Courtroom',
+    label: 'Firm',
     items: [
-      { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
-      { path: '/app/witness-lab', icon: Users, label: 'Witness Lab' },
-      { path: '/app/witnesses', icon: UserCheck, label: 'Witness Prep' },
-      { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
-      { path: '/app/jury', icon: UserCircle2, label: 'Jury Analyzer' },
-      { path: '/app/jury-sim', icon: Users, label: 'Jury Simulator' },
-      { path: '/app/calculator', icon: Calculator, label: 'Practice Tools', badge: 'NEW' },
-    ]
-  },
-  {
-    label: 'Research',
-    items: [
-      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
-      { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
-      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
-      { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
-      { path: '/app/compare', icon: GitCompare, label: 'Doc Compare', badge: 'NEW' },
-      { path: '/app/court-rules', icon: Gavel, label: 'Court Rules', badge: 'NEW' },
-      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
-      { path: '/app/tubescribe', icon: Youtube, label: 'TubeScribe', badge: 'NEW' },
-    ]
-  },
-  {
-    label: 'AI Team',
-    items: [
-      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
-      { path: '/app/agent-status', icon: Activity, label: 'Agent Status', badge: 'Live' },
-      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
-      { path: '/app/intercom', icon: PhoneCall, label: 'Intercom', badge: 'Live' },
-      { path: '/app/case-thread', icon: MessageSquare, label: 'Case Threads', badge: 'New' },
+      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
-    ]
-  },
-  {
-    label: 'Operations',
-    items: [
+      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
       { path: '/app/calendar', icon: Calendar, label: 'Calendar', badge: 'NEW' },
-      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
-      { path: '/app/billing', icon: DollarSign, label: 'Billing & Invoices', badge: 'NEW' },
-      { path: '/app/payments', icon: CreditCard, label: 'Payments', badge: 'NEW' },
+      { path: '/app/billing', icon: DollarSign, label: 'Billing', badge: 'NEW' },
       { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
-      { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
-      { path: '/app/integrations', icon: Zap, label: 'Integrations' },
-      { path: '/app/export', icon: Download, label: 'Import/Export', badge: 'NEW' },
-      { path: '/app/firm-admin', icon: Shield, label: 'Firm Admin', badge: 'Secure' },
-      { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
   },
 ];
@@ -196,16 +169,20 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
             items: group.items.filter(item => !['Firm Command'].includes(item.label)),
           };
         }
-        if (group.label === 'AI Team') {
+        if (group.label === 'Firm') {
           return {
             ...group,
-            items: group.items.filter(item => ['Firm Command', 'AI Lawyers', 'Talk to the Firm'].includes(item.label)),
+            items: group.items.filter(item => 
+              ['AI Lawyers', 'Talk to the Firm', 'Calendar', 'Transcriber & OCR'].includes(item.label)
+            ),
           };
         }
-        if (group.label === 'Operations') {
+        if (group.label === 'Clients') {
           return {
             ...group,
-            items: group.items.filter(item => !['Firm Admin', 'Integrations', 'Billing & Invoices', 'Payments', 'Analytics'].includes(item.label)),
+            items: group.items.filter(item => 
+              ['Client Portal'].includes(item.label)
+            ),
           };
         }
         return group;
@@ -213,23 +190,8 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         group.label === 'My Cases' || 
         group.label === 'Courtroom' || 
         group.label === 'Research' || 
-        (group.label === 'Clients' && group.items.length > 0) ||
-        (group.label === 'AI Team' && group.items.length > 0) ||
-        (group.label === 'Operations' && group.items.length > 0)
+        group.items.length > 0
       );
-    }
-
-    // Enterprise tier gate: hide enterprise-only features if not enterprise
-    if (productTier !== 'enterprise') {
-      groups = groups.map(group => {
-        if (group.label === 'Operations') {
-          return {
-            ...group,
-            items: group.items.filter(item => item.label !== 'Firm Admin'),
-          };
-        }
-        return group;
-      });
     }
 
     if (!navSearch.trim()) return groups;

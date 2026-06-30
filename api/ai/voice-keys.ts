@@ -58,10 +58,12 @@ export default async function handler(req: Request): Promise<Response> {
     process.env.VITE_ELEVENLABS_API_KEY ||
     ''
   ).trim();
+  const groqKey = (process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '').trim();
+  const githubToken = (process.env.GITHUB_TOKEN || '').trim();
 
   if (!deepgramKey && !geminiKey && !elevenlabsKey) {
     return json({ error: 'No AI API keys configured on server.' }, 503);
   }
 
-  return json({ deepgramKey, geminiKey, elevenlabsKey });
+  return json({ deepgramKey, geminiKey, elevenlabsKey, groqKey, githubToken });
 }

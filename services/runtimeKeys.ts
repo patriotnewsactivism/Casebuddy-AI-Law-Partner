@@ -9,12 +9,17 @@
 let _geminiKey = '';
 let _deepgramKey = '';
 let _elevenlabsKey = '';
+let _groqKey = '';
 
 /** Called once by the voice hook after successfully fetching keys from the server. */
-export function setRuntimeKeys(keys: { deepgramKey?: string; geminiKey?: string; elevenlabsKey?: string }) {
+export function setRuntimeKeys(keys: { deepgramKey?: string; geminiKey?: string; elevenlabsKey?: string; groqKey?: string }) {
   if (keys.deepgramKey) _deepgramKey = keys.deepgramKey;
   if (keys.geminiKey)   _geminiKey   = keys.geminiKey;
   if (keys.elevenlabsKey) _elevenlabsKey = keys.elevenlabsKey;
+  if (keys.groqKey) {
+    _groqKey = keys.groqKey;
+    (window as any).__GROQ_API_KEY = keys.groqKey;
+  }
 }
 
 /**
@@ -47,6 +52,15 @@ export function getElevenLabsKey(): string {
     _elevenlabsKey ||
     (import.meta.env.VITE_ELEVENLABS_API_KEY as string) ||
     ((window as any).__ELEVENLABS_API_KEY as string) ||
+    ''
+  );
+}
+
+export function getGroqKey(): string {
+  return (
+    _groqKey ||
+    (import.meta.env.VITE_GROQ_API_KEY as string) ||
+    ((window as any).__GROQ_API_KEY as string) ||
     ''
   );
 }

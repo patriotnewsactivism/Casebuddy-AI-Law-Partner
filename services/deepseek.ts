@@ -1,12 +1,11 @@
 /**
- * deepseek.ts — Gemini-powered compatibility shim
+ * deepseek.ts — Multi-Provider AI Service
  *
- * DeepSeek credits exhausted. Same exported interface (deepseekChat,
- * parseDeepSeekJson) — all callers work unchanged.
- *
- * Model routing strategy:
- *   • JSON extraction / structured output  → gemini-2.0-flash-lite  (fastest)
- *   • Complex legal reasoning / drafting   → gemini-2.5-flash        (smartest)
+ * Routes AI calls through the best available free-tier provider.
+ * Primary: /api/ai/chat (Groq → Gemini → OpenRouter fallback chain)
+ * Fallback: Direct Groq client-side call (if API key available)
+ * 
+ * Same exported interface (deepseekChat, parseDeepSeekJson) — all callers unchanged.
  */
 
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
@@ -18,17 +17,6 @@ export interface DeepSeekParams {
   maxTokens?: number;
   jsonMode?: boolean;
   timeoutMs?: number;
-}
-
-// Keywords that indicate complex legal reasoning — use the smarter model
-const HEAVY_KEYWORDS = /strateg|analyz|analys|draft|argument|deposition|witness|predict|jury|verdict|research|motion|brief|summariz/i;
-
-function pickModel(params: DeepSeekParams): string {
-  const hint = (params.systemInstruction || '') + (params.messages[0]?.content || '');
-  // JSON-only calls that don't need deep reasoning → fastest model
-  if (params.jsonMode && !HEAVY_KEYWORDS.test(hint)) return 'gemini-2.0-flash-lite';
-  // Everything else → best flash model
-  return 'gemini-2.5-flash';
 }
 
 function cleanJsonResponse(text: string): string {
@@ -49,64 +37,133 @@ function cleanJsonResponse(text: string): string {
   return cleaned;
 }
 
-/** Drop-in replacement for deepseekChat — now powered by Gemini. */
-export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
-  const model = pickModel(params);
+// ── Primary: Server-side proxy with multi-provider fallback ────────────────
 
-  const contents = params.messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
+async function callServerProxy(params: DeepSeekParams): Promise<string> {
+  const messages = params.messages.map(m => ({
+    role: m.role,
+    content: m.content,
   }));
 
-  const systemInstruction = params.systemInstruction
-    ? {
-        parts: [{
-          text: params.jsonMode
-            ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
-            : params.systemInstruction,
-        }],
-      }
-    : undefined;
-
-  // JSON calls rarely need more than 1024 tokens; save latency
-  const maxOutputTokens = params.maxTokens ?? (params.jsonMode ? 1024 : 2048);
-
   const body: Record<string, unknown> = {
-    model,
-    contents,
-    ...(systemInstruction ? { systemInstruction } : {}),
-    config: {
-      temperature: params.temperature ?? (params.jsonMode ? 0.2 : 0.7),
-      maxOutputTokens,
-      ...(params.jsonMode ? { responseMimeType: 'application/json' } : {}),
-    },
+    messages,
+    temperature: params.temperature ?? (params.jsonMode ? 0.2 : 0.7),
+    max_tokens: params.maxTokens ?? (params.jsonMode ? 1024 : 2048),
   };
 
-  // 2 retries is enough — fail fast, callers handle gracefully
-  return retryWithBackoff(async () => {
-    const res = await withTimeout(
-      fetch('/api/ai/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
-      params.timeoutMs ?? 25000
-    );
+  if (params.systemInstruction) {
+    body.system = params.jsonMode
+      ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
+      : params.systemInstruction;
+  }
 
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      throw new Error(`Gemini API error ${res.status}: ${errBody.slice(0, 300)}`);
+  if (params.jsonMode) {
+    body.json_mode = true;
+  }
+
+  const res = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`AI proxy error ${res.status}: ${errBody.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const text = data.text || '';
+
+  if (!text) throw new Error('Empty response from AI provider');
+  return params.jsonMode ? cleanJsonResponse(text) : text;
+}
+
+// ── Fallback: Direct Groq client-side call ─────────────────────────────────
+
+function getGroqKey(): string {
+  return (
+    (window as any).__GROQ_API_KEY ||
+    import.meta.env.VITE_GROQ_API_KEY ||
+    ''
+  ).trim();
+}
+
+async function callGroqDirect(params: DeepSeekParams): Promise<string> {
+  const key = getGroqKey();
+  if (!key) throw new Error('No Groq API key available');
+
+  const messages: any[] = [];
+  if (params.systemInstruction) {
+    messages.push({
+      role: 'system',
+      content: params.jsonMode
+        ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
+        : params.systemInstruction,
+    });
+  }
+  messages.push(...params.messages.map(m => ({
+    role: m.role,
+    content: m.content,
+  })));
+
+  const body = {
+    model: 'llama-3.3-70b-versatile',
+    messages,
+    temperature: params.temperature ?? (params.jsonMode ? 0.2 : 0.7),
+    max_tokens: params.maxTokens ?? (params.jsonMode ? 1024 : 2048),
+    ...(params.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+  };
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    throw new Error(`Groq API error ${resp.status}: ${errBody.slice(0, 300)}`);
+  }
+
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || '';
+
+  if (!text) throw new Error('Empty response from Groq');
+  return params.jsonMode ? cleanJsonResponse(text) : text;
+}
+
+// ── Main export: try server proxy first, fall back to direct Groq ──────────
+
+export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
+  const timeout = params.timeoutMs ?? 30000;
+
+  // Try server proxy (has Groq → Gemini → OpenRouter fallback chain)
+  try {
+    return await retryWithBackoff(async () => {
+      return await withTimeout(callServerProxy(params), timeout);
+    }, 1);
+  } catch (serverErr: any) {
+    const msg = serverErr?.message || String(serverErr);
+    console.warn('[deepseek] Server proxy failed:', msg.slice(0, 150));
+  }
+
+  // Try direct Groq call (if key is available client-side)
+  if (getGroqKey()) {
+    try {
+      return await retryWithBackoff(async () => {
+        return await withTimeout(callGroqDirect(params), timeout);
+      }, 2);
+    } catch (groqErr: any) {
+      const msg = groqErr?.message || String(groqErr);
+      console.warn('[deepseek] Direct Groq failed:', msg.slice(0, 150));
     }
+  }
 
-    const data = await res.json();
-    const text =
-      data.text ||
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      '';
-
-    if (!text) throw new Error('Empty response from Gemini');
-    return params.jsonMode ? cleanJsonResponse(text) : text;
-  }, 2);
+  throw new Error('All AI providers unavailable. Please check your API keys and network connection.');
 };
 
 /** Helper: extract and parse JSON with cleanup. */
