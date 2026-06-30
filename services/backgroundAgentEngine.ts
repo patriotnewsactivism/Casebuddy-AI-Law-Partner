@@ -21,6 +21,7 @@ import { pushInsightAlert, pushTaskComplete, pushDeadlineAlert } from './notific
 import { AGENT_CONFIG } from '../config/agentConfig';
 import { getAgentById, OPERATIONAL_AGENTS } from '../agents/personas';
 import { loadCases } from '../utils/storage';
+import { getSupabase } from './supabaseClient';
 import type {
   BackgroundTask,
   BackgroundTaskType,
@@ -111,6 +112,7 @@ class BackgroundAgentEngine {
     this.started = true;
 
     // Bootstrap all operational agents' status records
+    // Bootstrapped statuses
     for (const agent of OPERATIONAL_AGENTS) {
       const statuses = loadStatuses();
       if (!statuses[agent.id]) {
@@ -124,19 +126,34 @@ class BackgroundAgentEngine {
       }
     }
 
-    this.schedulerHandle = setInterval(
-      () => this.drain(),
-      AGENT_CONFIG.background.schedulerIntervalMs
-    );
+    // NEW: Listen to Supabase Postgres queue instead of local setInterval
+    const sb = getSupabase();
+    if (sb) {
+      this.schedulerHandle = sb
+        .channel('pipeline-jobs-listener')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'pipeline_jobs' },
+          (payload) => {
+            console.log('[BackgroundAgentEngine] Pipeline Job update:', payload);
+            // Optionally update UI stats or agent statuses based on backend job progress
+            // For now, we just log to show the connection is alive.
+          }
+        )
+        .subscribe() as any;
+    }
 
-    // Drain any persisted pending tasks on startup
-    this.rehydrateQueue();
+    // Deprecated local drain (legacy tasks only)
+    // this.rehydrateQueue();
   }
 
   stop(): void {
-    if (this.schedulerHandle) {
-      clearInterval(this.schedulerHandle);
+    if (this.schedulerHandle && typeof this.schedulerHandle !== 'number') {
+      const sb = getSupabase();
+      if (sb) sb.removeChannel(this.schedulerHandle as any);
       this.schedulerHandle = null;
+    } else if (typeof this.schedulerHandle === 'number') {
+      clearInterval(this.schedulerHandle);
     }
     this.started = false;
   }

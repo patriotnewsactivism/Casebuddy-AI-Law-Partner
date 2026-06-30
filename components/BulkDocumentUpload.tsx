@@ -26,6 +26,7 @@ import {
   DocumentRecord,
   UploadProgress,
 } from '../services/documentPipeline';
+import { getSupabase } from '../services/supabaseClient';
 
 const FILE_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
   'application/pdf': FileText,
@@ -78,6 +79,23 @@ const BulkDocumentUpload: React.FC = () => {
   }, [caseId]);
 
   useEffect(() => { loadDocuments(); }, [loadDocuments]);
+
+  // Realtime subscription for automatic UI updates
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb || !caseId) return;
+    
+    const channel = sb
+      .channel('public:documents')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'documents' },
+        () => loadDocuments()
+      )
+      .subscribe();
+      
+    return () => { sb.removeChannel(channel); };
+  }, [caseId, loadDocuments]);
 
   // ── File handling ────────────────────────────────────────────────
 

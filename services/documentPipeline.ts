@@ -147,37 +147,15 @@ export async function uploadDocument(
 
   if (dbError) throw new Error(`DB insert failed: ${dbError.message}`);
 
-  // 5. Trigger OCR + Analysis via edge function
+  // 5. Rely on the Database Webhook to trigger OCR + Analysis
+  // Since we inserted the document into `documents` with status `queued`, 
+  // the `trigger_queue_ocr` Postgres trigger will insert an `ocr` job
+  // into the `pipeline_jobs` table. The frontend UI can listen via Realtime.
+  
   let ocrResult: OcrResult | undefined;
+  
   if (fileUrl && (options?.autoAnalyze !== false)) {
-    try {
-      // Update status
-      await supabase.from('documents').update({ status: 'processing' }).eq('id', doc.id);
-
-      ocrResult = await edgeFn.ocrDocument({
-        documentId: doc.id,
-        fileUrl: fileUrl,
-      });
-
-      // Update document with OCR results
-      await supabase.from('documents').update({
-        status: 'analyzed',
-        ai_analyzed: true,
-        ocr_text: ocrResult.text?.slice(0, 100000) || null,
-        extracted_text: ocrResult.text?.slice(0, 100000) || null,
-        summary: ocrResult.summary || null,
-        key_facts: ocrResult.keyFacts || null,
-        favorable_findings: ocrResult.favorableFindings || null,
-        adverse_findings: ocrResult.adverseFindings || null,
-        action_items: ocrResult.actionItems || null,
-        entities: ocrResult.entities || null,
-      }).eq('id', doc.id);
-    } catch (err) {
-      console.error('OCR/analysis error:', err);
-      await supabase.from('documents').update({
-        status: 'upload_complete',
-      }).eq('id', doc.id);
-    }
+    // We no longer block on edgeFn.ocrDocument. The UI will return instantly.
   }
 
   return { document: doc as DocumentRecord, ocrResult };
