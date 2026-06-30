@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network,
+  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network, Calculator,
   Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, Calendar
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
@@ -64,6 +64,7 @@ const GrowthDashboard   = React.lazy(() => import('./components/GrowthDashboard'
 const CourtRules        = React.lazy(() => import('./components/CourtRules'));
 const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashboard'));
 const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
+const PracticeTools     = React.lazy(() => import('./components/PracticeTools'));
 const CalendarView      = React.lazy(() => import('./components/CalendarView'));
 const EvidenceMapper    = React.lazy(() => import('./components/EvidenceMapper'));
 const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
@@ -138,6 +139,7 @@ const NAV_GROUPS = [
       { path: '/app/jury', icon: UserCircle2, label: 'Jury Analyzer' },
       { path: '/app/jury-sim', icon: Users, label: 'Jury Simulator' },
       { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
+      { path: '/app/calculator', icon: Calculator, label: 'Practice Tools', badge: 'NEW' },
     ]
   },
   {
@@ -682,6 +684,7 @@ const App = () => {
             <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
             <Route path="/app/firm-admin" element={<AuthGate><Layout><FirmAdminPanel /></Layout></AuthGate>} />
             <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
+            <Route path="/app/calculator" element={<AuthGate><Layout><PracticeTools /></Layout></AuthGate>} />
             <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
             <Route path="/app/timeline" element={<AuthGate><Layout><EvidenceTimeline /></Layout></AuthGate>} />
             <Route path="/app/discovery" element={<AuthGate><Layout><DiscoveryManager /></Layout></AuthGate>} />
