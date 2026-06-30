@@ -57,6 +57,7 @@ const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
 const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
 const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
 const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
+const ProSeIntakeWizard= React.lazy(() => import('./components/ProSeIntakeWizard'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
@@ -643,6 +644,7 @@ const App = () => {
             <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
             <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
             <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
+            <Route path="/app/companion-setup" element={<AuthGate><Layout><ProSeIntakeWizard /></Layout></AuthGate>} />
 
             <Route path="/app/case-thread" element={<AuthGate><Layout><CaseThreadView /></Layout></AuthGate>} />
             <Route path="*" element={<Navigate to="/" replace />} />
