@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
   Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
   Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network, Calculator,
-  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar, Download
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
@@ -39,7 +39,7 @@ const LegalTeam        = React.lazy(() => import('./components/LegalTeam'));
 const WitnessPrep      = React.lazy(() => import('./components/WitnessPrep'));
 const JurySimulator    = React.lazy(() => import('./components/JurySimulator'));
 const Pricing          = React.lazy(() => import('./components/Pricing'));
-const OnboardingModal  = React.lazy(() => import('./components/OnboardingModal'));
+const OnboardingWizard = React.lazy(() => import('./components/OnboardingWizard'));
 const Integrations     = React.lazy(() => import('./components/Integrations'));
 const DeadlineTracker  = React.lazy(() => import('./components/DeadlineTracker'));
 const IntakePage       = React.lazy(() => import('./components/IntakePage'));
@@ -66,6 +66,7 @@ const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashbo
 const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
 const PracticeTools     = React.lazy(() => import('./components/PracticeTools'));
 const DocumentCompare   = React.lazy(() => import('./components/DocumentCompare'));
+const ExportImport      = React.lazy(() => import('./components/ExportImport'));
 const CalendarView      = React.lazy(() => import('./components/CalendarView'));
 const EvidenceMapper    = React.lazy(() => import('./components/EvidenceMapper'));
 const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
@@ -168,6 +169,7 @@ const NAV_GROUPS = [
       { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
       { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
       { path: '/app/integrations', icon: Zap, label: 'Integrations' },
+      { path: '/app/export', icon: Download, label: 'Import/Export', badge: 'NEW' },
       { path: '/app/firm-admin', icon: Shield, label: 'Firm Admin', badge: 'Secure' },
       { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
     ]
@@ -663,7 +665,7 @@ const App = () => {
       <BrowserRouter>
         {showOnboarding && user && (
           <Suspense fallback={null}>
-            <OnboardingModal onClose={handleCloseOnboarding} />
+            <OnboardingWizard onClose={handleCloseOnboarding} />
           </Suspense>
         )}
 
@@ -716,6 +718,7 @@ const App = () => {
             <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
             <Route path="/app/agent-status" element={<AuthGate><Layout><AgentStatusDashboard /></Layout></AuthGate>} />
             <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
+            <Route path="/app/export" element={<AuthGate><Layout><ExportImport /></Layout></AuthGate>} />
             <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
             <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
             <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />

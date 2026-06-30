@@ -271,8 +271,9 @@ const resolveField = (row: Record<string, any>, names: string[]): string => {
   }
   for (const name of names) {
     const norm = normalizeHeader(name);
-    if (normKeys.has(norm)) {
-      return String(row[normKeys.get(norm)!] || '');
+    const key = normKeys.get(norm);
+    if (key) {
+      return String(row[key] || '');
     }
   }
   return '';
