@@ -14,6 +14,7 @@ import { getSpecialistById } from '../agents/personas';
 import { onIntakeReceived } from '../services/caseEventHooks';
 import { orchestrator } from '../services/agentOrchestrator';
 import { createWorkflow } from '../services/workflows';
+import { autoCreateCaseFromIntake, generateEngagementLetter, generateIntakeConfirmation } from '../services/intakePipelineService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const scoreColor = (s: number) =>
@@ -250,7 +251,7 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
 
 // ── Main component ────────────────────────────────────────────────────────────
 const IntakeInbox: React.FC = () => {
-  const { cases, setCases } = useContext(AppContext) as any;
+  const { cases, setCases, addCase, setActiveCase } = useContext(AppContext) as any;
   const navigate = useNavigate();
   const [intakes,  setIntakes]  = useState<IntakeCase[]>([]);
   const [invites,  setInvites]  = useState<ClientInvite[]>([]);
@@ -450,7 +451,19 @@ const IntakeInbox: React.FC = () => {
                       )}
                       {intake.status === 'new' && (
                         <>
-                          <button onClick={() => handleStatusChange(intake.id, 'accepted')}
+                          <button onClick={async () => {
+                            await handleStatusChange(intake.id, 'accepted');
+                            const newCase = autoCreateCaseFromIntake(intake.intake, intake.score_detail);
+                            addCase(newCase);
+                            setActiveCase(newCase);
+                            toast.success(`Case created: ${newCase.title}`);
+                            generateEngagementLetter(intake.intake, newCase).then(letter => {
+                              localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
+                            });
+                            generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
+                              localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+                            });
+                          }}
                             className="flex items-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/40 text-green-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
                             <ThumbsUp size={13} /> Accept
                           </button>
