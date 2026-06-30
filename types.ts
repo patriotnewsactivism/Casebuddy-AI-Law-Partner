@@ -322,7 +322,7 @@ export interface AgentMemory {
   updatedAt: number;
 }
 
-export type BackgroundTaskType = 'monitor' | 'analyze' | 'draft' | 'alert' | 'research' | 'workflow' | 'summarize';
+export type BackgroundTaskType = 'monitor' | 'analyze' | 'draft' | 'alert' | 'research' | 'workflow' | 'summarize' | 'pipeline';
 export type BackgroundTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TaskSchedule = 'immediate' | 'hourly' | 'daily' | 'on-event';

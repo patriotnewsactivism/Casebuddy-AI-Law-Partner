@@ -302,6 +302,9 @@ class BackgroundAgentEngine {
       case 'draft':
         await this.runDraft(task);
         break;
+      case 'pipeline':
+        await this.runPipelineTask(task);
+        break;
       case 'summarize':
         await this.runSummarize(task);
         break;
@@ -566,6 +569,41 @@ Be extremely concise, professional, and actionable. Do not use placeholders or g
       activeCase.title,
       `Weekly case digest prepared by Maya. Check agent memory or War Room.`
     );
+  }
+
+  private async runPipelineTask(task: BackgroundTask): Promise<void> {
+    // Dynamic import to avoid circular dependency at module load time
+    const { resumeBackgroundPipeline, loadPipelineState } = await import('./casePipeline');
+
+    const caseTitle = task.description?.replace('Case Pipeline: ', '') || 'Unknown Case';
+
+    try {
+      await resumeBackgroundPipeline(
+        task.caseId,
+        caseTitle,
+        (_state) => {
+          // Progress is auto-saved to localStorage by resumeBackgroundPipeline
+          // The UI polls localStorage for updates
+        },
+        undefined // no abort signal for now
+      );
+
+      await this.patchTask(task.id, { status: 'completed', completedAt: Date.now() });
+
+      pushTaskComplete(
+        'maya',
+        task.caseId,
+        caseTitle,
+        'Case Pipeline completed. View results in Case Pipeline.'
+      );
+    } catch (err) {
+      console.error('[Pipeline] Background task failed:', err);
+      await this.patchTask(task.id, {
+        status: 'failed',
+        completedAt: Date.now(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private patchTask(id: string, patch: Partial<BackgroundTask>): void {

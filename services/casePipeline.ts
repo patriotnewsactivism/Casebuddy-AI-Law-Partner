@@ -1,6 +1,8 @@
 import type { Case, PipelineState, PipelineStage, PipelineStageId, PipelineStageStatus, PipelineInventoryItem, PipelineEntity, PipelineChronologyEntry, PipelineContradiction, PipelineConstitutionalIssue, PipelineMotion, PipelineDiscoveryItem, PipelineGap, PipelineImpeachment, PipelineWitnessQuestions, PipelineBriefing } from '../types';
 import { PIPELINE_STAGES } from '../types';
 import { deepseekChat, parseDeepSeekJson } from './deepseek';
+import { performOCR, transcribeAudio, fileToGenerativePart } from './geminiService';
+import { backgroundEngine } from './backgroundAgentEngine';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
@@ -230,86 +232,103 @@ export const runInventoryStage = (
   );
 };
 
-// ── Stage 1: Extraction ──────────────────────────────────────────────────────
+// ── Stage 1: Extraction (REAL OCR/Audio) ─────────────────────────────────────
 
-export const runExtractionStage = async (state: PipelineState): Promise<PipelineState> => {
-  try {
-    const itemList = state.inventory.map((item) => ({
-      id: item.id,
-      fileName: item.fileName,
-      fileType: item.fileType,
-      category: item.category,
-    }));
+const isAudioFile = (type: string): boolean =>
+  type.includes('audio') || /\.(mp3|wav|m4a|ogg|wma|flac)$/i.test(type);
 
-    const prompt = `You are a document analysis AI. Given the following inventory of documents in a legal case, generate realistic extracted text summaries for each document.
+const isImageOrPdf = (type: string): boolean =>
+  type.includes('image') || type.includes('pdf') || /\.(jpg|jpeg|png|gif|webp|bmp|tiff|pdf)$/i.test(type);
 
-For each item, provide:
-- A realistic 2-3 sentence summary of what the document likely contains based on its filename and category
-- 3-5 key points that such a document would contain
+const isTextFile = (type: string): boolean =>
+  type.includes('text') || /\.(txt|csv|log|md|json|xml|html|eml)$/i.test(type);
 
-Documents:
-${JSON.stringify(itemList, null, 2)}
+export const runExtractionStage = async (
+  state: PipelineState,
+  files: File[]
+): Promise<PipelineState> => {
+  const updatedItems = [...state.inventory];
+  let processedCount = 0;
+  const totalCount = files.length;
 
-Case context: ${state.caseTitle}
-
-Return JSON: { "items": [{ "id": string, "summary": string, "keyPoints": string[] }] }`;
-
-    const response = await deepseekChat({
-      systemInstruction: 'You are a legal document analysis AI. Generate realistic document summaries based on filenames and legal context.',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.4,
-      maxTokens: 2048,
-      jsonMode: true,
-      timeoutMs: 45000,
-    });
-
-    const parsed = parseDeepSeekJson<{ items?: { id: string; summary: string; keyPoints: string[] }[] }>(
-      response,
-      { items: [] }
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const itemIndex = updatedItems.findIndex(
+      (item) => item.fileName === file.name && item.fileSize === file.size
     );
+    if (itemIndex === -1) continue;
 
-    const extractionMap = new Map<string, { summary: string; keyPoints: string[] }>();
-    if (parsed.items) {
-      parsed.items.forEach((item) => {
-        extractionMap.set(item.id, { summary: item.summary, keyPoints: item.keyPoints });
-      });
-    }
+    try {
+      let extractedText = '';
+      let summary = '';
 
-    const updatedInventory = state.inventory.map((item) => {
-      const extracted = extractionMap.get(item.id);
-      if (extracted) {
-        return {
-          ...item,
-          extractedText: extracted.summary,
-          summary: extracted.keyPoints.join('; '),
-        };
+      if (isImageOrPdf(file.type || file.name)) {
+        // Real Gemini OCR for images and PDFs
+        extractedText = await performOCR(file);
+        // Generate summary of OCR'd text
+        const summaryPrompt = `Summarize this legal document in 2-3 sentences. Document: ${extractedText.slice(0, 3000)}`;
+        summary = await deepseekChat({
+          systemInstruction: 'Summarize legal documents concisely.',
+          messages: [{ role: 'user', content: summaryPrompt }],
+          temperature: 0.3,
+          maxTokens: 200,
+          timeoutMs: 15000,
+        });
+      } else if (isAudioFile(file.type || file.name)) {
+        // Real Gemini audio transcription
+        extractedText = await transcribeAudio(file);
+        summary = `Audio transcription (${extractedText.length} chars)`;
+      } else if (isTextFile(file.type || file.name)) {
+        // Read text files directly
+        extractedText = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsText(file);
+        });
+        summary = `Text file (${extractedText.length} chars)`;
+      } else {
+        // Fallback: try OCR anyway
+        try {
+          extractedText = await performOCR(file);
+          summary = `Processed via OCR (${extractedText.length} chars)`;
+        } catch {
+          extractedText = `[Unable to extract text from: ${file.name}]`;
+          summary = 'Text extraction failed';
+        }
       }
-      return {
-        ...item,
-        extractedText: `Document: ${item.fileName}`,
-        summary: '',
-      };
-    });
 
-    return stageComplete(
-      { ...state, inventory: updatedInventory },
-      'extraction',
-      { extractedCount: extractionMap.size }
-    );
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    // Populate with fallback extracted text so downstream stages can work
-    const fallbackInventory = state.inventory.map((item) => ({
-      ...item,
-      extractedText: item.extractedText || `Document: ${item.fileName} (${item.category || 'uncategorized'})`,
-      summary: item.summary || '',
-    }));
-    return stageError(
-      { ...state, inventory: fallbackInventory },
-      'extraction',
-      message
-    );
+      updatedItems[itemIndex] = {
+        ...updatedItems[itemIndex],
+        extractedText: extractedText.slice(0, 50000), // Truncate very long texts
+        summary: summary || `Document processed (${extractedText.length} chars extracted)`,
+      };
+
+      processedCount++;
+    } catch (err) {
+      console.error(`[Pipeline] OCR failed for ${file.name}:`, err);
+      updatedItems[itemIndex] = {
+        ...updatedItems[itemIndex],
+        extractedText: `[OCR failed: ${err instanceof Error ? err.message : 'Unknown error'}]`,
+        summary: 'Text extraction failed — document may be corrupted or unsupported format',
+      };
+    }
   }
+
+  return {
+    ...state,
+    inventory: updatedItems,
+    stages: state.stages.map((s) =>
+      s.id === 'extraction'
+        ? {
+            ...s,
+            status: 'completed' as const,
+            completedAt: Date.now(),
+            output: { processedCount, totalCount },
+          }
+        : s
+    ),
+  };
 };
 
 // ── Stage 2: Indexing ─────────────────────────────────────────────────────────
@@ -983,7 +1002,7 @@ export const runPipeline = async (
           break;
 
         case 'extraction':
-          state = await runExtractionStage(state);
+          state = await runExtractionStage(state, files);
           break;
 
         case 'indexing':
@@ -1057,3 +1076,170 @@ export const runPipeline = async (
 // ── Re-export for convenience ─────────────────────────────────────────────────
 
 export { PIPELINE_STAGES };
+
+// ── Background Pipeline Scheduler ──────────────────────────────────────────────
+
+/**
+ * Schedule the pipeline to run in the background via the background agent engine.
+ * Stages 0-1 (inventory + real OCR) run immediately on the UI thread.
+ * Stages 2-12 run asynchronously in the background engine.
+ * The UI polls localStorage for progress updates.
+ */
+export const scheduleBackgroundPipeline = (
+  caseId: string,
+  caseTitle: string,
+  files: File[]
+): Promise<{ taskId: string; state: PipelineState }> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Phase 1: Run inventory + real OCR on the UI thread
+      let state = createPipelineState(caseId, caseTitle);
+      state.status = 'running';
+      state.startedAt = Date.now();
+
+      // Stage 0: Inventory (sync)
+      state = updateStage(state, 'inventory', { status: 'running', startedAt: Date.now() });
+      state = runInventoryStage(state, files);
+      state = updateStage(state, 'inventory', {
+        status: 'completed',
+        completedAt: Date.now(),
+        output: { itemCount: state.inventory.length },
+      });
+      savePipelineState(caseId, state);
+
+      // Stage 1: Real OCR extraction (async, UI thread)
+      state = updateStage(state, 'extraction', { status: 'running', startedAt: Date.now() });
+      state = await runExtractionStage(state, files);
+      savePipelineState(caseId, state);
+
+      // Phase 2: Schedule remaining stages 2-12 in the background
+      state.currentStageId = 'indexing';
+      savePipelineState(caseId, state);
+
+      const taskId = backgroundEngine.schedule({
+        agentId: 'maya',
+        caseId,
+        taskType: 'workflow' as any, // Use existing workflow type — engine handles it
+        schedule: 'immediate',
+        priority: 'high',
+        description: `Case Pipeline: ${caseTitle}`,
+        // Store the pipeline metadata so the engine can resume
+        result: {
+          pipelineState: state,
+          files: [], // Files already processed, not needed for remaining stages
+          onProgressKey: storageKey(caseId),
+        },
+      });
+
+      resolve({ taskId, state });
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
+/**
+ * Resume a background pipeline from stages 2-12.
+ * Called by the background agent engine when it picks up the task.
+ */
+export const resumeBackgroundPipeline = async (
+  caseId: string,
+  caseTitle: string,
+  onProgress: (state: PipelineState) => void,
+  signal?: AbortSignal
+): Promise<PipelineState> => {
+  let state = loadPipelineState(caseId);
+  if (!state) throw new Error('No pipeline state found');
+
+  state.status = 'running';
+  savePipelineState(caseId, state);
+  onProgress(state);
+
+  const stageOrder: PipelineStageId[] = [
+    'indexing',
+    'entities',
+    'chronology',
+    'contradictions',
+    'constitutional',
+    'motions',
+    'discovery-plan',
+    'gap-analysis',
+    'impeachment',
+    'witness-questions',
+    'briefing',
+  ];
+
+  for (const stageId of stageOrder) {
+    if (signal?.aborted) {
+      state = updateStage(state, stageId, { status: 'skipped' });
+      continue;
+    }
+
+    // Skip already-completed stages
+    const existingStage = state.stages.find(s => s.id === stageId);
+    if (existingStage?.status === 'completed') continue;
+
+    state = updateStage(state, stageId, { status: 'running', startedAt: Date.now() });
+    state.currentStageId = stageId;
+    savePipelineState(caseId, state);
+    onProgress(state);
+
+    try {
+      switch (stageId) {
+        case 'indexing':
+          state = await runIndexingStage(state);
+          break;
+        case 'entities':
+          state = await runEntityExtractionStage(state);
+          break;
+        case 'chronology':
+          state = await runChronologyStage(state);
+          break;
+        case 'contradictions':
+          state = await runContradictionStage(state);
+          break;
+        case 'constitutional':
+          state = await runConstitutionalStage(state);
+          break;
+        case 'motions':
+          state = await runMotionsStage(state);
+          break;
+        case 'discovery-plan':
+          state = await runDiscoveryPlanningStage(state);
+          break;
+        case 'gap-analysis':
+          state = await runGapAnalysisStage(state);
+          break;
+        case 'impeachment':
+          state = await runImpeachmentStage(state);
+          break;
+        case 'witness-questions':
+          state = await runWitnessQuestionsStage(state);
+          break;
+        case 'briefing':
+          state = await runBriefingStage(state);
+          break;
+        default:
+          state = stageError(state, stageId, `Unknown stage: ${stageId}`);
+      }
+    } catch (e) {
+      state = stageError(state, stageId, e instanceof Error ? e.message : String(e));
+    }
+
+    savePipelineState(caseId, state);
+    onProgress(state);
+  }
+
+  if (signal?.aborted) {
+    state.status = 'cancelled';
+  } else {
+    const hasErrors = state.stages.some((s) => s.status === 'error');
+    state.status = hasErrors ? 'error' : 'completed';
+  }
+  state.completedAt = Date.now();
+  state.currentStageId = undefined;
+  savePipelineState(caseId, state);
+  onProgress(state);
+
+  return state;
+};

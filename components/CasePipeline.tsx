@@ -8,7 +8,8 @@ import {
   Shield, AlertOctagon, Search, Target, HelpCircle, BarChart3,
   ArrowRight, Trash2
 } from 'lucide-react';
-import { runPipeline, loadPipelineState, savePipelineState, deletePipelineState, PIPELINE_STAGES } from '../services/casePipeline';
+import { toast } from 'react-toastify';
+import { runPipeline, scheduleBackgroundPipeline, loadPipelineState, savePipelineState, deletePipelineState, PIPELINE_STAGES } from '../services/casePipeline';
 import type {
   PipelineState, PipelineStage, PipelineStageStatus, PipelineBriefing,
   PipelineInventoryItem, PipelineEntity, PipelineChronologyEntry,
@@ -203,6 +204,9 @@ const CasePipeline: React.FC = () => {
   const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [isBackgroundMode, setIsBackgroundMode] = useState(false);
+  const [pollInterval, setPollInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+  const [ocrProgress, setOcrProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<string>('briefing');
   const [dragOver, setDragOver] = useState(false);
   const [expandedMotions, setExpandedMotions] = useState<Set<string>>(new Set());
@@ -227,6 +231,27 @@ const CasePipeline: React.FC = () => {
       setFiles([]);
     }
   }, [activeCase?.id]);
+
+  // Poll for background pipeline progress
+  useEffect(() => {
+    if (!isBackgroundMode || !activeCase?.id) return;
+
+    const interval = setInterval(() => {
+      const state = loadPipelineState(activeCase.id);
+      if (state) {
+        setPipelineState({ ...state });
+        if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
+          setIsRunning(false);
+          setIsBackgroundMode(false);
+          toast.success(state.status === 'completed' ? 'Pipeline completed!' : 'Pipeline finished with errors');
+        }
+      }
+    }, 1500);
+
+    setPollInterval(interval);
+
+    return () => clearInterval(interval);
+  }, [isBackgroundMode, activeCase?.id]);
 
   useEffect(() => {
     if (pipelineState && isRunning) {
@@ -291,32 +316,59 @@ const CasePipeline: React.FC = () => {
 
   const totalSize = useMemo(() => files.reduce((acc, f) => acc + f.size, 0), [files]);
 
-  const startPipeline = async () => {
+  const startPipeline = async (background: boolean = false) => {
     if (!activeCase || files.length === 0) return;
 
-    const controller = new AbortController();
-    setAbortController(controller);
-    setIsRunning(true);
-    setLastStageCount(0);
+    if (background) {
+      setIsRunning(true);
+      setIsBackgroundMode(true);
 
-    try {
-      const finalState = await runPipeline(
-        activeCase.id,
-        activeCase.title,
-        files,
-        (state) => {
-          setPipelineState({ ...state });
-        },
-        controller.signal
-      );
-      setPipelineState(finalState);
-      setIsRunning(false);
-      setFiles([]);
-    } catch (err: any) {
-      if (err.name === 'AbortError' || controller.signal.aborted) {
+      try {
+        const { state } = await scheduleBackgroundPipeline(
+          activeCase.id,
+          activeCase.title,
+          files
+        );
+        setPipelineState(state);
+        toast.success('Pipeline started in background. You can navigate away — CaseBuddy will notify you when complete.');
+      } catch (err: any) {
+        toast.error(`Pipeline failed to start: ${err.message}`);
         setIsRunning(false);
-      } else {
-        console.error('[CasePipeline] Pipeline error:', err);
+        setIsBackgroundMode(false);
+      }
+    } else {
+      const controller = new AbortController();
+      setAbortController(controller);
+      setIsRunning(true);
+      setIsBackgroundMode(false);
+      setLastStageCount(0);
+
+      try {
+        const finalState = await runPipeline(
+          activeCase.id,
+          activeCase.title,
+          files,
+          (state) => {
+            setPipelineState({ ...state });
+            const extractionStage = state.stages.find(s => s.id === 'extraction');
+            if (extractionStage?.status === 'running' && extractionStage.output) {
+              setOcrProgress({
+                current: (extractionStage.output as any).processedCount || 0,
+                total: (extractionStage.output as any).totalCount || files.length,
+              });
+            }
+          },
+          controller.signal
+        );
+        setPipelineState(finalState);
+        setIsRunning(false);
+        setFiles([]);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          // User cancelled
+        } else {
+          toast.error(`Pipeline error: ${err.message}`);
+        }
         setIsRunning(false);
       }
     }
@@ -543,18 +595,24 @@ const CasePipeline: React.FC = () => {
             <span className="flex items-center gap-1"><BarChart3 size={12} /> {formatBytes(totalSize)} total</span>
             <span className="flex items-center gap-1"><Clock size={12} /> ~5-15 min estimated</span>
           </div>
-          <button
-            onClick={startPipeline}
-            disabled={files.length === 0}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-              files.length === 0
-                ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
-                : 'bg-gold-500 text-slate-950 hover:bg-gold-400 shadow-lg shadow-gold-500/20 active:scale-95'
-            }`}
-          >
-            <Play size={16} />
-            Start Pipeline
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => startPipeline(false)}
+              disabled={files.length === 0 || isRunning}
+              className="flex items-center gap-2 bg-gold-500 hover:bg-gold-600 disabled:bg-slate-700 disabled:text-slate-500 text-black font-bold px-6 py-3 rounded-xl transition-all duration-200 shadow-lg shadow-gold-500/20"
+            >
+              <Play size={18} />
+              Run Pipeline Now
+            </button>
+            <button
+              onClick={() => startPipeline(true)}
+              disabled={files.length === 0 || isRunning}
+              className="flex items-center gap-2 border border-gold-500/30 text-gold-400 hover:bg-gold-500/10 disabled:border-slate-700 disabled:text-slate-600 font-bold px-6 py-3 rounded-xl transition-all duration-200"
+            >
+              <Zap size={18} />
+              Run in Background
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -580,14 +638,29 @@ const CasePipeline: React.FC = () => {
               <p className="text-sm text-slate-400">{activeCase.title}</p>
             </div>
           </div>
-          <button
-            onClick={cancelPipeline}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-medium transition-all"
-          >
-            <Square size={14} />
-            Cancel
-          </button>
+          {!isBackgroundMode && (
+            <button
+              onClick={cancelPipeline}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-medium transition-all"
+            >
+              <Square size={14} />
+              Cancel
+            </button>
+          )}
         </div>
+
+        {isBackgroundMode && (
+          <div className="bg-gold-500/10 border border-gold-500/30 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <Zap size={20} className="text-gold-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-gold-400 font-bold text-sm">Running in Background</p>
+              <p className="text-slate-400 text-xs mt-1">
+                You can navigate to other pages — CaseBuddy will continue processing and notify you when complete.
+                Stages 0-1 (inventory + OCR) run now. Stages 2-12 run asynchronously.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="bg-slate-900/80 border border-slate-700/60 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
@@ -660,6 +733,20 @@ const CasePipeline: React.FC = () => {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">{def?.description}</p>
+                    {stage.id === 'extraction' && stage.status === 'running' && !isBackgroundMode && ocrProgress.total > 0 && (
+                      <div className="mt-1.5">
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <Loader2 size={10} className="animate-spin text-gold-400" />
+                          <span>OCR: {ocrProgress.current} of {ocrProgress.total} files</span>
+                        </div>
+                        <div className="mt-1 w-full bg-slate-800 rounded-full h-1">
+                          <div
+                            className="bg-gold-500 h-1 rounded-full transition-all duration-500"
+                            style={{ width: `${(ocrProgress.current / ocrProgress.total) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     {stage.error && (
                       <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
                         <AlertTriangle size={10} />
