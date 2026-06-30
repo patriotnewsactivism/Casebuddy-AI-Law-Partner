@@ -486,16 +486,28 @@ export function useDeepgramVoiceAgent(
             think: groqKey
               ? {
                   provider: {
-                    type: 'openai',
-                    url: 'https://api.groq.com/openai/v1',
+                    type: 'custom',
+                    url: 'https://api.groq.com/openai/v1/chat/completions',
                     model: 'llama-3.3-70b-versatile',
-                    api_key: groqKey,
-                    temperature: 0.7,
+                    headers: {
+                      Authorization: `Bearer ${groqKey}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: {
+                      model: 'llama-3.3-70b-versatile',
+                      temperature: 0.7,
+                    },
                   },
                   prompt,
                 }
-              : {
+              : geminiKey
+              ? {
                   provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
+                  prompt,
+                }
+              : {
+                  // Last resort: no external keys — use Deepgram's built-in agent model
+                  provider: { type: 'deepgram', model: 'nova-2' },
                   prompt,
                 },
             speak: { provider: speakProvider },

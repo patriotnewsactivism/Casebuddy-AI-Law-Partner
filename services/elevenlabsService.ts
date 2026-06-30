@@ -6,19 +6,19 @@ import { handleError } from '../utils/errorHandler';
 
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
-// Default voice ID: Aria - warm, natural female voice suitable for Maya
-export const ELEVENLABS_VOICE_ID = '9BWtsw7tY7h4bXPiq3aY';
+// Default voice ID: Jessica — warm, mature, professional female (best for intake)
+export const ELEVENLABS_VOICE_ID = 'cgSgspJ2msm6clMCkdW9';
 
 // Voice profiles mapping agent IDs to voice IDs
 export const voiceProfiles: Record<string, string> = {
-  maya: '9BWtsw7tY7h4bXPiq3aY',
-  lex: '9BWtsw7tY7h4bXPiq3aY',
-  doc: '9BWtsw7tY7h4bXPiq3aY',
-  rex: '9BWtsw7tY7h4bXPiq3aY',
-  sol: '9BWtsw7tY7h4bXPiq3aY',
-  sierra: '9BWtsw7tY7h4bXPiq3aY',
-  jules: '9BWtsw7tY7h4bXPiq3aY',
-  max: '9BWtsw7tY7h4bXPiq3aY',
+  maya: 'cgSgspJ2msm6clMCkdW9',       // Jessica — warm, mature, professional female (best for intake)
+  lex: 'EXAVITQu4vr4xnSDxMaL',        // Bella — confident young American female
+  doc: '21m00Tcm4TlvDq8ikWAM',        // Rachel — calm, measured American female
+  rex: 'TxGEqnHWrfWFTfGW9XjX',        // Josh — deep, authoritative American male
+  sol: 'AZnzlk1XvdvUeBnXmlld',        // Domi — warm American female
+  sierra: 'MF3mGyEYCl7XYWbV9V6O',     // Elli — young, energetic American female
+  jules: 'VR6AewLTigWG4xSOukaG',      // Arnold — older, wise American male
+  max: 'CYF1gP2qUTsFqyVYgFBP',        // Ethan — young, friendly American male
 };
 
 /**

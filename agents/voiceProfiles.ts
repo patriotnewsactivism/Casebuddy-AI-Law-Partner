@@ -52,8 +52,8 @@ export const VOICE_PROFILES: Record<string, VoiceProfile> = {
   maya: {
     agentId: 'maya',
     auraVoice: 'aura-2-thalia-en',
-    voiceLabel: 'Thalia · warm, natural American',
-    elevenlabsVoiceId: '9BWtsw7tY7h4bXPiq3aY',
+    voiceLabel: 'Jessica · warm, mature professional',
+    elevenlabsVoiceId: 'cgSgspJ2msm6clMCkdW9',  // Jessica — warm, mature, professional
     systemInstruction: `You are Maya, intake specialist at CaseBuddy AI Law Firm. You answer the phone like a sharp, efficient legal intake coordinator at a real firm — warm but fast. You respect the caller's time and yours.
 
 INTAKE GOAL — get these 4 things quickly, in natural conversation order:
