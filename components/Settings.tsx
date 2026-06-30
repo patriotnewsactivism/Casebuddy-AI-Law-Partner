@@ -105,7 +105,7 @@ const AgentLogsPanel: React.FC = () => {
 
 
 const Settings = () => {
-  const { cases, theme, setTheme, syncStatus, user } = useContext(AppContext);
+  const { cases, theme, setTheme, operatingMode, setOperatingMode, syncStatus, user } = useContext(AppContext);
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -312,6 +312,50 @@ const Settings = () => {
             <span className="text-green-400 text-sm">{saveMessage}</span>
           </div>
         )}
+      </div>
+
+      {/* Operating Mode */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <SettingsIcon className="text-gold-500" size={24} />
+          <h2 className="text-xl font-semibold text-white">Operating Mode</h2>
+        </div>
+        
+        <div className="grid sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => setOperatingMode('companion')}
+            className={`flex flex-col items-start p-4 border rounded-xl transition-colors text-left ${
+              operatingMode === 'companion' 
+                ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_15px_rgba(202,138,4,0.15)]' 
+                : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
+            }`}
+          >
+            <div className="flex items-center justify-between w-full mb-2">
+              <span className={`font-bold ${operatingMode === 'companion' ? 'text-gold-400' : 'text-slate-300'}`}>
+                CaseBuddy CaseCompanion
+              </span>
+              {operatingMode === 'companion' && <CheckCircle size={18} className="text-gold-500" />}
+            </div>
+            <span className="text-xs text-slate-400">For individual litigants. Focuses on pure case organization and litigation management.</span>
+          </button>
+
+          <button
+            onClick={() => setOperatingMode('partner')}
+            className={`flex flex-col items-start p-4 border rounded-xl transition-colors text-left ${
+              operatingMode === 'partner' 
+                ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_15px_rgba(202,138,4,0.15)]' 
+                : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
+            }`}
+          >
+            <div className="flex items-center justify-between w-full mb-2">
+              <span className={`font-bold ${operatingMode === 'partner' ? 'text-gold-400' : 'text-slate-300'}`}>
+                CaseBuddy AI Law Partner
+              </span>
+              {operatingMode === 'partner' && <CheckCircle size={18} className="text-gold-500" />}
+            </div>
+            <span className="text-xs text-slate-400">For law firms and power users. Unlocks the full AI legal staff and automation suite.</span>
+          </button>
+        </div>
       </div>
 
       {/* Account & Security */}

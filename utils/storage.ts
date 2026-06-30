@@ -14,11 +14,14 @@ const STORAGE_KEYS = {
 
 const CURRENT_VERSION = '1.0.0';
 
+export type OperatingMode = 'companion' | 'partner';
+
 interface UserPreferences {
   autoSave: boolean;
   theme: 'dark' | 'light';
   displayName: string;
   title: string;
+  operatingMode: OperatingMode;
 }
 
 const isLocalStorageAvailable = (): boolean => {
@@ -145,6 +148,7 @@ export const loadPreferences = (): UserPreferences => {
     theme: 'dark',
     displayName: 'Attorney J. Doe',
     title: 'Senior Litigator',
+    operatingMode: 'partner',
   };
   if (!isLocalStorageAvailable()) return defaults;
   try {

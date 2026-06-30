@@ -60,7 +60,7 @@ const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
-import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
+import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences, OperatingMode } from './utils/storage';
 import { backgroundEngine } from './services/backgroundAgentEngine';
 import { caseMonitor } from './services/caseMonitor';
 import { orchestrator } from './services/agentOrchestrator';
@@ -147,16 +147,36 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const isActive = (path: string) => location.pathname === path;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [navSearch, setNavSearch] = useState('');
-  const { syncStatus } = React.useContext(AppContext);
+  const { syncStatus, operatingMode } = React.useContext(AppContext);
 
   const filteredNavGroups = React.useMemo(() => {
-    if (!navSearch.trim()) return NAV_GROUPS;
+    let groups = NAV_GROUPS;
+    if (operatingMode === 'companion') {
+      groups = groups.map(group => {
+        if (group.label === 'Case Management') {
+          return {
+            ...group,
+            label: 'My Cases',
+            items: group.items.filter(item => !['Firm Command', 'Intake Inbox'].includes(item.label)),
+          };
+        }
+        if (group.label === 'Tools') {
+          return {
+            ...group,
+            items: group.items.filter(item => !['Agent Status', 'Firm Admin', 'Integrations'].includes(item.label)),
+          };
+        }
+        return group;
+      }).filter(group => group.label === 'My Cases' || group.label === 'Tools' || group.label === 'Courtroom Prep');
+    }
+
+    if (!navSearch.trim()) return groups;
     const q = navSearch.toLowerCase();
-    return NAV_GROUPS.map(group => ({
+    return groups.map(group => ({
       ...group,
       items: group.items.filter((item: any) => item.label.toLowerCase().includes(q)),
     })).filter(group => group.items.length > 0);
-  }, [navSearch]);
+  }, [navSearch, operatingMode]);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -362,6 +382,8 @@ export const AppContext = React.createContext<{
   deleteCase: (id: string) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
+  operatingMode: OperatingMode;
+  setOperatingMode: (m: OperatingMode) => void;
   syncStatus: SyncStatus;
   user: User | null;
   authLoading: boolean;
@@ -374,6 +396,8 @@ export const AppContext = React.createContext<{
   deleteCase: () => {},
   theme: 'dark',
   setTheme: () => {},
+  operatingMode: 'partner',
+  setOperatingMode: () => {},
   syncStatus: 'local-only',
   user: null,
   authLoading: true,
@@ -394,6 +418,7 @@ const App = () => {
   });
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
+  const [operatingMode, setOperatingModeState] = useState<OperatingMode>(() => loadPreferences().operatingMode ?? 'partner');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -452,6 +477,11 @@ const App = () => {
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);
     savePreferences({ theme: t });
+  };
+
+  const setOperatingMode = (m: OperatingMode) => {
+    setOperatingModeState(m);
+    savePreferences({ operatingMode: m });
   };
 
   const setActiveCase = (c: Case) => {
@@ -557,7 +587,7 @@ const App = () => {
   }, []);
 
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, syncStatus, user, authLoading }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, operatingMode, setOperatingMode, syncStatus, user, authLoading }}>
       <BrowserRouter>
         {showOnboarding && user && (
           <Suspense fallback={null}>

@@ -281,17 +281,16 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 py-24 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 glass-gold rounded-full text-gold-400 text-xs font-semibold mb-8 animate-fade-in">
             <Zap size={13} />
-            The AI Law Firm That Never Stops Working
+            The Ultimate Legal Intelligence Platform
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-7xl font-bold font-serif leading-[1.1] mb-6 animate-slide-up">
-            A Client Calls.{' '}
-            <span className="text-gradient-gold">8 AI Agents</span>
-            {' '}Are Already Working the Case.
+            One Platform.<br />
+            <span className="text-gradient-gold">Two Powerful Modes.</span>
           </h1>
 
           <p className="text-base sm:text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            CaseBuddy turns a voice intake call into a scored lead, a case file, a motion strategy, a jury analysis, and a client letter — without you lifting a finger. Then it keeps going: 12 specialist AI lawyers, live trial simulation, witness prep, verdict prediction, and 15+ more tools. All on one platform. Built for attorneys who win.
+            Whether you're an individual representing yourself with <strong className="text-white">CaseBuddy CaseCompanion</strong> or a law firm deploying our full <strong className="text-white">AI Law Partner</strong> suite—CaseBuddy gives you the tools you need to win. From simple case organization to a 24/7 autonomous legal team.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-slide-up" style={{ animationDelay: '0.2s' }}>
