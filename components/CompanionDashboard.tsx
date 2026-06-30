@@ -168,7 +168,7 @@ const CompanionDashboard = () => {
               <Briefcase size={32} className="mx-auto mb-3 text-slate-600" />
               <p className="text-slate-300 font-medium mb-1">You haven't added any cases.</p>
               <p className="text-slate-500 text-sm mb-4">Let's set up your first case to start getting organized.</p>
-              <Link to="/app/cases" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white text-slate-950 text-sm font-bold hover:bg-slate-200 transition-colors">
+              <Link to="/app/companion-setup" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white text-slate-950 text-sm font-bold hover:bg-slate-200 transition-colors">
                 <Plus size={16} /> Create Case
               </Link>
             </div>
