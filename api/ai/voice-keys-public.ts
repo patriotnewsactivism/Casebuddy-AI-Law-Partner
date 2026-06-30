@@ -5,7 +5,7 @@
  * The keys are rate-limited per IP by Vercel edge middleware.
  *
  * POST /api/ai/voice-keys-public
- * Response: { deepgramKey, elevenlabsKey, geminiKey }
+ * Response: { deepgramKey, elevenlabsKey, geminiKey, groqKey }
  */
 
 export const config = { runtime: 'edge' };
@@ -39,6 +39,12 @@ export default async function handler(req: Request): Promise<Response> {
     ''
   ).trim();
 
+  const groqKey = (
+    process.env.GROQ_API_KEY ||
+    process.env.VITE_GROQ_API_KEY ||
+    ''
+  ).trim();
+
   const geminiKey = (
     process.env.GEMINI_API_KEY ||
     process.env.VITE_GEMINI_API_KEY ||
@@ -49,5 +55,5 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Voice service not configured.' }, 503);
   }
 
-  return json({ deepgramKey, elevenlabsKey, geminiKey });
+  return json({ deepgramKey, elevenlabsKey, geminiKey, groqKey });
 }

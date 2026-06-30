@@ -101,7 +101,7 @@ export interface UseDeepgramVoiceAgentResult {
  */
 const fetchVoiceKeys = async (
   publicEndpoint = false
-): Promise<{ deepgramKey: string; geminiKey: string; elevenlabsKey?: string }> => {
+): Promise<{ deepgramKey: string; geminiKey: string; elevenlabsKey?: string; groqKey?: string }> => {
   // Public intake path — no auth required
   if (publicEndpoint) {
     try {
@@ -114,7 +114,8 @@ const fetchVoiceKeys = async (
         if (data.deepgramKey) return {
           deepgramKey: data.deepgramKey,
           geminiKey: data.geminiKey || '',
-          elevenlabsKey: data.elevenlabsKey || undefined
+          elevenlabsKey: data.elevenlabsKey || undefined,
+          groqKey: data.groqKey || undefined
         };
       }
     } catch {
@@ -137,7 +138,8 @@ const fetchVoiceKeys = async (
           if (data.deepgramKey && data.geminiKey) return {
             deepgramKey: data.deepgramKey,
             geminiKey: data.geminiKey,
-            elevenlabsKey: data.elevenlabsKey || undefined
+            elevenlabsKey: data.elevenlabsKey || undefined,
+            groqKey: data.groqKey || undefined
           };
         }
       }
@@ -150,7 +152,8 @@ const fetchVoiceKeys = async (
   const deepgramKey = (import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '').trim();
   const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '').trim();
   const elevenlabsKey = (import.meta.env.VITE_ELEVENLABS_API_KEY || (window as any).__ELEVENLABS_API_KEY || '').trim();
-  return { deepgramKey, geminiKey, elevenlabsKey: elevenlabsKey || undefined };
+  const groqKey = (import.meta.env.VITE_GROQ_API_KEY || (window as any).__GROQ_API_KEY || '').trim();
+  return { deepgramKey, geminiKey, elevenlabsKey: elevenlabsKey || undefined, groqKey: groqKey || undefined };
 };
 
 /**
@@ -365,11 +368,13 @@ export function useDeepgramVoiceAgent(
     let dgKey: string;
     let geminiKey: string;
     let elevKey: string | undefined;
+    let groqKey = '';
     try {
       const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
       dgKey = keys.deepgramKey.trim();
       geminiKey = keys.geminiKey.trim();
       elevKey = keys.elevenlabsKey?.trim();
+      groqKey = keys.groqKey?.trim() || '';
       // Cache keys for use by intakeService and other client-side services
       setRuntimeKeys({ deepgramKey: dgKey, geminiKey, elevenlabsKey: elevKey });
       // Track ElevenLabs availability for UI display
@@ -394,7 +399,7 @@ export function useDeepgramVoiceAgent(
       setStatus('error');
       return;
     }
-    if (!geminiKey) {
+    if (!geminiKey && !groqKey) {
       setError('AI service is not available right now. Please try again shortly.');
       setStatus('error');
       return;
@@ -478,10 +483,21 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: {
-              provider: { type: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
-              prompt,
-            },
+            think: groqKey
+              ? {
+                  provider: {
+                    type: 'openai',
+                    url: 'https://api.groq.com/openai/v1',
+                    model: 'llama-3.3-70b-versatile',
+                    api_key: groqKey,
+                    temperature: 0.7,
+                  },
+                  prompt,
+                }
+              : {
+                  provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
+                  prompt,
+                },
             speak: { provider: speakProvider },
             greeting: opts.greeting,
           },
