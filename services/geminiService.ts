@@ -221,15 +221,35 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
   } catch (error) { throw new Error(`Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`); }
 };
 
-// ── OCR: GitHub Models GPT-4o → Groq vision → Gemini fallback ──────────────
+// ── OCR: PDF.js text extraction (PDFs) → GitHub Models GPT-4o (images) → Gemini fallback ──
 
-const ocrWithGitHubModels = async (imageOrDocFile: File): Promise<string> => {
+// Extract text from PDFs using PDF.js — no API needed, runs entirely in browser
+const extractPdfText = async (file: File): Promise<string> => {
+  const arrayBuffer = await file.arrayBuffer();
+  // Dynamically import pdfjs-dist to avoid bundle bloat
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item: any) => ('str' in item ? item.str : ''))
+      .join(' ');
+    fullText += `\n--- Page ${pageNum} ---\n${pageText}`;
+  }
+  return fullText.trim();
+};
+
+// GitHub Models GPT-4o vision — images only (not PDFs)
+const ocrWithGitHubModels = async (imageFile: File): Promise<string> => {
   const ghToken = import.meta.env.VITE_GITHUB_TOKEN || import.meta.env.VITE_GITHUB_MODELS_TOKEN || '';
   if (!ghToken) throw new Error('No GitHub Models token');
-  const part = await fileToGenerativePart(imageOrDocFile);
-  const base64 = part.inlineData.data;
-  const mimeType = part.inlineData.mimeType;
-  // GitHub Models supports GPT-4o with vision — free for GitHub users
+  // Only handle image types — GPT-4o vision rejects PDFs
+  const mime = imageFile.type || '';
+  if (!mime.startsWith('image/')) throw new Error('GitHub Models: images only');
+  const part = await fileToGenerativePart(imageFile);
   const resp = await fetch('https://models.inference.ai.azure.com/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${ghToken}`, 'Content-Type': 'application/json' },
@@ -238,8 +258,8 @@ const ocrWithGitHubModels = async (imageOrDocFile: File): Promise<string> => {
       messages: [{
         role: 'user',
         content: [
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
-          { type: 'text', text: 'Extract ALL text from this document exactly as it appears. Preserve layout and structure. Return only the extracted text, nothing else.' }
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${part.inlineData.data}` } },
+          { type: 'text', text: 'Extract ALL text from this image exactly as it appears. Preserve layout. Return only the extracted text.' }
         ]
       }],
       max_tokens: 4096,
@@ -254,14 +274,32 @@ const ocrWithGitHubModels = async (imageOrDocFile: File): Promise<string> => {
 };
 
 export const performOCR = async (imageOrDocFile: File): Promise<string> => {
-  // 1. Try GitHub Models GPT-4o (free for GitHub users, excellent OCR)
-  try {
-    const text = await withTimeout(ocrWithGitHubModels(imageOrDocFile), 45000);
-    if (text) return text;
-  } catch (e) {
-    console.warn('[performOCR] GitHub Models failed, trying Gemini:', e);
+  const mime = imageOrDocFile.type || imageOrDocFile.name.toLowerCase();
+  const isPdf = mime.includes('pdf');
+  const isImage = !isPdf && (mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|tiff)$/i.test(imageOrDocFile.name));
+
+  // 1a. PDFs: extract text directly with PDF.js (free, no API, works offline)
+  if (isPdf) {
+    try {
+      const text = await withTimeout(extractPdfText(imageOrDocFile), 30000);
+      if (text && text.length > 50) return text;
+      console.warn('[performOCR] PDF.js extracted minimal text (scanned PDF?), trying Gemini');
+    } catch (e) {
+      console.warn('[performOCR] PDF.js failed:', e);
+    }
   }
-  // 2. Gemini fallback
+
+  // 1b. Images: GitHub Models GPT-4o vision (free)
+  if (isImage) {
+    try {
+      const text = await withTimeout(ocrWithGitHubModels(imageOrDocFile), 45000);
+      if (text) return text;
+    } catch (e) {
+      console.warn('[performOCR] GitHub Models failed, trying Gemini:', e);
+    }
+  }
+
+  // 2. Gemini fallback (handles scanned PDFs, complex images)
   try {
     const part = await fileToGenerativePart(imageOrDocFile);
     const response = await withTimeout(
