@@ -196,21 +196,21 @@ const transcribeWithDeepgram = async (audioFile: File): Promise<string> => {
 };
 
 export const transcribeAudio = async (audioFile: File): Promise<string> => {
-  // 1. Try Groq Whisper (free tier, very generous limits)
+  // 1. Deepgram Nova-3 — primary (best accuracy for legal audio, $200 credit available)
+  try {
+    const text = await withTimeout(transcribeWithDeepgram(audioFile), 90000);
+    if (text) return text;
+  } catch (e) {
+    console.warn('[transcribeAudio] Deepgram failed, trying Groq Whisper:', e);
+  }
+  // 2. Groq Whisper large-v3 — fallback (free tier)
   try {
     const text = await withTimeout(transcribeWithGroqWhisper(audioFile), 60000);
     if (text) return text;
   } catch (e) {
-    console.warn('[transcribeAudio] Groq Whisper failed, trying Deepgram:', e);
+    console.warn('[transcribeAudio] Groq Whisper failed, trying Gemini:', e);
   }
-  // 2. Try Deepgram (already paid, ~$0.004/min, excellent accuracy)
-  try {
-    const text = await withTimeout(transcribeWithDeepgram(audioFile), 60000);
-    if (text) return text;
-  } catch (e) {
-    console.warn('[transcribeAudio] Deepgram failed, trying Gemini:', e);
-  }
-  // 3. Gemini fallback (last resort — subject to quota)
+  // 3. Gemini — last resort
   try {
     const part = await fileToGenerativePart(audioFile);
     const response = await withTimeout(
