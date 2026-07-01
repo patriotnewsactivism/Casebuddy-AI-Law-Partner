@@ -30,6 +30,7 @@ const GROQ_KEY = (process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '
 const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
 const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || '').trim();
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || process.env.VITE_GITHUB_TOKEN || '').trim();
+const COHERE_KEY = (process.env.COHERE_API_KEY || '').trim();
 
 // Free-tier models
 const GROQ_MODEL = 'llama-3.3-70b-versatile';        // 100K tokens/day free
@@ -38,6 +39,9 @@ const GEMINI_MODEL = 'gemini-2.0-flash';              // free tier on AI Studio
 const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free'; // free on OpenRouter
 const GITHUB_MODEL = 'gpt-4o';                        // free via GitHub Models
 const GITHUB_FALLBACK = 'gpt-4o-mini';                 // cheaper, faster
+// Cohere models — excellent for document analysis (256K context)
+const COHERE_DOC_MODEL = 'command-a-plus-05-2026';    // best reasoning/analysis
+const COHERE_VISION_MODEL = 'command-a-vision-07-2025'; // image + doc vision
 
 // ── Groq (OpenAI-compatible) ──────────────────────────────────────────────
 
@@ -190,6 +194,36 @@ function parseOpenRouterResponse(data: any): string {
 
 // ── Main handler ──────────────────────────────────────────────────────────
 
+
+// ── Cohere (v2 Chat API, OpenAI-compatible messages) ────────────────────────
+
+async function callCohere(body: any): Promise<Response> {
+  if (!COHERE_KEY) throw new Error('Cohere not configured');
+  const messages = [
+    ...(body.system ? [{ role: 'system', content: body.system }] : []),
+    ...(body.messages || []),
+  ];
+  const resp = await fetch('https://api.cohere.com/v2/chat', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${COHERE_KEY}`,
+      'Content-Type': 'application/json',
+      'X-Client-Name': 'casebuddy-ai',
+    },
+    body: JSON.stringify({
+      model: COHERE_DOC_MODEL,
+      messages,
+      max_tokens: body.max_tokens ?? 4096,
+    }),
+  });
+  return resp;
+}
+
+function parseCohereResponse(data: any): string {
+  const parts = data?.message?.content || [];
+  return parts.filter((p: any) => p.type === 'text').map((p: any) => p.text || '').join('').trim();
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -198,9 +232,10 @@ export default async function handler(req: Request): Promise<Response> {
   try { body = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
   if (!body.messages?.length) return json({ error: 'Missing messages' }, 400);
 
-  // Provider chain: Groq → GitHub (gpt-4o) → Gemini → OpenRouter
+  // Provider chain: Cohere → Gemini → GitHub (gpt-4o) → Groq → OpenRouter
+  // Cohere leads: 256K context window, excellent for long legal documents
   const providers = [
-    // Gemini first — valid key, no burst rate limits on 46-file batches
+    { name: 'cohere', fn: callCohere, parse: parseCohereResponse, key: COHERE_KEY },
     { name: 'gemini', fn: callGemini, parse: parseGeminiResponse, key: GEMINI_KEY },
     { name: 'github', fn: callGitHubModels, parse: parseOpenRouterResponse, key: GITHUB_TOKEN },
     { name: 'groq', fn: callGroq, parse: parseGroqResponse, key: GROQ_KEY },
