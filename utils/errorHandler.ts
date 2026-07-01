@@ -109,12 +109,35 @@ export const clearErrorLogs = (): void => {
 };
 
 /**
- * Retry wrapper with exponential backoff
+ * Extract retry delay from a Gemini 429 error body (respects retryDelay hint).
+ */
+const extract429Delay = (error: unknown): number | null => {
+  try {
+    const msg = error instanceof Error ? error.message : String(error);
+    // Parse JSON from the error message if present
+    const jsonMatch = msg.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const details = parsed?.error?.details ?? [];
+      for (const d of details) {
+        if (d?.retryDelay) {
+          const secs = parseFloat(d.retryDelay.replace('s', ''));
+          if (!isNaN(secs)) return Math.ceil(secs) * 1000 + 500; // add 500ms buffer
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+};
+
+/**
+ * Retry wrapper with exponential backoff + 429 rate-limit awareness.
+ * Reads Gemini's suggested retryDelay and waits accordingly.
  */
 export const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000
+  maxRetries: number = 4,
+  baseDelay: number = 2000
 ): Promise<T> => {
   let lastError: unknown;
 
@@ -124,13 +147,16 @@ export const retryWithBackoff = async <T>(
     } catch (error) {
       lastError = error;
 
-      // Don't retry on last attempt
-      if (attempt === maxRetries) {
-        break;
-      }
+      if (attempt === maxRetries) break;
 
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = baseDelay * Math.pow(2, attempt);
+      const msg = error instanceof Error ? error.message : String(error);
+      const is429 = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota');
+
+      // Respect Gemini's suggested retry delay for 429s
+      const suggested = is429 ? extract429Delay(error) : null;
+      const delay = suggested ?? baseDelay * Math.pow(2, attempt);
+
+      console.warn(`[retryWithBackoff] attempt ${attempt + 1}/${maxRetries} failed${is429 ? ' (rate limit)' : ''}. Retrying in ${Math.round(delay / 1000)}s...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
