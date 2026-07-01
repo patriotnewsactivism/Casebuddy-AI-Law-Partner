@@ -1,6 +1,6 @@
 import React, { useState, useContext, useEffect, useRef, useMemo} from 'react';
 import { AppContext } from '../App';
-import { analyzeEvidence } from '../services/geminiService';
+import { uploadDocument, reanalyzeDocument } from '../services/documentPipeline';
 import { onDiscoveryReceived, onEvidenceConcernsFound } from '../services/caseEventHooks';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -65,10 +65,25 @@ const EvidenceVault = () => {
         reader.readAsDataURL(file);
       });
 
-      const analysis = await analyzeEvidence(file, activeCase.summary || activeCase.title);
+      // Real pipeline: upload to Supabase Storage (durable), then OCR via
+      // Google Cloud Vision -> Gemini -> OCR.space, plus legal analysis via
+      // Gemini -> OpenAI -> Cohere (shared edge function used across the app).
+      const { document } = await uploadDocument(file, activeCase.id);
+      const result = await reanalyzeDocument(document.id);
+
+      const analysis = {
+        summary: result?.summary || 'Evidence uploaded — analysis pending.',
+        relevance: result?.keyFacts?.length ? Math.min(95, 60 + result.keyFacts.length * 5) : 50,
+        keyFacts: result?.keyFacts || [],
+        concerns: result?.adverseFindings || [],
+        tags: [
+          result?.ocrProvider ? `ocr:${result.ocrProvider}` : 'uploaded',
+          ...(result?.favorableFindings?.length ? ['favorable-findings'] : []),
+        ],
+      };
 
       const item: EvidenceItem = {
-        id: Date.now().toString(),
+        id: document.id,
         caseId: activeCase.id,
         name: file.name,
         type: file.type,
