@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { DocumentType, StrategyInsight, CoachingAnalysis, TrialPhase, SimulationMode, WarRoomBriefing, WarRoomTask, Message } from "../types";
 import { retryWithBackoff, withTimeout } from "../utils/errorHandler";
 import { deepseekChat, parseDeepSeekJson } from "./deepseek";
+import { extractAudioFromVideo } from "./integrationService";
 
 const getApiKey = () => {
   const key = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '';
@@ -196,23 +197,41 @@ const transcribeWithDeepgram = async (audioFile: File): Promise<string> => {
 };
 
 export const transcribeAudio = async (audioFile: File): Promise<string> => {
+  // Large or uncompressed audio (raw WAV, long recordings, or stray video
+  // files that slip through) can be huge — this was causing Deepgram/Groq/
+  // Gemini to all time out on the same big upload. Compress to 16kHz mono
+  // 64kbps MP3 first via the shared ffmpeg endpoint (it despite its name
+  // works on any ffmpeg-decodable input, not just video) — this both keeps
+  // us under Groq's 25MB limit and drastically cuts upload/transfer time.
+  let fileToTranscribe = audioFile;
+  const isLarge = audioFile.size > 8 * 1024 * 1024; // 8MB
+  const isVideo = audioFile.type.startsWith('video/');
+  if (isLarge || isVideo) {
+    try {
+      fileToTranscribe = await extractAudioFromVideo(audioFile);
+      console.log(`[transcribeAudio] Compressed ${(audioFile.size / 1024 / 1024).toFixed(1)}MB -> ${(fileToTranscribe.size / 1024 / 1024).toFixed(1)}MB before transcription`);
+    } catch (e) {
+      console.warn('[transcribeAudio] Compression failed, using original file:', e);
+    }
+  }
+
   // 1. Deepgram Nova-3 — primary (best accuracy for legal audio, $200 credit available)
   try {
-    const text = await withTimeout(transcribeWithDeepgram(audioFile), 90000);
+    const text = await withTimeout(transcribeWithDeepgram(fileToTranscribe), 90000);
     if (text) return text;
   } catch (e) {
     console.warn('[transcribeAudio] Deepgram failed, trying Groq Whisper:', e);
   }
   // 2. Groq Whisper large-v3 — fallback (free tier)
   try {
-    const text = await withTimeout(transcribeWithGroqWhisper(audioFile), 60000);
+    const text = await withTimeout(transcribeWithGroqWhisper(fileToTranscribe), 60000);
     if (text) return text;
   } catch (e) {
     console.warn('[transcribeAudio] Groq Whisper failed, trying Gemini:', e);
   }
   // 3. Gemini — last resort, with retry for 429 rate limits
   try {
-    const part = await fileToGenerativePart(audioFile);
+    const part = await fileToGenerativePart(fileToTranscribe);
     const response = await retryWithBackoff(async () => {
       return await withTimeout(
         ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: 'Transcribe this audio accurately. Label speakers [Speaker 1], etc. Note inaudible as [inaudible]. Return only transcription.' }] } }),
