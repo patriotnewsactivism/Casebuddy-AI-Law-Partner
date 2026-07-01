@@ -256,7 +256,7 @@ export const runExtractionStage = async (
 
   // Circuit breaker: abort extraction after N consecutive AI provider failures
   let consecutiveProviderFailures = 0;
-  const MAX_CONSECUTIVE_PROVIDER_FAILURES = 3;
+  const MAX_CONSECUTIVE_PROVIDER_FAILURES = 2;
   const isProviderExhausted = (err: unknown): boolean => {
     const msg = err instanceof Error ? err.message : String(err);
     return /(429|503|quota|exhausted|rate.?limit|unavailable|All AI providers)/i.test(msg);
