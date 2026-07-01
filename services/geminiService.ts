@@ -223,18 +223,46 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
 
 // ── OCR: PDF.js text extraction (PDFs) → GitHub Models GPT-4o (images) → Gemini fallback ──
 
-// Extract text from PDFs using PDF.js — no API needed, runs entirely in browser
+// Extract text from PDFs using PDF.js CDN — no bundling needed
 const extractPdfText = async (file: File): Promise<string> => {
   const arrayBuffer = await file.arrayBuffer();
-  // Dynamically import pdfjs-dist to avoid bundle bloat
-  const pdfjsLib = await import('pdfjs-dist');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  // Load PDF.js from CDN to avoid Rollup bundle issues
+  const PDFJS_VERSION = '4.4.168';
+  const cdnBase = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}`;
+
+  // Inject script tag if not already loaded
+  if (!(window as any).pdfjsLib) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `${cdnBase}/pdf.min.mjs`;
+      script.type = 'module';
+      script.onload = () => resolve();
+      script.onerror = reject;
+      document.head.appendChild(script);
+      // Also try non-module fallback
+      setTimeout(() => {
+        if (!(window as any).pdfjsLib) {
+          const s2 = document.createElement('script');
+          s2.src = `${cdnBase}/pdf.min.js`;
+          s2.onload = () => resolve();
+          document.head.appendChild(s2);
+        }
+      }, 500);
+      setTimeout(resolve, 3000); // timeout fallback
+    });
+  }
+
+  const pdfjsLib = (window as any).pdfjsLib;
+  if (!pdfjsLib) throw new Error('PDF.js failed to load from CDN');
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `${cdnBase}/pdf.worker.min.js`;
+
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let fullText = '';
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items
+    const pageText = (textContent.items as any[])
       .map((item: any) => ('str' in item ? item.str : ''))
       .join(' ');
     fullText += `\n--- Page ${pageNum} ---\n${pageText}`;
