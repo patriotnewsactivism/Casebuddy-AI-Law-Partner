@@ -493,11 +493,16 @@ export function useDeepgramVoiceAgent(
                   },
                   prompt,
                 }
+              : geminiKey
+              ? {
+                  provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
+                  prompt,
+                }
               : {
                   provider: {
                     type: 'openai',
-                    url: 'https://casebuddy.live/api/ai/chat',
-                    model: 'auto',
+                    url: 'https://casebuddy.live/api/ai/v1',
+                    model: 'llama-3.3-70b-versatile',
                     temperature: 0.7,
                   },
                   prompt,
