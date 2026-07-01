@@ -200,9 +200,10 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Provider chain: Groq → GitHub (gpt-4o) → Gemini → OpenRouter
   const providers = [
-    { name: 'groq', fn: callGroq, parse: parseGroqResponse, key: GROQ_KEY },
-    { name: 'github', fn: callGitHubModels, parse: parseOpenRouterResponse, key: GITHUB_TOKEN },
+    // Gemini first — valid key, no burst rate limits on 46-file batches
     { name: 'gemini', fn: callGemini, parse: parseGeminiResponse, key: GEMINI_KEY },
+    { name: 'github', fn: callGitHubModels, parse: parseOpenRouterResponse, key: GITHUB_TOKEN },
+    { name: 'groq', fn: callGroq, parse: parseGroqResponse, key: GROQ_KEY },
     { name: 'openrouter', fn: callOpenRouter, parse: parseOpenRouterResponse, key: OPENROUTER_KEY },
   ];
 
