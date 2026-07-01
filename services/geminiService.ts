@@ -568,3 +568,16 @@ export const generateWarRoomBriefing = async (
     0.5, 30000
   );
 };
+
+// ── Simple text generation helper ────────────────────────────────────────────
+export const generateText = async (prompt: string, temperature = 0.7): Promise<string> => {
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts: [{ text: prompt }] },
+      config: { temperature },
+    }),
+    30000
+  );
+  return response.text || '';
+};
