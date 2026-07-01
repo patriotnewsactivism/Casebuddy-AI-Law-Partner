@@ -238,9 +238,9 @@ Make the transcript realistic for a legal context — depositions, witness inter
       'Can you state your full name for the record, please?',
       'My name is Robert Chen. I was present at the scene of the incident.',
       'And what did you observe on that date?',
-      'I observed the defendant's vehicle approaching the intersection at a high rate of speed.',
+      'I observed the defendant\\'s vehicle approaching the intersection at a high rate of speed.',
       'What happened next?',
-      'The vehicle failed to stop at the red light and collided with the plaintiff's car.',
+      'The vehicle failed to stop at the red light and collided with the plaintiff\\'s car.',
       'Were there any other witnesses present?',
       'Yes, there was a woman standing on the corner who saw the entire incident.',
     ];
