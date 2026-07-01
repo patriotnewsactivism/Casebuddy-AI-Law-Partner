@@ -483,28 +483,10 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: groqKey
-              ? {
-                  provider: {
-                    type: 'openai',
-                    url: 'https://api.groq.com/openai/v1',
-                    model: 'llama-3.3-70b-versatile',
-                    api_key: groqKey,
-                    temperature: 0.7,
-                  },
-                  prompt,
-                }
-              : geminiKey
-              ? {
-                  provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
-                  prompt,
-                }
-              : {
-                  // Last resort: no external keys — use Gemini free tier model
-                  // Deepgram will use its default Gemini config without an API key
-                  provider: { model: 'gemini-2.0-flash' },
-                  prompt,
-                },
+            think: {
+              provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
+              prompt,
+            },
             speak: { provider: speakProvider },
             greeting: opts.greeting,
           },
