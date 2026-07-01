@@ -146,7 +146,71 @@ export const getTrialSimSystemInstruction = (phase: TrialPhase, mode: string, op
 
 // ── Transcript / OCR / Evidence (Gemini multimodal) ─────────────────────────
 
+// ── Audio transcription: Groq Whisper → Deepgram → Gemini fallback ──────────
+
+const transcribeWithGroqWhisper = async (audioFile: File): Promise<string> => {
+  const groqKey = import.meta.env.VITE_GROQ_API_KEY || '';
+  if (!groqKey) throw new Error('No Groq key');
+  const form = new FormData();
+  form.append('file', audioFile, audioFile.name);
+  form.append('model', 'whisper-large-v3');
+  form.append('response_format', 'verbose_json');
+  form.append('language', 'en');
+  const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST', headers: { Authorization: `Bearer ${groqKey}` }, body: form,
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Groq Whisper error ${resp.status}: ${err}`);
+  }
+  const data = await resp.json();
+  return data.text || '';
+};
+
+const transcribeWithDeepgram = async (audioFile: File): Promise<string> => {
+  const dgKey = import.meta.env.VITE_DEEPGRAM_API_KEY || '';
+  if (!dgKey) throw new Error('No Deepgram key');
+  const arrayBuffer = await audioFile.arrayBuffer();
+  const resp = await fetch('https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&diarize=true&punctuate=true', {
+    method: 'POST',
+    headers: { Authorization: `Token ${dgKey}`, 'Content-Type': audioFile.type || 'audio/wav' },
+    body: arrayBuffer,
+  });
+  if (!resp.ok) throw new Error(`Deepgram error ${resp.status}`);
+  const data = await resp.json();
+  const words = data?.results?.channels?.[0]?.alternatives?.[0]?.words ?? [];
+  if (words.length > 0) {
+    // Build diarized transcript
+    let transcript = '';
+    let currentSpeaker = -1;
+    for (const w of words) {
+      if (w.speaker !== currentSpeaker) {
+        currentSpeaker = w.speaker;
+        transcript += `\n[Speaker ${currentSpeaker + 1}] `;
+      }
+      transcript += w.punctuated_word + ' ';
+    }
+    return transcript.trim();
+  }
+  return data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+};
+
 export const transcribeAudio = async (audioFile: File): Promise<string> => {
+  // 1. Try Groq Whisper (free tier, very generous limits)
+  try {
+    const text = await withTimeout(transcribeWithGroqWhisper(audioFile), 60000);
+    if (text) return text;
+  } catch (e) {
+    console.warn('[transcribeAudio] Groq Whisper failed, trying Deepgram:', e);
+  }
+  // 2. Try Deepgram (already paid, ~$0.004/min, excellent accuracy)
+  try {
+    const text = await withTimeout(transcribeWithDeepgram(audioFile), 60000);
+    if (text) return text;
+  } catch (e) {
+    console.warn('[transcribeAudio] Deepgram failed, trying Gemini:', e);
+  }
+  // 3. Gemini fallback (last resort — subject to quota)
   try {
     const part = await fileToGenerativePart(audioFile);
     const response = await withTimeout(
