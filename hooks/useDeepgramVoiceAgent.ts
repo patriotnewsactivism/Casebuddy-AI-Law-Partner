@@ -452,7 +452,7 @@ export function useDeepgramVoiceAgent(
               type: 'elevenlabs',
               voice_id: elVoiceId!,
               api_key: elevKey,
-              model_id: 'eleven_turbo_v2_5',
+              model: 'eleven_turbo_v2_5',
             }
           : {
               type: 'deepgram',
