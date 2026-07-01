@@ -210,13 +210,15 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
   } catch (e) {
     console.warn('[transcribeAudio] Groq Whisper failed, trying Gemini:', e);
   }
-  // 3. Gemini — last resort
+  // 3. Gemini — last resort, with retry for 429 rate limits
   try {
     const part = await fileToGenerativePart(audioFile);
-    const response = await withTimeout(
-      ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: 'Transcribe this audio accurately. Label speakers [Speaker 1], etc. Note inaudible as [inaudible]. Return only transcription.' }] } }),
-      60000
-    );
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: 'Transcribe this audio accurately. Label speakers [Speaker 1], etc. Note inaudible as [inaudible]. Return only transcription.' }] } }),
+        60000
+      );
+    }, 3);
     return response.text || '';
   } catch (error) { throw new Error(`Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`); }
 };
@@ -239,23 +241,15 @@ const extractPdfText = async (file: File): Promise<string> => {
       script.onload = () => resolve();
       script.onerror = reject;
       document.head.appendChild(script);
-      // Also try non-module fallback
-      setTimeout(() => {
-        if (!(window as any).pdfjsLib) {
-          const s2 = document.createElement('script');
-          s2.src = `${cdnBase}/pdf.min.js`;
-          s2.onload = () => resolve();
-          document.head.appendChild(s2);
-        }
-      }, 500);
-      setTimeout(resolve, 3000); // timeout fallback
+      // Fallback: if pdf.min.mjs fails to load after 3s, proceed (PDF.js will throw clear error later)
+      setTimeout(resolve, 3000);
     });
   }
 
   const pdfjsLib = (window as any).pdfjsLib;
   if (!pdfjsLib) throw new Error('PDF.js failed to load from CDN');
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `${cdnBase}/pdf.worker.min.js`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `${cdnBase}/pdf.worker.min.mjs`;
 
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let fullText = '';
@@ -327,13 +321,15 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
     }
   }
 
-  // 2. Gemini fallback (handles scanned PDFs, complex images)
+  // 2. Gemini fallback (handles scanned PDFs, complex images) — with retry for 429 rate limits
   try {
     const part = await fileToGenerativePart(imageOrDocFile);
-    const response = await withTimeout(
-      ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: 'Extract ALL text from this document. Preserve layout. Return only extracted text.' }] } }),
-      45000
-    );
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [part, { text: 'Extract ALL text from this document. Preserve layout. Return only extracted text.' }] } }),
+        45000
+      );
+    }, 3);
     return response.text || '';
   } catch (error) { throw new Error(`OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`); }
 };
@@ -571,13 +567,15 @@ export const generateWarRoomBriefing = async (
 
 // ── Simple text generation helper ────────────────────────────────────────────
 export const generateText = async (prompt: string, temperature = 0.7): Promise<string> => {
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: { parts: [{ text: prompt }] },
-      config: { temperature },
-    }),
-    30000
-  );
+  const response = await retryWithBackoff(async () => {
+    return await withTimeout(
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [{ text: prompt }] },
+        config: { temperature },
+      }),
+      30000
+    );
+  }, 3);
   return response.text || '';
 };

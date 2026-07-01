@@ -254,6 +254,14 @@ export const runExtractionStage = async (
   // Small inter-file delay to be a good API citizen (Deepgram is primary, very fast)
   const INTER_FILE_DELAY_MS = 300;
 
+  // Circuit breaker: abort extraction after N consecutive AI provider failures
+  let consecutiveProviderFailures = 0;
+  const MAX_CONSECUTIVE_PROVIDER_FAILURES = 3;
+  const isProviderExhausted = (err: unknown): boolean => {
+    const msg = err instanceof Error ? err.message : String(err);
+    return /(429|503|quota|exhausted|rate.?limit|unavailable|All AI providers)/i.test(msg);
+  };
+
   for (let i = 0; i < files.length; i++) {
     // Throttle: brief pause between files to avoid burst rate limits
     if (i > 0) await new Promise(resolve => setTimeout(resolve, INTER_FILE_DELAY_MS));
@@ -314,6 +322,7 @@ export const runExtractionStage = async (
       };
 
       processedCount++;
+      consecutiveProviderFailures = 0; // Reset on success
     } catch (err) {
       console.error(`[Pipeline] OCR failed for ${file.name}:`, err);
       updatedItems[itemIndex] = {
@@ -321,6 +330,31 @@ export const runExtractionStage = async (
         extractedText: `[OCR failed: ${err instanceof Error ? err.message : 'Unknown error'}]`,
         summary: 'Text extraction failed — document may be corrupted or unsupported format',
       };
+
+      // Circuit breaker: stop if AI providers are consistently exhausted
+      if (isProviderExhausted(err)) {
+        consecutiveProviderFailures++;
+        if (consecutiveProviderFailures >= MAX_CONSECUTIVE_PROVIDER_FAILURES) {
+          console.warn(`[Pipeline] Circuit breaker: ${consecutiveProviderFailures} consecutive AI provider failures. Stopping extraction to avoid wasting quota.`);
+          // Mark remaining files as skipped
+          for (let j = i + 1; j < files.length; j++) {
+            const remainingFile = files[j];
+            const remainingIndex = updatedItems.findIndex(
+              (item) => item.fileName === remainingFile.name && item.fileSize === remainingFile.size
+            );
+            if (remainingIndex !== -1) {
+              updatedItems[remainingIndex] = {
+                ...updatedItems[remainingIndex],
+                extractedText: '[Skipped: AI provider exhausted]',
+                summary: 'Skipped — AI API quota or rate limit reached. Try again later when quotas reset.',
+              };
+            }
+          }
+          break;
+        }
+      } else {
+        consecutiveProviderFailures = 0; // Reset on non-provider errors (corrupted file, etc.)
+      }
     }
   }
 
