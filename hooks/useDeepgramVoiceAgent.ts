@@ -447,18 +447,30 @@ export function useDeepgramVoiceAgent(
         // so the Settings message matches what playAudioChunk expects.
         const outRate = outputRateRef.current;
 
+        // Deepgram's schema is strict: for a BYO third-party TTS provider like
+        // ElevenLabs, `type` must be "eleven_labs" (with underscore) — "elevenlabs"
+        // isn't a recognized enum value and gets the ENTIRE Settings message
+        // rejected as UNPARSABLE_CLIENT_MESSAGE. Also voice_id/api_key/model
+        // don't belong inside `provider` at all — they go in a separate
+        // top-level `endpoint` block (WS URL + xi-api-key header).
         const speakProvider = useEl
           ? {
-              type: 'elevenlabs',
-              voice_id: elVoiceId!,
-              api_key: elevKey,
-              model: 'eleven_turbo_v2_5',
+              type: 'eleven_labs',
+              model_id: 'eleven_turbo_v2_5',
+              language_code: 'en-US',
             }
           : {
               type: 'deepgram',
               model: opts.voiceModel,
               speed: speakRate,
             };
+
+        const speakEndpoint = useEl
+          ? {
+              url: `wss://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/multi-stream-input`,
+              headers: { 'xi-api-key': elevKey },
+            }
+          : undefined;
 
         const settings = {
           type: 'Settings',
@@ -507,7 +519,7 @@ export function useDeepgramVoiceAgent(
                   },
                   prompt,
                 },
-            speak: { provider: speakProvider },
+            speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { provider: speakProvider },
             greeting: opts.greeting,
           },
         };
