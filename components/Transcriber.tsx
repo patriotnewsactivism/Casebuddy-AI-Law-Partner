@@ -146,32 +146,30 @@ const Transcriber = () => {
         const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|wmv)$/i.test(selectedFile.name);
         const mediaLabel = isVideo ? 'video' : 'audio';
 
-        // For Groq (25MB limit): strip audio track first so even large videos work
-        // For Deepgram: send video directly (handles up to 2GB natively)
+        // Always strip the audio track from video BEFORE transcribing — for
+        // every engine, not just Groq. A video file can be 10-100x larger
+        // than its audio track, so skipping this for Deepgram (as before)
+        // meant uploading the full video externally for no reason.
         let fileToTranscribe = selectedFile;
-        if (isVideo && engine !== 'deepgram') {
-          setProgress('Extracting audio track from video...');
+        if (isVideo) {
+          setProgress('Extracting audio track from video (saves data — avoids uploading the full video)...');
           try {
             fileToTranscribe = await extractAudioFromVideo(selectedFile);
-            toast.info(`Audio extracted (${(fileToTranscribe.size / 1024 / 1024).toFixed(1)} MB) — transcribing...`);
+            const savedPct = 100 - Math.round((fileToTranscribe.size / selectedFile.size) * 100);
+            toast.info(`Audio extracted: ${(fileToTranscribe.size / 1024 / 1024).toFixed(1)} MB (down from ${(selectedFile.size / 1024 / 1024).toFixed(1)} MB, ~${savedPct}% less data) — transcribing...`);
           } catch (extractErr) {
-            toast.error('Audio extraction failed — trying direct video upload instead.');
+            toast.error('Audio extraction failed — sending original video instead (uses more data).');
           }
         }
 
         if (engine === 'deepgram') {
           setProgress(`Transcribing ${mediaLabel} via Deepgram — this may take a moment...`);
           try {
-            extractedText = await transcribeWithDeeepgram(selectedFile, selectedFile.name);
+            extractedText = await transcribeWithDeeepgram(fileToTranscribe, selectedFile.name);
           } catch (deepgramErr) {
-            toast.error('Deepgram failed — falling back to Groq Whisper (extracting audio first).');
-            setProgress('Extracting audio for Groq Whisper fallback...');
-            try {
-              const audioFile = isVideo ? await extractAudioFromVideo(selectedFile) : selectedFile;
-              extractedText = await transcribeWithGroq(audioFile);
-            } catch {
-              extractedText = await transcribeWithGroq(selectedFile);
-            }
+            toast.error('Deepgram failed — falling back to Groq Whisper.');
+            setProgress('Falling back to Groq Whisper...');
+            extractedText = await transcribeWithGroq(fileToTranscribe);
           }
         } else {
           setProgress(`Transcribing ${mediaLabel} via Groq Whisper — this may take a moment...`);
