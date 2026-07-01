@@ -273,19 +273,20 @@ export const runExtractionStage = async (
       if (isImageOrPdf(file.type || file.name)) {
         // OCR: GitHub Models GPT-4o → Gemini fallback
         extractedText = await performOCR(file);
-        // Generate summary of OCR'd text
-        const summaryPrompt = `Summarize this legal document in 2-3 sentences. Document: ${extractedText.slice(0, 3000)}`;
-        summary = await deepseekChat({
-          systemInstruction: 'Summarize legal documents concisely.',
-          messages: [{ role: 'user', content: summaryPrompt }],
-          temperature: 0.3,
-          maxTokens: 200,
-          timeoutMs: 15000,
-        });
+        // Generate summary using Gemini (valid key, no rate limit issues)
+        try {
+          const { generateText } = await import('./geminiService');
+          const summaryPrompt = `Summarize this legal document in 2-3 sentences. Be specific about key facts, dates, and parties. Document: ${extractedText.slice(0, 3000)}`;
+          summary = await generateText(summaryPrompt, 0.3);
+        } catch {
+          summary = `Document processed (${extractedText.length} chars extracted)`;
+        }
       } else if (isAudioFile(file.type || file.name)) {
-        // Real Gemini audio transcription
+        // Deepgram Nova-3 transcription — no summary needed, transcript is the content
         extractedText = await transcribeAudio(file);
-        summary = `Audio transcription (${extractedText.length} chars)`;
+        const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+        const speakerCount = (extractedText.match(/\[Speaker \d+\]/g) || []).length;
+        summary = `Audio transcription: ${wordCount} words${speakerCount > 0 ? `, ${speakerCount} speaker segments` : ''}`;
       } else if (isTextFile(file.type || file.name)) {
         // Read text files directly
         extractedText = await new Promise<string>((resolve) => {
