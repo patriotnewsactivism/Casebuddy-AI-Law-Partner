@@ -221,7 +221,47 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
   } catch (error) { throw new Error(`Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`); }
 };
 
+// ── OCR: GitHub Models GPT-4o → Groq vision → Gemini fallback ──────────────
+
+const ocrWithGitHubModels = async (imageOrDocFile: File): Promise<string> => {
+  const ghToken = import.meta.env.VITE_GITHUB_TOKEN || import.meta.env.VITE_GITHUB_MODELS_TOKEN || '';
+  if (!ghToken) throw new Error('No GitHub Models token');
+  const part = await fileToGenerativePart(imageOrDocFile);
+  const base64 = part.inlineData.data;
+  const mimeType = part.inlineData.mimeType;
+  // GitHub Models supports GPT-4o with vision — free for GitHub users
+  const resp = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${ghToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+          { type: 'text', text: 'Extract ALL text from this document exactly as it appears. Preserve layout and structure. Return only the extracted text, nothing else.' }
+        ]
+      }],
+      max_tokens: 4096,
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`GitHub Models GPT-4o error ${resp.status}: ${err}`);
+  }
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content || '';
+};
+
 export const performOCR = async (imageOrDocFile: File): Promise<string> => {
+  // 1. Try GitHub Models GPT-4o (free for GitHub users, excellent OCR)
+  try {
+    const text = await withTimeout(ocrWithGitHubModels(imageOrDocFile), 45000);
+    if (text) return text;
+  } catch (e) {
+    console.warn('[performOCR] GitHub Models failed, trying Gemini:', e);
+  }
+  // 2. Gemini fallback
   try {
     const part = await fileToGenerativePart(imageOrDocFile);
     const response = await withTimeout(
