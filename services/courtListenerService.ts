@@ -9,8 +9,8 @@ export interface CourtCase {
 export const searchCourtListenerCases = async (query: string): Promise<CourtCase[]> => {
   const apiKey = (import.meta.env.VITE_COURTLISTENER_API_KEY as string) ?? '';
 
-  // Hard guard — never make the request without a real key (empty token = 400)
-  if (!apiKey || apiKey.trim().length < 10 || !query.trim()) return [];
+  // Only skip if query is empty — API works without a key
+  if (!query.trim()) return [];
 
   // Sanitize: strip special chars, remove noise words, limit length
   const stopWords = new Set(['v', 'vs', 'et', 'al', 'a', 'an', 'the', 'in', 're']);
@@ -29,15 +29,18 @@ export const searchCourtListenerCases = async (query: string): Promise<CourtCase
   const params = new URLSearchParams({
     q: clean,
     type: 'o',
-    order_by: 'score',
     format: 'json',
     page_size: '5',
   });
 
   try {
+    // Include auth header if key available, but API also works without one
+    const fetchOpts: RequestInit = apiKey
+      ? { headers: { Authorization: `Token ${apiKey}` } }
+      : {};
     const resp = await fetch(
       `https://www.courtlistener.com/api/rest/v4/search/?${params}`,
-      { headers: { Authorization: `Token ${apiKey}` } }
+      fetchOpts
     );
 
     // Silently swallow all errors — CourtListener is optional
