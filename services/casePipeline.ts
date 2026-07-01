@@ -251,19 +251,27 @@ export const runExtractionStage = async (
   let processedCount = 0;
   const totalCount = files.length;
 
+  // Small inter-file delay to be a good API citizen (Deepgram is primary, very fast)
+  const INTER_FILE_DELAY_MS = 300;
+
   for (let i = 0; i < files.length; i++) {
+    // Throttle: brief pause between files to avoid burst rate limits
+    if (i > 0) await new Promise(resolve => setTimeout(resolve, INTER_FILE_DELAY_MS));
+
     const file = files[i];
     const itemIndex = updatedItems.findIndex(
       (item) => item.fileName === file.name && item.fileSize === file.size
     );
     if (itemIndex === -1) continue;
 
+    console.log(`[Pipeline] Processing ${i + 1}/${files.length}: ${file.name}`);
+
     try {
       let extractedText = '';
       let summary = '';
 
       if (isImageOrPdf(file.type || file.name)) {
-        // Real Gemini OCR for images and PDFs
+        // OCR: GitHub Models GPT-4o → Gemini fallback
         extractedText = await performOCR(file);
         // Generate summary of OCR'd text
         const summaryPrompt = `Summarize this legal document in 2-3 sentences. Document: ${extractedText.slice(0, 3000)}`;
