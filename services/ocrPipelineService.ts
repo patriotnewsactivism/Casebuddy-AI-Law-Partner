@@ -1,4 +1,4 @@
-import { deepseekChat, parseDeepSeekJson } from './deepseek';
+import { cohereChat, parseCohereJson } from './cohere';
 
 export interface OCRResult {
   text: string;
@@ -142,7 +142,7 @@ export const ocrDocument = async (fileName: string, fileType: string): Promise<O
         ? `You are an OCR engine processing an image called "${baseName}". This appears to be a ${inferDocumentType(fileName)}. Describe what the OCR engine would extract from this image in realistic detail. Include dates, names, locations, and relevant details. Return ONLY the description text, no commentary.`
         : `You are an OCR engine processing a document called "${baseName}". This appears to be a ${inferDocumentType(fileName)}. Generate realistic extracted text content for this document. Return ONLY the extracted text, no commentary.`;
 
-    const aiText = await deepseekChat({
+    const aiText = await cohereChat({
       systemInstruction: 'You are a legal document OCR engine. Output only the extracted document text. Be realistic and detailed. Include headers, reference numbers, dates, and professional formatting.',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.5,
@@ -203,7 +203,7 @@ Return valid JSON with format: { "segments": [{ "speaker": "Speaker 1", "text": 
 
 Make the transcript realistic for a legal context — depositions, witness interviews, or court proceedings. Each segment should be 1-3 sentences. Return ONLY valid JSON.`;
 
-    const response = await deepseekChat({
+    const response = await cohereChat({
       systemInstruction: 'You are a legal audio transcription engine. Output ONLY valid JSON with transcript segments.',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.5,
@@ -212,7 +212,7 @@ Make the transcript realistic for a legal context — depositions, witness inter
       timeoutMs: 15000,
     });
 
-    const parsed = parseDeepSeekJson<{ segments?: { speaker: string; text: string }[] }>(response, { segments: [] });
+    const parsed = parseCohereJson<{ segments?: { speaker: string; text: string }[] }>(response, { segments: [] });
     const aiSegments = parsed?.segments || [];
 
     if (aiSegments.length > 0) {
@@ -307,7 +307,7 @@ Return valid JSON with exactly these fields:
 
 Return ONLY valid JSON. No markdown, no explanation.`;
 
-    const response = await deepseekChat({
+    const response = await cohereChat({
       systemInstruction: 'You are a legal document analyst. Analyze the provided text and return structured JSON.',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
@@ -316,7 +316,7 @@ Return ONLY valid JSON. No markdown, no explanation.`;
       timeoutMs: 15000,
     });
 
-    const parsed = parseDeepSeekJson<Partial<FileAnalysisResult>>(response, {});
+    const parsed = parseCohereJson<Partial<FileAnalysisResult>>(response, {});
     return {
       fileType: docType,
       extracted: extractedText,
