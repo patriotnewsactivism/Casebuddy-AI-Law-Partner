@@ -262,6 +262,34 @@ export const runExtractionStage = async (
     return /(429|503|quota|exhausted|rate.?limit|unavailable|All AI providers)/i.test(msg);
   };
 
+  // Shared breaker helper: call from any catch block (inner or outer) to feed the counter.
+  // Returns true if the breaker fired and remaining files were marked — caller should break.
+  const registerProviderFailure = (err: unknown, currentIndex: number): boolean => {
+    if (!isProviderExhausted(err)) {
+      consecutiveProviderFailures = 0;
+      return false;
+    }
+    consecutiveProviderFailures++;
+    if (consecutiveProviderFailures >= MAX_CONSECUTIVE_PROVIDER_FAILURES) {
+      console.warn(`[Pipeline] Circuit breaker: ${consecutiveProviderFailures} consecutive AI provider failures. Stopping extraction.`);
+      for (let j = currentIndex + 1; j < files.length; j++) {
+        const remainingFile = files[j];
+        const remainingIndex = updatedItems.findIndex(
+          (item) => item.fileName === remainingFile.name && item.fileSize === remainingFile.size
+        );
+        if (remainingIndex !== -1) {
+          updatedItems[remainingIndex] = {
+            ...updatedItems[remainingIndex],
+            extractedText: '[Skipped: AI provider exhausted]',
+            summary: 'Skipped — AI API quota or rate limit reached. Try again later when quotas reset.',
+          };
+        }
+      }
+      return true;
+    }
+    return false;
+  };
+
   for (let i = 0; i < files.length; i++) {
     // Throttle: brief pause between files to avoid burst rate limits
     if (i > 0) await new Promise(resolve => setTimeout(resolve, INTER_FILE_DELAY_MS));
@@ -279,18 +307,28 @@ export const runExtractionStage = async (
       let summary = '';
 
       if (isImageOrPdf(file.type || file.name)) {
-        // OCR: GitHub Models GPT-4o → Gemini fallback
+        // OCR: PDF.js (free) → GitHub Models GPT-4o → Gemini fallback
         extractedText = await performOCR(file);
-        // Generate summary using Gemini (valid key, no rate limit issues)
+        // Generate summary via AI — if providers are exhausted, use fallback but feed the breaker
         try {
           const { generateText } = await import('./geminiService');
           const summaryPrompt = `Summarize this legal document in 2-3 sentences. Be specific about key facts, dates, and parties. Document: ${extractedText.slice(0, 3000)}`;
           summary = await generateText(summaryPrompt, 0.3);
-        } catch {
+        } catch (summaryErr) {
           summary = `Document processed (${extractedText.length} chars extracted)`;
+          if (registerProviderFailure(summaryErr, i)) {
+            // Persist current item before breaking out of the loop
+            updatedItems[itemIndex] = {
+              ...updatedItems[itemIndex],
+              extractedText: extractedText.slice(0, 50000),
+              summary,
+            };
+            processedCount++;
+            break;
+          }
         }
       } else if (isAudioFile(file.type || file.name)) {
-        // Deepgram Nova-3 transcription — no summary needed, transcript is the content
+        // Deepgram Nova-3 → Groq Whisper → Gemini fallback
         extractedText = await transcribeAudio(file);
         const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
         const speakerCount = (extractedText.match(/\[Speaker \d+\]/g) || []).length;
@@ -309,9 +347,11 @@ export const runExtractionStage = async (
         try {
           extractedText = await performOCR(file);
           summary = `Processed via OCR (${extractedText.length} chars)`;
-        } catch {
+        } catch (ocrErr) {
           extractedText = `[Unable to extract text from: ${file.name}]`;
           summary = 'Text extraction failed';
+          // This inner catch is for unsupported formats, but feed the breaker just in case
+          registerProviderFailure(ocrErr, i);
         }
       }
 
@@ -322,7 +362,8 @@ export const runExtractionStage = async (
       };
 
       processedCount++;
-      consecutiveProviderFailures = 0; // Reset on success
+      // Only reset the breaker on full success (including AI summary)
+      consecutiveProviderFailures = 0;
     } catch (err) {
       console.error(`[Pipeline] OCR failed for ${file.name}:`, err);
       updatedItems[itemIndex] = {
@@ -331,30 +372,8 @@ export const runExtractionStage = async (
         summary: 'Text extraction failed — document may be corrupted or unsupported format',
       };
 
-      // Circuit breaker: stop if AI providers are consistently exhausted
-      if (isProviderExhausted(err)) {
-        consecutiveProviderFailures++;
-        if (consecutiveProviderFailures >= MAX_CONSECUTIVE_PROVIDER_FAILURES) {
-          console.warn(`[Pipeline] Circuit breaker: ${consecutiveProviderFailures} consecutive AI provider failures. Stopping extraction to avoid wasting quota.`);
-          // Mark remaining files as skipped
-          for (let j = i + 1; j < files.length; j++) {
-            const remainingFile = files[j];
-            const remainingIndex = updatedItems.findIndex(
-              (item) => item.fileName === remainingFile.name && item.fileSize === remainingFile.size
-            );
-            if (remainingIndex !== -1) {
-              updatedItems[remainingIndex] = {
-                ...updatedItems[remainingIndex],
-                extractedText: '[Skipped: AI provider exhausted]',
-                summary: 'Skipped — AI API quota or rate limit reached. Try again later when quotas reset.',
-              };
-            }
-          }
-          break;
-        }
-      } else {
-        consecutiveProviderFailures = 0; // Reset on non-provider errors (corrupted file, etc.)
-      }
+      // Circuit breaker for outer catch (transcription / OCR primary failures)
+      if (registerProviderFailure(err, i)) break;
     }
   }
 
