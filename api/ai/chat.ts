@@ -221,6 +221,11 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({
         text,
+        choices: [{
+          message: { role: 'assistant', content: text },
+          finish_reason: 'stop',
+          index: 0,
+        }],
         provider: provider.name,
         model: body.model || (provider.name === 'groq' ? GROQ_MODEL : provider.name === 'gemini' ? GEMINI_MODEL : OPENROUTER_MODEL),
         latency_ms: Date.now() - t0,

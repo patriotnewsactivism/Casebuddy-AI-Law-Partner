@@ -400,9 +400,8 @@ export function useDeepgramVoiceAgent(
       return;
     }
     if (!geminiKey && !groqKey) {
-      setError('AI service is not available right now. Please try again shortly.');
-      setStatus('error');
-      return;
+      // We'll use our proxy as the think provider — no external key needed
+      console.warn('[VoiceAgent] No external AI keys — using CaseBuddy proxy for think provider');
     }
 
     try {
@@ -483,10 +482,26 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: {
-              provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
-              prompt,
-            },
+            think: groqKey
+              ? {
+                  provider: {
+                    type: 'openai',
+                    url: 'https://api.groq.com/openai/v1',
+                    model: 'llama-3.3-70b-versatile',
+                    api_key: groqKey,
+                    temperature: 0.7,
+                  },
+                  prompt,
+                }
+              : {
+                  provider: {
+                    type: 'openai',
+                    url: 'https://casebuddy.live/api/ai/chat',
+                    model: 'auto',
+                    temperature: 0.7,
+                  },
+                  prompt,
+                },
             speak: { provider: speakProvider },
             greeting: opts.greeting,
           },
