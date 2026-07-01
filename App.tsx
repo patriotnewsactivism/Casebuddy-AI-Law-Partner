@@ -131,6 +131,7 @@ const NAV_GROUPS = [
   {
     label: 'Clients',
     items: [
+      { path: '/app/intake', icon: MessageSquare, label: 'Maya Intake', badge: 'AI' },
       { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
       { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
       { path: '/app/growth', icon: TrendingUp, label: 'CRM & Pipeline', badge: 'NEW' },
@@ -651,6 +652,7 @@ const App = () => {
             {/* Protected routes — require authentication */}
             <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
             <Route path="/app/client-portal" element={<AuthGate><Layout><ClientPortal /></Layout></AuthGate>} />
+            <Route path="/app/intake" element={<AuthGate><Layout><IntakePage /></Layout></AuthGate>} />
             <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
             <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
             <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
