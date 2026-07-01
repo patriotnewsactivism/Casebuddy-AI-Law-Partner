@@ -1,42 +1,19 @@
-/**
- * Netlify Function — Public voice key exchange (no auth).
- * Ported from api/ai/voice-keys-public.ts
- *
- * POST /api/ai/voice-keys-public
- * Response: { deepgramKey, elevenlabsKey }
- */
+import { Handler } from "@netlify/functions";
 
-const CORS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const json = (body: object, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+export const handler: Handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
+  if (event.httpMethod !== "POST") return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  const deepgramKey = (process.env.DEEPGRAM_API_KEY || "").trim();
+  const geminiKey   = (process.env.GEMINI_API_KEY   || "").trim();
 
-  const deepgramKey = (
-    process.env.DEEPGRAM_API_KEY ||
-    process.env.VITE_DEEPGRAM_API_KEY ||
-    ''
-  ).trim();
+  if (!deepgramKey) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "Voice service not configured." }) };
 
-  const elevenlabsKey = (
-    process.env.ELEVENLABS_API_KEY ||
-    process.env.VITE_ELEVENLABS_API_KEY ||
-    ''
-  ).trim();
-
-  if (!deepgramKey && !elevenlabsKey) return json({ error: 'Voice service not configured.' }, 503);
-
-  return json({ deepgramKey, elevenlabsKey });
-}
-
-export const config = { path: "/api/ai/voice-keys-public" };
+  return { statusCode: 200, headers: CORS, body: JSON.stringify({ deepgramKey, geminiKey }) };
+};
