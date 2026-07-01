@@ -305,6 +305,7 @@ export const runExtractionStage = async (
     try {
       let extractedText = '';
       let summary = '';
+      let providerFailureInFile = false; // Tracks whether any inner catch registered a provider failure
 
       if (isImageOrPdf(file.type || file.name)) {
         // OCR: PDF.js (free) → GitHub Models GPT-4o → Gemini fallback
@@ -316,6 +317,7 @@ export const runExtractionStage = async (
           summary = await generateText(summaryPrompt, 0.3);
         } catch (summaryErr) {
           summary = `Document processed (${extractedText.length} chars extracted)`;
+          providerFailureInFile = true;
           if (registerProviderFailure(summaryErr, i)) {
             // Persist current item before breaking out of the loop
             updatedItems[itemIndex] = {
@@ -351,6 +353,7 @@ export const runExtractionStage = async (
           extractedText = `[Unable to extract text from: ${file.name}]`;
           summary = 'Text extraction failed';
           // This inner catch is for unsupported formats, but feed the breaker just in case
+          providerFailureInFile = true;
           registerProviderFailure(ocrErr, i);
         }
       }
@@ -362,8 +365,10 @@ export const runExtractionStage = async (
       };
 
       processedCount++;
-      // Only reset the breaker on full success (including AI summary)
-      consecutiveProviderFailures = 0;
+      // Reset breaker only when this file had zero provider failures
+      if (!providerFailureInFile) {
+        consecutiveProviderFailures = 0;
+      }
     } catch (err) {
       console.error(`[Pipeline] OCR failed for ${file.name}:`, err);
       updatedItems[itemIndex] = {
