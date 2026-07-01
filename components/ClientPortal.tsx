@@ -9,6 +9,7 @@ import { deepseekChat } from '../services/deepseek';
 import { pushNotification } from '../services/notificationManager';
 import { toast } from 'react-toastify';
 import { CaseMessage, CaseStatus } from '../types';
+import { uploadDocument, reanalyzeDocument } from '../services/documentPipeline';
 
 interface EvidenceItem {
   id: string;
@@ -353,23 +354,31 @@ const ClientPortal: React.FC = () => {
         reader.readAsDataURL(file);
       });
 
-      // Get existing evidence items
+      // Real pipeline: upload to Supabase Storage (durable — no longer
+      // browser-localStorage-only), then OCR via Google Cloud Vision ->
+      // Gemini -> OCR.space, plus legal analysis via Gemini -> OpenAI ->
+      // Cohere (shared edge function used across the whole app).
+      const { document } = await uploadDocument(file, selectedCase.id);
+      const result = await reanalyzeDocument(document.id);
+
+      // Mirror into the local evidence cache so EvidenceVault (which reads
+      // the same `evidence_<caseId>` key) shows this immediately too.
       const existingKey = evidenceKey(selectedCase.id);
       const savedEvidenceRaw = localStorage.getItem(existingKey);
       const currentEvidence: EvidenceItem[] = savedEvidenceRaw ? JSON.parse(savedEvidenceRaw) : [];
 
       const newEvidence: EvidenceItem = {
-        id: `ev-${Date.now()}`,
+        id: document.id,
         caseId: selectedCase.id,
         name: file.name,
         type: file.type || 'application/octet-stream',
         size: file.size,
         timestamp: Date.now(),
-        summary: `Document uploaded securely by Client ${selectedCase.client} via Client Portal. Clean virus scan verified.`,
-        relevance: 80,
-        keyFacts: ['Uploaded via client portal', `Mime-Type: ${file.type}`],
-        concerns: [],
-        tags: ['client-portal', 'pending-review'],
+        summary: result?.summary || `Document uploaded by Client ${selectedCase.client} via Client Portal — analysis in progress.`,
+        relevance: result?.keyFacts?.length ? Math.min(95, 60 + result.keyFacts.length * 5) : 50,
+        keyFacts: result?.keyFacts || ['Uploaded via client portal', `Mime-Type: ${file.type}`],
+        concerns: result?.adverseFindings || [],
+        tags: ['client-portal', 'pending-review', ...(result?.ocrProvider ? [`ocr:${result.ocrProvider}`] : [])],
         dataUrl,
       };
 
@@ -392,7 +401,7 @@ const ClientPortal: React.FC = () => {
         automation_target: null,
         automation_status: 'none',
         automation_result: null,
-        attachment_url: null,
+        attachment_url: document.file_url || null,
         attachment_name: file.name,
         attachment_type: file.type,
         metadata: {},
@@ -411,8 +420,9 @@ const ClientPortal: React.FC = () => {
         message: `Client ${selectedCase.client} has securely uploaded document "${file.name}" directly to the Evidence Vault.`,
       });
 
-      toast.success('Document uploaded successfully!');
-    } catch {
+      toast.success('Document uploaded and analyzed successfully!');
+    } catch (err) {
+      console.error('Client portal upload failed:', err);
       toast.error('Document upload failed. Please try again.');
     } finally {
       setUploading(false);
