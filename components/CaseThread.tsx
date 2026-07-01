@@ -17,6 +17,7 @@ import {
 } from '../agents/personas';
 import { AppContext } from '../App';
 import { deepseekChat } from '../services/deepseek';
+import { uploadDocument, reanalyzeDocument } from '../services/documentPipeline';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -137,6 +138,7 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attaching, setAttaching] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
   const [offlineMessages, setOfflineMessages] = useState<CaseMessage[]>(() => {
     // Rehydrate from localStorage on mount
@@ -371,6 +373,67 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
       setSending(false);
     }
   }, [input, sending, thread, caseId, caseTitle, caseSummary, caseStatus, offlineMode, sendOffline]);
+
+  // ── Attach a document (real upload: Supabase Storage + OCR via
+  // Google Cloud Vision -> Gemini -> OCR.space, analysis via Gemini ->
+  // OpenAI -> Cohere, same shared pipeline used everywhere else) ─────────
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = '';
+    if (!file) return;
+
+    setAttaching(true);
+    try {
+      const { document } = await uploadDocument(file, caseId);
+      const attachBody = `📎 Attached document: ${file.name}`;
+
+      if (offlineMode) {
+        const userMsg: CaseMessage = {
+          id: `local-${Date.now()}-att`,
+          created_at: new Date().toISOString(),
+          thread_id: 'local',
+          case_id: caseId,
+          firm_id: 'default',
+          sender_type: 'user',
+          sender_id: 'user',
+          sender_name: 'You',
+          direction: 'user_to_agent',
+          body: attachBody,
+          read: true,
+          triggers_automation: false,
+          automation_target: null,
+          automation_status: 'none',
+          automation_result: null,
+          attachment_url: document.file_url,
+          attachment_name: file.name,
+          attachment_type: file.type,
+          metadata: {},
+        };
+        setOfflineMessages(prev => [...prev, userMsg]);
+      } else if (thread) {
+        await sendUserMessage({
+          threadId: thread.id,
+          caseId,
+          caseTitle,
+          caseSummary,
+          caseStatus,
+          userMessage: attachBody,
+          userName: 'Attorney',
+          attachmentUrl: document.file_url ?? undefined,
+          attachmentName: file.name,
+          attachmentType: file.type,
+        });
+      }
+
+      // Run real OCR + legal analysis in the background — no need to block the composer.
+      reanalyzeDocument(document.id).catch(err => console.error('Attachment OCR failed:', err));
+    } catch (err) {
+      console.error('Attach document failed:', err);
+      setError('Failed to attach document. Please try again.');
+    } finally {
+      setAttaching(false);
+    }
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showMentions && (e.key === 'Escape')) {
@@ -806,12 +869,13 @@ const CaseThreadView: React.FC<Props> = ({ onBack }) => {
           <div className="flex items-end gap-2">
             <button
               onClick={() => fileRef.current?.click()}
-              className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
+              disabled={attaching}
+              className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0 disabled:opacity-50"
               title="Attach document"
             >
-              <Paperclip size={16} />
+              {attaching ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
             </button>
-            <input ref={fileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" />
+            <input ref={fileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={handleFileAttach} />
 
             <div className="flex-1 relative">
               <textarea
