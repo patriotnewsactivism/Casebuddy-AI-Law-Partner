@@ -353,3 +353,4 @@ export default async function handler(req: Request): Promise<Response> {
     default: return _ok({ error: `Unknown action: ${action}` }, 404);
   }
 }
+// redeploy trigger 2026-07-03T02:46:11Z — investigating site-wide API 404/405 routing issue
