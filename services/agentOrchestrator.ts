@@ -14,6 +14,7 @@ import { pushInsightAlert, pushTaskComplete } from './notificationManager';
 import { getAgentById, getSpecialistById, getParalegalById, getParalegalsByAttorney, LEGAL_SPECIALISTS } from '../agents/personas';
 import { backgroundEngine } from './backgroundAgentEngine';
 import { AGENT_CONFIG } from '../config/agentConfig';
+import { buildCaseBrief } from './caseContext';
 import type { Workflow, WorkflowStep, Case } from '../types';
 import { loadCases } from '../utils/storage';
 
@@ -55,7 +56,8 @@ export function subscribeWorkflows(listener: WorkflowListener): () => void {
 async function executeStep(
   step: WorkflowStep,
   workflow: Workflow,
-  caseData: Case | undefined
+  caseData: Case | undefined,
+  caseBrief: string
 ): Promise<string> {
   let agentId = step.agentId;
   if (agentId === 'assigned-paralegal-1' || agentId === 'assigned-paralegal-2') {
@@ -77,9 +79,14 @@ async function executeStep(
      `You are ${persona.name}, ${(agent as any).title}. ${(agent as any).description}`) +
     '\n\nYou are operating autonomously as part of an automated workflow. Be thorough and practical.';
 
-  const caseCtx = caseData
-    ? `\n\nCase Context:\nTitle: ${caseData.title}\nClient: ${caseData.client}\nStatus: ${caseData.status}\nSummary: ${caseData.summary ?? ''}\nJudge: ${caseData.judge ?? 'N/A'}\nOpposing Counsel: ${caseData.opposingCounsel ?? 'N/A'}\nNext Court Date: ${caseData.nextCourtDate ?? 'N/A'}`
-    : '';
+  // The full case file (intake narrative, documents, discovery, transcripts,
+  // prior work product) — assembled once per workflow and shared by every
+  // step so no agent works blind.
+  const caseCtx = caseBrief
+    ? `\n\n${caseBrief}`
+    : caseData
+      ? `\n\nCase Context:\nTitle: ${caseData.title}\nClient: ${caseData.client}\nStatus: ${caseData.status}\nSummary: ${caseData.summary ?? ''}\nJudge: ${caseData.judge ?? 'N/A'}\nOpposing Counsel: ${caseData.opposingCounsel ?? 'N/A'}\nNext Court Date: ${caseData.nextCourtDate ?? 'N/A'}`
+      : '';
 
   // Build prompt incorporating prior step outputs
   const priorOutputs = Object.entries(step.inputs ?? {})
@@ -196,6 +203,22 @@ class AgentOrchestrator {
   ): Promise<Workflow> {
     if (!AGENT_CONFIG.workflows.enabled) return workflow;
 
+    // Most callers (case event hooks) fire workflows with only a caseId —
+    // resolve the case ourselves so agents never run without their case.
+    if (!caseData && workflow.caseId) {
+      try {
+        caseData = loadCases().find(c => c.id === workflow.caseId);
+      } catch { /* offline/broken storage — proceed without */ }
+    }
+
+    // Assemble the complete case file once; every step shares it.
+    let caseBrief = '';
+    if (workflow.caseId) {
+      try {
+        caseBrief = await buildCaseBrief(caseData ?? workflow.caseId);
+      } catch { /* brief is best-effort */ }
+    }
+
     workflow.status = 'running';
     this.persistWorkflow(workflow);
     broadcastWorkflows();
@@ -228,7 +251,7 @@ class AgentOrchestrator {
         this.persistWorkflow(workflow);
         
         try {
-          const output = await executeStep(step, workflow, caseData);
+          const output = await executeStep(step, workflow, caseData, caseBrief);
           step.outputs = { result: output };
           step.status = 'completed';
           step.completedAt = Date.now();
@@ -278,7 +301,7 @@ class AgentOrchestrator {
         try {
           const results = await Promise.all(
             batch.map(async (item) => {
-              const output = await executeStep(item.step, workflow, caseData);
+              const output = await executeStep(item.step, workflow, caseData, caseBrief);
               item.step.outputs = { result: output };
               item.step.status = 'completed';
               item.step.completedAt = Date.now();

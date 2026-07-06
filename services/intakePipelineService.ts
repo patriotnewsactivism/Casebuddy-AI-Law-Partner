@@ -30,6 +30,10 @@ export function convertIntakeToCase(intake: IntakeData, score: IntakeScore): Cas
 
 export function autoCreateCaseFromIntake(intake: IntakeData, score: IntakeScore): Case {
   const newCase = convertIntakeToCase(intake, score);
+  // Persist the full intake detail (narrative, timeline, parties, witnesses,
+  // evidence, quotes, open questions) to the shared case file BEFORE saving
+  // the case, so agent workflows kicked off by case creation read everything.
+  populateCaseFromIntake(newCase.id, intake);
   const cases = loadCases();
   cases.unshift(newCase);
   saveCases(cases);
