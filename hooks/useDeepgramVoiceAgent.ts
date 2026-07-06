@@ -101,7 +101,7 @@ export interface UseDeepgramVoiceAgentResult {
  */
 const fetchVoiceKeys = async (
   publicEndpoint = false
-): Promise<{ deepgramKey: string; geminiKey: string; elevenlabsKey?: string; groqKey?: string }> => {
+): Promise<{ deepgramKey: string; geminiKey: string; elevenlabsKey?: string; groqKey?: string; openaiKey?: string }> => {
   // Public intake path — no auth required
   if (publicEndpoint) {
     try {
@@ -115,7 +115,8 @@ const fetchVoiceKeys = async (
           deepgramKey: data.deepgramKey,
           geminiKey: data.geminiKey || '',
           elevenlabsKey: data.elevenlabsKey || undefined,
-          groqKey: data.groqKey || undefined
+          groqKey: data.groqKey || undefined,
+          openaiKey: data.openaiKey || undefined
         };
       }
     } catch {
@@ -139,7 +140,8 @@ const fetchVoiceKeys = async (
             deepgramKey: data.deepgramKey,
             geminiKey: data.geminiKey,
             elevenlabsKey: data.elevenlabsKey || undefined,
-            groqKey: data.groqKey || undefined
+            groqKey: data.groqKey || undefined,
+            openaiKey: data.openaiKey || undefined
           };
         }
       }
@@ -153,7 +155,8 @@ const fetchVoiceKeys = async (
   const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '').trim();
   const elevenlabsKey = (import.meta.env.VITE_ELEVENLABS_API_KEY || (window as any).__ELEVENLABS_API_KEY || '').trim();
   const groqKey = (import.meta.env.VITE_GROQ_API_KEY || (window as any).__GROQ_API_KEY || '').trim();
-  return { deepgramKey, geminiKey, elevenlabsKey: elevenlabsKey || undefined, groqKey: groqKey || undefined };
+  const openaiKey = (import.meta.env.VITE_OPENAI_API_KEY || (window as any).__OPENAI_API_KEY || '').trim();
+  return { deepgramKey, geminiKey, elevenlabsKey: elevenlabsKey || undefined, groqKey: groqKey || undefined, openaiKey: openaiKey || undefined };
 };
 
 /**
@@ -369,12 +372,14 @@ export function useDeepgramVoiceAgent(
     let geminiKey: string;
     let elevKey: string | undefined;
     let groqKey = '';
+    let openaiKey = '';
     try {
       const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
       dgKey = keys.deepgramKey.trim();
       geminiKey = keys.geminiKey.trim();
       elevKey = keys.elevenlabsKey?.trim();
       groqKey = keys.groqKey?.trim() || '';
+      openaiKey = keys.openaiKey?.trim() || '';
       // Cache keys for use by intakeService and other client-side services
       setRuntimeKeys({ deepgramKey: dgKey, geminiKey, elevenlabsKey: elevKey });
       // Track ElevenLabs availability for UI display
@@ -494,34 +499,37 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: groqKey
+            think: openaiKey
               ? {
-                  provider: {
-                    type: 'openai',
-                    url: 'https://api.groq.com/openai/v1',
-                    model: 'llama-3.3-70b-versatile',
-                    api_key: groqKey,
-                    temperature: 0.7,
+                  provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
+                  endpoint: {
+                    url: 'https://api.openai.com/v1/chat/completions',
+                    headers: { Authorization: `Bearer ${openaiKey}` }
+                  },
+                  prompt,
+                }
+              : groqKey
+              ? {
+                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
+                  endpoint: {
+                    url: 'https://api.groq.com/openai/v1/chat/completions',
+                    headers: { Authorization: `Bearer ${groqKey}` }
                   },
                   prompt,
                 }
               : geminiKey
               ? {
-                  provider: { 
-                    type: 'google', 
-                    credentials: { api_key: geminiKey }, 
-                    model: 'gemini-1.5-flash', 
-                    temperature: 0.7 
+                  provider: {
+                    type: 'google',
+                    credentials: { api_key: geminiKey },
+                    model: 'gemini-1.5-flash',
+                    temperature: 0.7,
                   },
                   prompt,
                 }
               : {
-                  provider: {
-                    type: 'openai',
-                    url: 'https://casebuddy.live/api/ai/v1',
-                    model: 'llama-3.3-70b-versatile',
-                    temperature: 0.7,
-                  },
+                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
+                  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
                   prompt,
                 },
             speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { provider: speakProvider },
