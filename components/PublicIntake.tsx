@@ -141,8 +141,9 @@ const PublicIntake: React.FC = () => {
   // and skips re-asking for info the attorney already captured
   const firstName = clientInvite?.client_name?.split(' ')[0] ?? '';
 
-  // Get Maya's language profile (defaults to English, switches if Spanish detected)
-  const storedLang = (localStorage.getItem('casebuddy_maya_language') || 'en') as SupportedLanguage;
+  // Force Maya to English unless the attorney explicitly noted they are hispanic/spanish speaking
+  const isHispanic = clientInvite?.notes?.toLowerCase().match(/\b(hispanic|spanish)\b/);
+  const storedLang = (isHispanic ? 'es' : 'en') as SupportedLanguage;
   const mayaProfile = getMayaLanguageProfile(storedLang);
 
   // Build system instruction with language-aware Maya prompt
@@ -174,13 +175,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, liveCaption]);
 
-  // Detect language from the first few exchanges
-  useEffect(() => {
-    if (transcript.length >= 3 && transcript.length <= 5) {
-      const text = transcript.map(t => t.text).join(' ');
-      detectAndSwitchLanguage(text).catch(() => {});
-    }
-  }, [transcript.length]);
+  // Language detection disabled — user requested English only unless explicitly specified.
 
   const begin = async () => {
     setSubmitError(null);

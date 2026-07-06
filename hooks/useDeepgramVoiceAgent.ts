@@ -517,7 +517,7 @@ export function useDeepgramVoiceAgent(
           // Deepgram-managed OpenAI — no endpoint or API key needed.
           // Billed through your Deepgram account automatically.
           thinkBlock = {
-            provider: { type: 'open_ai', model: 'gpt-4o-mini' },
+            provider: { type: 'open_ai', model: 'gpt-4o' },
             prompt,
           };
         }
@@ -534,6 +534,7 @@ export function useDeepgramVoiceAgent(
               provider: {
                 type: 'deepgram',
                 model: 'nova-3',
+                endpointing: 1500, // Wait 1.5s of silence before declaring turn over
               },
             },
             think: thinkBlock,
