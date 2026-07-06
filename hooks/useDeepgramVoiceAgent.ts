@@ -550,6 +550,7 @@ export function useDeepgramVoiceAgent(
             greeting: opts.greeting,
           },
         };
+        console.log('[VoiceAgent] Settings payload:', JSON.stringify(settings, null, 2));
         ws.send(JSON.stringify(settings));
         setStatus('live');
 

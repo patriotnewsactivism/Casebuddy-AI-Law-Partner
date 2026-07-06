@@ -51,9 +51,15 @@ export default async function handler(req: Request): Promise<Response> {
     ''
   ).trim();
 
+  const openaiKey = (
+    process.env.OPENAI_API_KEY ||
+    process.env.VITE_OPENAI_API_KEY ||
+    ''
+  ).trim();
+
   if (!deepgramKey && !elevenlabsKey) {
     return json({ error: 'Voice service not configured.' }, 503);
   }
 
-  return json({ deepgramKey, elevenlabsKey, geminiKey, groqKey });
+  return json({ deepgramKey, elevenlabsKey, geminiKey, groqKey, openaiKey });
 }
