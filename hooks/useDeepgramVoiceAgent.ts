@@ -546,7 +546,7 @@ export function useDeepgramVoiceAgent(
                   endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
                   prompt,
                 },
-            speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { model: opts.voiceModel },
+            ...(speakEndpoint ? { speak: { provider: speakProvider, endpoint: speakEndpoint } } : {}),
             greeting: opts.greeting,
           },
         };
