@@ -135,19 +135,26 @@ class BackgroundAgentEngine {
     this.drainHandle = setInterval(() => {
       this.rehydrateQueue();
       this.drain();
+      void this.drainPipelineJobs();
     }, 60_000);
 
-    // Also observe the Supabase server-side pipeline for status updates
+    // Drive the server-side document OCR queue. The trigger_queue_ocr
+    // Postgres trigger enqueues a pipeline_jobs row for every uploaded
+    // document, but nothing server-side drains that queue — this engine is
+    // the processor: on each new job (and periodically) it claims pending
+    // jobs and runs the ocr-document edge function against them.
     const sb = getSupabase();
     if (sb) {
       this.pipelineChannel = sb
         .channel('pipeline-jobs-listener')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'pipeline_jobs' },
-          () => { /* server-side OCR/analysis progress; UI listens elsewhere */ }
+          { event: 'INSERT', schema: 'public', table: 'pipeline_jobs' },
+          () => { void this.drainPipelineJobs(); }
         )
         .subscribe();
+      // Pick up anything left pending from previous sessions
+      void this.drainPipelineJobs();
     }
   }
 
@@ -162,6 +169,69 @@ class BackgroundAgentEngine {
       this.pipelineChannel = null;
     }
     this.started = false;
+  }
+
+  // ── Server-side OCR queue drain ───────────────────────────────────────────
+
+  private pipelineDraining = false;
+
+  /**
+   * Claim pending pipeline_jobs (document OCR queue) and process them by
+   * invoking the ocr-document edge function. Claims are atomic
+   * (update … where status='pending') so multiple open tabs don't double-
+   * process. Requires a signed-in session — RLS gates both the jobs table
+   * and the documents the edge function updates.
+   */
+  private async drainPipelineJobs(): Promise<void> {
+    if (this.pipelineDraining) return;
+    const sb = getSupabase();
+    if (!sb) return;
+
+    this.pipelineDraining = true;
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return; // anonymous visitor — not our queue to drain
+
+      const { data: jobs } = await sb
+        .from('pipeline_jobs')
+        .select('id, document_id, job_type')
+        .eq('status', 'pending')
+        .eq('job_type', 'ocr')
+        .order('created_at', { ascending: true })
+        .limit(3);
+      if (!jobs?.length) return;
+
+      const { reanalyzeDocument } = await import('./documentPipeline');
+
+      for (const job of jobs) {
+        // Atomic claim — only one tab wins
+        const { data: claimed } = await sb
+          .from('pipeline_jobs')
+          .update({ status: 'processing', started_at: new Date().toISOString() })
+          .eq('id', job.id)
+          .eq('status', 'pending')
+          .select('id');
+        if (!claimed?.length) continue;
+
+        try {
+          await reanalyzeDocument(job.document_id);
+          await sb.from('pipeline_jobs')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', job.id);
+        } catch (err) {
+          await sb.from('pipeline_jobs')
+            .update({
+              status: 'failed',
+              completed_at: new Date().toISOString(),
+              error_log: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+            })
+            .eq('id', job.id);
+        }
+      }
+    } catch { /* best-effort — retried on next interval */ }
+    finally {
+      this.pipelineDraining = false;
+    }
   }
 
   /** Enqueue a new background task. Returns the task id. */
