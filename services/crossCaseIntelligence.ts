@@ -46,8 +46,10 @@ function similarity(a: Case, b: Case): number {
 
   // Same opposing counsel firm (partial match) → +15
   if (
-    a.opposingCounsel &&
-    b.opposingCounsel &&
+    typeof a.opposingCounsel === 'string' &&
+    typeof b.opposingCounsel === 'string' &&
+    a.opposingCounsel.trim() &&
+    b.opposingCounsel.trim() &&
     a.opposingCounsel.split(' ')[0].toLowerCase() === b.opposingCounsel.split(' ')[0].toLowerCase()
   ) {
     score += 15;
