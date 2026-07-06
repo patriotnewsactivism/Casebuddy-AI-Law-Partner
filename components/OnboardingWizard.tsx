@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { scheduleBackgroundPipeline, loadPipelineState } from '../services/casePipeline';
 import { toast } from 'react-toastify';
-import type { Case, CaseStatus, PipelineState } from '../types';
+import { CaseStatus } from '../types';
+import type { Case, PipelineState } from '../types';
 import { PIPELINE_STAGES } from '../types';
 
 interface OnboardingWizardProps {
