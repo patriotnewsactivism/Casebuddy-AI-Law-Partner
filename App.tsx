@@ -17,6 +17,9 @@ import CopilotSidebar from './components/CopilotSidebar';
 
 // ─── Lazy-loaded pages ────────────────────────────────────────────────────
 const Dashboard        = React.lazy(() => import('./components/Dashboard'));
+const IntakeHub        = React.lazy(() => import('./components/IntakeHub'));
+const MediaStudio      = React.lazy(() => import('./components/MediaStudio'));
+const AITeamHub        = React.lazy(() => import('./components/AITeamHub'));
 const CaseManager      = React.lazy(() => import('./components/CaseManager'));
 const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
 const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
@@ -99,15 +102,30 @@ const PageSpinner = () => (
   </div>
 );
 
+// Menu philosophy: 4 groups that mirror how a firm actually works —
+// daily essentials, working a case, courtroom prep, and running the office.
+// Sibling features live behind ONE entry as tabbed hubs (Client Intake =
+// inbox + Maya voice; AI Legal Team = chat + voice reception; Media Studio =
+// transcriber + TubeScribe). Badges only where they carry real information.
 const NAV_GROUPS = [
   {
-    label: 'Cases',
+    label: 'Daily',
     items: [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
-      { path: '/app/pipeline', icon: BrainCircuit, label: 'Case Pipeline', badge: 'NEW' },
+      { path: '/app/intake-hub', icon: Inbox, label: 'Client Intake', badge: 'Maya' },
+      { path: '/app/calendar', icon: Calendar, label: 'Calendar' },
+    ]
+  },
+  {
+    label: 'Case Work',
+    items: [
       { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/discovery', icon: FileSearch, label: 'Discovery', badge: 'AI' },
+      { path: '/app/discovery', icon: FileSearch, label: 'Discovery' },
+      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy Room' },
+      { path: '/app/docs', icon: FileText, label: 'Drafting' },
+      { path: '/app/pipeline', icon: Activity, label: 'Case Pipeline' },
+      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base' },
     ]
   },
   {
@@ -115,39 +133,21 @@ const NAV_GROUPS = [
     items: [
       { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
       { path: '/app/witnesses', icon: UserCheck, label: 'Witness Prep' },
-      { path: '/app/jury-sim', icon: Users, label: 'Jury Analysis' },
       { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
+      { path: '/app/jury-sim', icon: Users, label: 'Jury Analysis' },
     ]
   },
   {
-    label: 'Research',
+    label: 'Firm Office',
     items: [
-      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
-      { path: '/app/docs', icon: FileText, label: 'Document Drafting' },
-      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base', badge: 'NEW' },
-      { path: '/app/tubescribe', icon: Youtube, label: 'TubeScribe', badge: 'NEW' },
-    ]
-  },
-  {
-    label: 'Clients',
-    items: [
-      { path: '/app/intake', icon: MessageSquare, label: 'Maya Intake', badge: 'AI' },
-      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
-      { path: '/app/client-portal', icon: User, label: 'Client Portal', badge: 'New' },
-      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Pipeline', badge: 'NEW' },
-    ]
-  },
-  {
-    label: 'Firm',
-    items: [
-      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
+      { path: '/app/ai-team', icon: Scale, label: 'AI Legal Team', badge: '12' },
       { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
-      { path: '/app/mail-room', icon: Mail, label: 'Mail Room', badge: 'New' },
-      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
-      { path: '/app/calendar', icon: Calendar, label: 'Calendar', badge: 'NEW' },
-      { path: '/app/billing', icon: DollarSign, label: 'Billing', badge: 'NEW' },
-      { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
-      { path: '/app/analytics', icon: BarChart3, label: 'Analytics', badge: 'NEW' },
+      { path: '/app/mail-room', icon: Mail, label: 'Mail Room' },
+      { path: '/app/client-portal', icon: User, label: 'Client Portal' },
+      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Growth' },
+      { path: '/app/billing', icon: DollarSign, label: 'Billing' },
+      { path: '/app/media', icon: FileAudio, label: 'Media Studio' },
+      { path: '/app/analytics', icon: BarChart3, label: 'Analytics' },
     ]
   },
 ];
@@ -162,37 +162,27 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const filteredNavGroups = React.useMemo(() => {
     let groups = NAV_GROUPS;
     if (operatingMode === 'companion') {
+      // Pro-se companion mode: hide firm-management features, keep the
+      // personal case-work essentials.
       groups = groups.map(group => {
-        if (group.label === 'Cases') {
+        if (group.label === 'Daily') {
           return {
             ...group,
-            label: 'My Cases',
-            items: group.items.filter(item => !['Firm Command'].includes(item.label)),
+            label: 'My Case',
+            items: group.items.filter(item => item.label !== 'Client Intake'),
           };
         }
-        if (group.label === 'Firm') {
+        if (group.label === 'Firm Office') {
           return {
             ...group,
-            items: group.items.filter(item => 
-              ['AI Lawyers', 'Talk to the Firm', 'Calendar', 'Transcriber & OCR'].includes(item.label)
-            ),
-          };
-        }
-        if (group.label === 'Clients') {
-          return {
-            ...group,
-            items: group.items.filter(item => 
-              ['Client Portal'].includes(item.label)
+            label: 'My Tools',
+            items: group.items.filter(item =>
+              ['AI Legal Team', 'Media Studio', 'Client Portal'].includes(item.label)
             ),
           };
         }
         return group;
-      }).filter(group => 
-        group.label === 'My Cases' || 
-        group.label === 'Courtroom' || 
-        group.label === 'Research' || 
-        group.items.length > 0
-      );
+      }).filter(group => group.items.length > 0);
     }
 
     if (!navSearch.trim()) return groups;
@@ -652,6 +642,12 @@ const App = () => {
             {/* Protected routes — require authentication */}
             <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
             <Route path="/app/client-portal" element={<AuthGate><Layout><ClientPortal /></Layout></AuthGate>} />
+            {/* Tabbed hubs — combine sibling features under one menu entry.
+                The original standalone routes below stay registered so old
+                links and in-app navigations keep working. */}
+            <Route path="/app/intake-hub" element={<AuthGate><Layout><IntakeHub /></Layout></AuthGate>} />
+            <Route path="/app/media" element={<AuthGate><Layout><MediaStudio /></Layout></AuthGate>} />
+            <Route path="/app/ai-team" element={<AuthGate><Layout><AITeamHub /></Layout></AuthGate>} />
             <Route path="/app/intake" element={<AuthGate><Layout><IntakePage /></Layout></AuthGate>} />
             <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
             <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
