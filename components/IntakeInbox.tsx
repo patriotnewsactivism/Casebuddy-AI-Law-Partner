@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -14,7 +14,8 @@ import { getSpecialistById } from '../agents/personas';
 import { onIntakeReceived } from '../services/caseEventHooks';
 import { orchestrator } from '../services/agentOrchestrator';
 import { createWorkflow } from '../services/workflows';
-import { autoCreateCaseFromIntake, generateEngagementLetter, generateIntakeConfirmation } from '../services/intakePipelineService';
+import { convertIntakeToCase, populateCaseFromIntake, generateEngagementLetter, generateIntakeConfirmation } from '../services/intakePipelineService';
+import { saveIntakeTranscript } from '../services/caseContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const scoreColor = (s: number) =>
@@ -250,13 +251,107 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
+// Intakes scoring at/above this (or flagged high-urgency) are automatically
+// converted into cases and handed to the agent team — no human click needed.
+// Weaker leads stay in the inbox for manual review.
+const AUTO_ACCEPT_MIN_SCORE = 40;
+
+const matterWorkflowKey = (matterType: string): string => {
+  const mt = (matterType || '').toLowerCase();
+  if (mt.includes('personal injury') || mt.includes('pi') || mt.includes('car accident')) return 'medical-records-demand';
+  if (mt.includes('immigration') || mt.includes('deportation') || mt.includes('removal')) return 'immigration-petition-prep';
+  if (mt.includes('estate') || mt.includes('probate') || mt.includes('trust')) return 'estate-inventory';
+  return 'client-onboarding';
+};
+
 const IntakeInbox: React.FC = () => {
-  const { cases, setCases, addCase, setActiveCase } = useContext(AppContext) as any;
+  const { cases, addCase, setActiveCase } = useContext(AppContext) as any;
   const navigate = useNavigate();
   const [intakes,  setIntakes]  = useState<IntakeCase[]>([]);
   const [invites,  setInvites]  = useState<ClientInvite[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Guards double-processing when realtime + refresh race each other.
+  const processedRef = useRef<Set<string>>(new Set());
+
+  const handleStatusChange = async (id: string, status: IntakeStatus) => {
+    await updateIntakeStatus(id, status);
+    setIntakes(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  };
+
+  /**
+   * The single intake→case pipeline (used by Accept, Convert, and auto-accept):
+   *  1. Build the case from the full intake extraction (rich path) or the
+   *     summary row (legacy fallback).
+   *  2. Persist Maya's detailed intake + call transcript to the shared case
+   *     file BEFORE the case is announced, so the kicked-off agent workflows
+   *     read the complete picture.
+   *  3. addCase() → cloud sync + onCaseCreated → 'new-case-intake' workflow.
+   *  4. Matter-specific workflow, engagement letter, client confirmation.
+   */
+  const acceptIntake = useCallback(async (intake: IntakeCase, opts: { auto?: boolean } = {}) => {
+    if (processedRef.current.has(intake.id)) return;
+    processedRef.current.add(intake.id);
+
+    const hasRichIntake = !!(intake.intake && intake.score_detail);
+    const newCase: Case = hasRichIntake
+      ? convertIntakeToCase(intake.intake, intake.score_detail)
+      : ({
+          id: `case_${Date.now()}`,
+          title: `${intake.full_name} — ${intake.matter_type}`,
+          client: intake.full_name,
+          status: CaseStatus.PRE_TRIAL,
+          caseType: intake.matter_type,
+          summary: intake.summary,
+          winProbability: Math.min(Math.round((intake.score ?? 40) * 0.7), 95),
+          opposingCounsel: 'Unknown',
+          judge: 'TBD',
+          assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
+          updatedAt: new Date().toISOString(),
+        } as unknown as Case);
+    (newCase as any).intakeId = intake.id;
+
+    // Hand off everything Maya collected — details first, then transcript.
+    if (intake.intake) populateCaseFromIntake(newCase.id, intake.intake);
+    if (intake.transcript?.length) saveIntakeTranscript(newCase.id, intake.transcript);
+
+    // Creates the case everywhere (state, localStorage, cloud) and fires
+    // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
+    addCase(newCase);
+    await handleStatusChange(intake.id, 'accepted');
+
+    // Matter-specific follow-on workflow (medical records, immigration, …)
+    const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
+    if (wf) orchestrator.executeWorkflowAsync(wf);
+
+    // Engagement letter + warm client confirmation (best-effort)
+    if (intake.intake) {
+      generateEngagementLetter(intake.intake, newCase).then(letter => {
+        localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
+      }).catch(() => {});
+      if (intake.score_detail) {
+        generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
+          localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+        }).catch(() => {});
+      }
+    }
+
+    if (opts.auto) {
+      toast.success(`🤖 Case auto-created from ${intake.full_name}'s intake — agent team briefed and working`, { autoClose: 6000 });
+    } else {
+      setActiveCase(newCase);
+      toast.success(`Case created: ${newCase.title}`);
+      navigate('/app/cases');
+    }
+    return newCase;
+  }, [addCase, setActiveCase, navigate]);
+
+  const shouldAutoAccept = useCallback((r: IntakeCase) =>
+    r.status === 'new' &&
+    !!r.intake &&
+    ((r.score ?? 0) >= AUTO_ACCEPT_MIN_SCORE || r.urgency === 'high') &&
+    !processedRef.current.has(r.id)
+  , []);
 
   // Load intakes + invites on mount
   useEffect(() => {
@@ -266,65 +361,36 @@ const IntakeInbox: React.FC = () => {
       setIntakes(ins);
       setInvites(invs);
       setLoading(false);
+
+      // Process qualified intakes that arrived while nobody was watching —
+      // the firm keeps working even if the attorney was offline.
+      const existingIntakeIds = new Set(
+        (cases ?? []).map((c: any) => c.intakeId).filter(Boolean)
+      );
+      for (const r of ins) {
+        if (shouldAutoAccept(r) && !existingIntakeIds.has(r.id)) {
+          acceptIntake(r, { auto: true }).catch(() => {});
+        }
+      }
     })();
 
-    // Live subscription for new intakes
+    // Live subscription for new intakes — qualified ones flow straight
+    // through to a case + agent workflows, no human click required.
     const unsub = subscribeIntakes(row => {
       setIntakes(prev => [row, ...prev.filter(r => r.id !== row.id)]);
-      toast.info(`New intake from ${row.full_name || 'unknown'}`, { autoClose: 4000 });
       onIntakeReceived(row).catch(() => {});
+      if (shouldAutoAccept(row)) {
+        toast.info(`New intake from ${row.full_name || 'unknown'} — auto-processing…`, { autoClose: 4000 });
+        acceptIntake(row, { auto: true }).catch(() => {});
+      } else {
+        toast.info(`New intake from ${row.full_name || 'unknown'} — needs review`, { autoClose: 4000 });
+      }
     });
     return unsub;
   }, []);
 
-  const handleStatusChange = async (id: string, status: IntakeStatus) => {
-    await updateIntakeStatus(id, status);
-    setIntakes(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-  };
-
   const handleConvertToCase = (intake: IntakeCase) => {
-    const newCase: Case = {
-      id: `case_${Date.now()}`,
-      title: `${intake.full_name} — ${intake.matter_type}`,
-      client: intake.full_name,
-      clientName: intake.full_name,
-      status: 'Active' as CaseStatus,
-      caseType: intake.matter_type,
-      jurisdiction: intake.jurisdiction,
-      summary: intake.summary,
-      filingDate: new Date().toISOString().split('T')[0],
-      documents: [],
-      notes: [],
-      timeline: [],
-      hearings: [],
-      assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
-    } as unknown as Case;
-    setCases((prev: Case[]) => [newCase, ...prev]);
-    handleStatusChange(intake.id, 'routed');
-    toast.success('Case created from intake');
-    navigate('/app/cases');
-
-    // Trigger matter-type specific workflow
-    const matterType = (intake.matter_type || '').toLowerCase();
-    let workflowKey: string | null = null;
-    if (matterType.includes('personal injury') || matterType.includes('pi') || matterType.includes('car accident')) {
-      workflowKey = 'medical-records-demand';
-    } else if (matterType.includes('criminal')) {
-      workflowKey = 'client-onboarding';
-    } else if (matterType.includes('immigration') || matterType.includes('deportation') || matterType.includes('removal')) {
-      workflowKey = 'immigration-petition-prep';
-    } else if (matterType.includes('estate') || matterType.includes('probate') || matterType.includes('trust')) {
-      workflowKey = 'estate-inventory';
-    } else if (matterType.includes('family') || matterType.includes('divorce')) {
-      workflowKey = 'client-onboarding';
-    } else {
-      workflowKey = 'client-onboarding';
-    }
-
-    const wf = createWorkflow(workflowKey, newCase.id);
-    if (wf) {
-      orchestrator.executeWorkflowAsync(wf);
-    }
+    acceptIntake(intake).catch(() => {});
   };
 
   const handleDeleteInvite = async (id: string) => {
@@ -451,19 +517,7 @@ const IntakeInbox: React.FC = () => {
                       )}
                       {intake.status === 'new' && (
                         <>
-                          <button onClick={async () => {
-                            await handleStatusChange(intake.id, 'accepted');
-                            const newCase = autoCreateCaseFromIntake(intake.intake, intake.score_detail);
-                            addCase(newCase);
-                            setActiveCase(newCase);
-                            toast.success(`Case created: ${newCase.title}`);
-                            generateEngagementLetter(intake.intake, newCase).then(letter => {
-                              localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
-                            });
-                            generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
-                              localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
-                            });
-                          }}
+                          <button onClick={() => acceptIntake(intake).catch(() => {})}
                             className="flex items-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/40 text-green-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
                             <ThumbsUp size={13} /> Accept
                           </button>

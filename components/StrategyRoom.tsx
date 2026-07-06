@@ -5,6 +5,7 @@ import { predictStrategy } from '../services/geminiService';
 import { searchCaseLaw } from '../services/integrationService';
 import { runReasoning } from '../services/agentReasoning';
 import { addInsight } from '../services/agentMemory';
+import { buildCaseBrief } from '../services/caseContext';
 import { StrategyInsight, ReasoningMode } from '../types';
 import { BrainCircuit, Target, Shield, AlertOctagon, Lightbulb, RefreshCw, Search, ExternalLink, BookOpen, Loader } from 'lucide-react';
 import AgentHeader from './AgentHeader';
@@ -44,15 +45,24 @@ const StrategyRoom = () => {
     setReasoningResult(null);
 
     try {
+      // Strategy runs on the complete case file — intake narrative, analyzed
+      // documents/discovery, transcripts — not just the one-line summary.
+      let caseCtx = '';
+      try {
+        caseCtx = await buildCaseBrief(activeCase, { maxChars: 8000 });
+      } catch { /* fall back below */ }
+      if (!caseCtx) {
+        caseCtx = `Title: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`;
+      }
+
       let finalInsights: StrategyInsight[] = [];
       if (reasoningMode === 'standard') {
         // Gemini with thinking budget for standard mode
-        const result = await predictStrategy(activeCase.summary, JSON.stringify(MOCK_OPPONENT));
+        const result = await predictStrategy(caseCtx, JSON.stringify(MOCK_OPPONENT));
         setInsights(result);
         finalInsights = result;
       } else {
         // Extended reasoning modes via DeepSeek
-        const caseCtx = `Title: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary}\nOpposing Counsel: ${activeCase.opposingCounsel}\nJudge: ${activeCase.judge}`;
         const result = await runReasoning({
           mode: reasoningMode,
           agentId: 'lex',

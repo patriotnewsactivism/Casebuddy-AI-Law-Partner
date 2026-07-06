@@ -9,6 +9,7 @@ import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
 import AIDisclaimer from './AIDisclaimer';
 import { buildMemoryContext, recordAction } from '../services/agentMemory';
+import { buildCaseBrief } from '../services/caseContext';
 import { recordFeedback, buildPatternsContext, recordLearningEvent } from '../services/agentLearning';
 import { runReasoning, selectReasoningMode } from '../services/agentReasoning';
 import { ReasoningModeSelector, ReasoningResultBadge } from './ReasoningIndicator';
@@ -412,9 +413,18 @@ const LegalTeam: React.FC = () => {
         parts: [{ text: m.text }],
       }));
 
-      const caseCtx = activeCase
-        ? `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`
-        : undefined;
+      // Full case file: intake narrative from Maya, analyzed documents &
+      // discovery, transcripts, and existing work product — the attorney
+      // sees everything the firm knows, not a one-line summary.
+      let caseCtx: string | undefined;
+      if (activeCase) {
+        try {
+          caseCtx = await buildCaseBrief(activeCase, { maxChars: 7000 });
+        } catch { /* fall through to sync fallback */ }
+        if (!caseCtx) {
+          caseCtx = `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`;
+        }
+      }
 
       // Load memory context for this specialist
       const memCtx = await buildMemoryContext(activeId, activeCase?.id ?? 'general');
