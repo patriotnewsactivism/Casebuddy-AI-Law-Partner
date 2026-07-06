@@ -208,6 +208,10 @@ async function documentsSection(caseId: string, timeoutMs: number): Promise<stri
 export interface CaseBriefOptions {
   /** Include Supabase document/discovery analyses (network fetch). Default true. */
   includeDocuments?: boolean;
+  /** Include the cross-agent Team Activity section. Default true. */
+  includeTeamActivity?: boolean;
+  /** The agent this brief is for — their own insights are excluded from Team Activity. */
+  forAgentId?: string;
   /** Hard cap on brief length in characters. Default 9000. */
   maxChars?: number;
   /** Timeout for the document fetch. Default 5000ms. */
@@ -238,6 +242,16 @@ export async function buildCaseBrief(
   sections.push(evidenceSection(caseId));
   sections.push(transcriptionsSection(caseId));
   sections.push(workProductSection(caseId));
+
+  // What every other agent has already found on this case — the shared
+  // channel through which the AI team communicates across workflows.
+  if (opts.includeTeamActivity !== false) {
+    try {
+      const { buildTeamContext } = await import('./agentMemory');
+      const team = await buildTeamContext(caseId, opts.forAgentId);
+      if (team) sections.push(team.trim());
+    } catch { /* best-effort */ }
+  }
 
   const brief = sections.filter(Boolean).join('\n\n');
   if (!brief) return '';

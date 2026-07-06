@@ -103,7 +103,8 @@ function updateAgentStatus(
 class BackgroundAgentEngine {
   private queue = new PriorityQueue<BackgroundTask>();
   private running = 0;
-  private schedulerHandle: ReturnType<typeof setInterval> | null = null;
+  private drainHandle: ReturnType<typeof setInterval> | null = null;
+  private pipelineChannel: any = null;
   private started = false;
 
   /** Start the background scheduler. Safe to call multiple times. */
@@ -112,7 +113,6 @@ class BackgroundAgentEngine {
     this.started = true;
 
     // Bootstrap all operational agents' status records
-    // Bootstrapped statuses
     for (const agent of OPERATIONAL_AGENTS) {
       const statuses = loadStatuses();
       if (!statuses[agent.id]) {
@@ -126,34 +126,40 @@ class BackgroundAgentEngine {
       }
     }
 
-    // NEW: Listen to Supabase Postgres queue instead of local setInterval
+    // Resume any tasks that were queued before the last reload — the firm
+    // keeps working across sessions instead of silently dropping its queue.
+    this.rehydrateQueue();
+
+    // Local drain loop: processes pending tasks (including daily/scheduled
+    // ones enqueued without 'immediate') respecting the concurrency limit.
+    this.drainHandle = setInterval(() => {
+      this.rehydrateQueue();
+      this.drain();
+    }, 60_000);
+
+    // Also observe the Supabase server-side pipeline for status updates
     const sb = getSupabase();
     if (sb) {
-      this.schedulerHandle = sb
+      this.pipelineChannel = sb
         .channel('pipeline-jobs-listener')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'pipeline_jobs' },
-          (payload) => {
-            console.log('[BackgroundAgentEngine] Pipeline Job update:', payload);
-            // Optionally update UI stats or agent statuses based on backend job progress
-            // For now, we just log to show the connection is alive.
-          }
+          () => { /* server-side OCR/analysis progress; UI listens elsewhere */ }
         )
-        .subscribe() as any;
+        .subscribe();
     }
-
-    // Deprecated local drain (legacy tasks only)
-    // this.rehydrateQueue();
   }
 
   stop(): void {
-    if (this.schedulerHandle && typeof this.schedulerHandle !== 'number') {
+    if (this.drainHandle) {
+      clearInterval(this.drainHandle);
+      this.drainHandle = null;
+    }
+    if (this.pipelineChannel) {
       const sb = getSupabase();
-      if (sb) sb.removeChannel(this.schedulerHandle as any);
-      this.schedulerHandle = null;
-    } else if (typeof this.schedulerHandle === 'number') {
-      clearInterval(this.schedulerHandle);
+      if (sb) sb.removeChannel(this.pipelineChannel);
+      this.pipelineChannel = null;
     }
     this.started = false;
   }
@@ -177,6 +183,7 @@ class BackgroundAgentEngine {
     tasks.push(task);
     saveTasks(tasks);
 
+    this.inFlight.add(task.id);
     this.queue.enqueue(task, options.priority as any);
 
     // Immediate tasks bypass the scheduler interval
@@ -205,9 +212,14 @@ class BackgroundAgentEngine {
 
   // ── Private helpers ──────────────────────────────────────────────────────
 
+  /** Ids currently in the in-memory queue or executing — prevents the
+   *  periodic rehydrate from double-enqueueing storage-pending tasks. */
+  private inFlight = new Set<string>();
+
   private rehydrateQueue(): void {
-    const pending = loadTasks().filter(t => t.status === 'pending');
+    const pending = loadTasks().filter(t => t.status === 'pending' && !this.inFlight.has(t.id));
     for (const t of pending) {
+      this.inFlight.add(t.id);
       this.queue.enqueue(t, t.priority as any);
     }
     if (!this.queue.isEmpty()) this.drain();
@@ -242,6 +254,7 @@ class BackgroundAgentEngine {
       ]);
 
       this.patchTask(task.id, { status: 'completed', completedAt: Date.now() });
+      this.inFlight.delete(task.id);
 
       // Update stats
       const statuses = loadStatuses();
@@ -280,6 +293,7 @@ class BackgroundAgentEngine {
           completedAt: Date.now(),
           error: err instanceof Error ? err.message : String(err),
         });
+        this.inFlight.delete(task.id);
         updateAgentStatus(task.agentId, { isActive: false, currentTask: undefined });
       }
     }
@@ -325,6 +339,54 @@ class BackgroundAgentEngine {
     }
   }
 
+  /** Full case file for prompts — everything the firm knows. Best-effort. */
+  private async caseBriefFor(task: BackgroundTask, activeCase: Case): Promise<string> {
+    try {
+      const { buildCaseBrief } = await import('./caseContext');
+      const brief = await buildCaseBrief(activeCase, { maxChars: 6000, forAgentId: task.agentId });
+      if (brief) return brief;
+    } catch { /* fall through */ }
+    return `Case: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary ?? ''}`;
+  }
+
+  /** Post background work product to the case's War Room thread so the
+   *  whole team (human + agents) sees what got done autonomously. */
+  private async postToWarRoom(caseId: string, agentId: string, agentName: string, body: string): Promise<void> {
+    try {
+      const { getOrCreateThread, sendAgentMessage } = await import('./caseThreadService');
+      const cases = this.loadCasesFromStorage();
+      const c = cases.find(cs => cs.id === caseId);
+      const thread = await getOrCreateThread(caseId, c?.title ?? 'Case');
+      await sendAgentMessage(thread.id, caseId, agentId, body);
+    } catch {
+      try {
+        const msgs = JSON.parse(localStorage.getItem(`warroom_msgs_${caseId}`) ?? '[]');
+        msgs.push({
+          id: `local-bg-${Date.now()}`,
+          created_at: new Date().toISOString(),
+          thread_id: 'local',
+          case_id: caseId,
+          firm_id: 'default',
+          sender_type: 'agent',
+          sender_id: agentId,
+          sender_name: agentName,
+          direction: 'agent_to_user',
+          body,
+          read: false,
+          triggers_automation: false,
+          automation_status: 'none',
+          automation_target: null,
+          automation_result: null,
+          attachment_url: null,
+          attachment_name: null,
+          attachment_type: null,
+          metadata: { background: true },
+        });
+        localStorage.setItem(`warroom_msgs_${caseId}`, JSON.stringify(msgs));
+      } catch { /* best-effort */ }
+    }
+  }
+
   private async runAnalyze(task: BackgroundTask): Promise<void> {
     const cases = this.loadCasesFromStorage();
     const activeCase = cases.find(c => c.id === task.caseId);
@@ -333,13 +395,14 @@ class BackgroundAgentEngine {
     const agent = getAgentById(task.agentId);
     if (!agent) return;
 
+    const brief = await this.caseBriefFor(task, activeCase);
     const sysInstruction = `You are ${agent.name}, ${agent.title}. Analyze the following case and provide 3 critical insights.`;
     const response = await deepseekChat({
       systemInstruction: sysInstruction,
       messages: [
         {
           role: 'user',
-          content: `Case: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary}\n\nProvide your top 3 strategic insights for this case.`,
+          content: `${brief}\n\nTask context: ${task.description}\n\nProvide your top 3 strategic insights for this case. Be specific to the facts above — no generic advice.`,
         },
       ],
       temperature: 0.5,
@@ -387,29 +450,57 @@ class BackgroundAgentEngine {
     const activeCase = cases.find(c => c.id === task.caseId);
     if (!activeCase) return;
 
+    const brief = await this.caseBriefFor(task, activeCase);
+
+    // Real precedent search via CourtListener first (when a key is
+    // configured); the LLM then analyzes the actual authorities instead of
+    // reciting from memory. Falls back to pure LLM research gracefully.
+    let realAuthorities = '';
+    try {
+      const { searchCaseLaw } = await import('./integrationService');
+      const query = `${activeCase.caseType ?? ''} ${(activeCase.summary ?? '').slice(0, 120)}`.trim();
+      if (query) {
+        const results = await searchCaseLaw(query);
+        if (results?.length) {
+          realAuthorities = results.slice(0, 5).map((r: any) =>
+            `- ${r.caseName ?? r.case_name ?? 'Unknown'} (${r.court ?? r.court_citation_string ?? ''} ${r.dateFiled ?? r.date_filed ?? ''})${r.absolute_url ? ` — courtlistener.com${r.absolute_url}` : ''}`
+          ).join('\n');
+        }
+      }
+    } catch { /* no key or network issue — LLM-only research */ }
+
     const response = await deepseekChat({
       systemInstruction:
-        'You are Lex, a legal research specialist. Identify 3 key precedents or statutes relevant to this case.',
+        'You are Lex, a legal research specialist at CaseBuddy Law Firm. Ground your analysis in the case file and, when provided, the real authorities found on CourtListener.',
       messages: [
         {
           role: 'user',
-          content: `Case: ${activeCase.title}\nSummary: ${activeCase.summary}\n\nIdentify 3 key legal precedents or statutes most relevant to this case.`,
+          content: `${brief}\n\n${realAuthorities ? `Authorities found on CourtListener:\n${realAuthorities}\n\n` : ''}Identify the 3 most important legal precedents or statutes for this case, explain in 1-2 sentences each why they matter to OUR facts, and flag any adverse authority the team should prepare for.`,
         },
       ],
       temperature: 0.3,
-      maxTokens: 600,
+      maxTokens: 900,
       timeoutMs: 30_000,
     });
+
+    const content = realAuthorities
+      ? `${response}\n\nSources searched via CourtListener:\n${realAuthorities}`
+      : response;
 
     await addInsight('lex', task.caseId, {
       agentId: 'lex',
       caseId: task.caseId,
-      title: 'Background Research',
-      content: response.slice(0, 400),
-      confidence: 65,
+      title: `Background Research — ${new Date().toLocaleDateString()}`,
+      content: content.slice(0, 900),
+      confidence: realAuthorities ? 80 : 65,
       type: 'recommendation',
       source: 'research',
     });
+
+    await this.postToWarRoom(
+      task.caseId, 'lex', 'Lex (Background Research)',
+      `🔎 **Background Legal Research**\n\n${content.slice(0, 1500)}`
+    );
 
     pushTaskComplete('lex', task.caseId, activeCase.title, 'Background legal research completed.');
   }
@@ -424,13 +515,14 @@ class BackgroundAgentEngine {
 
     // Determine document type from the task description
     const docTypeHint = task.description || 'legal document';
+    const brief = await this.caseBriefFor(task, activeCase);
 
     const response = await deepseekChat({
       systemInstruction: `You are ${agentName}, an expert legal document drafter at CaseBuddy Law Firm. Draft a complete, professional ${docTypeHint} for the following case. Be thorough and ready-to-use.`,
       messages: [
         {
           role: 'user',
-          content: `Case: ${activeCase.title}\nClient: ${activeCase.client}\nStatus: ${activeCase.status}\nSummary: ${activeCase.summary ?? 'No summary provided.'}\n\nDraft a complete ${docTypeHint}. Include all standard sections. Be specific to this case.`,
+          content: `${brief}\n\nDraft a complete ${docTypeHint}. Include all standard sections. Be specific to this case — use the facts, parties, and dates from the case file above.`,
         },
       ],
       temperature: 0.4,

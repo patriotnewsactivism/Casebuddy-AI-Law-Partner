@@ -206,6 +206,39 @@ const rules: Rule[] = [
     },
   },
 
+  // ── Weekly case digest (Maya) ─────────────────────────────────────────
+  // Every 7 days per open case, Maya compiles a digest of messages,
+  // evidence, and workflow activity and posts it to the War Room.
+  {
+    id: 'weekly-case-digest',
+    check: async (cases, now) => {
+      const DIGEST_KEY = 'cb_last_digest';
+      let last: Record<string, number> = {};
+      try { last = JSON.parse(localStorage.getItem(DIGEST_KEY) ?? '{}'); } catch {}
+
+      let changed = false;
+      for (const c of cases) {
+        if (c.status === 'Closed') continue;
+        const prev = last[c.id] ?? 0;
+        if (now - prev >= 7 * 86_400_000) {
+          last[c.id] = now;
+          changed = true;
+          backgroundEngine.schedule({
+            agentId: 'maya',
+            caseId: c.id,
+            taskType: 'summarize',
+            schedule: 'immediate',
+            priority: 'low',
+            description: `Weekly case digest for ${c.title}`,
+          });
+        }
+      }
+      if (changed) {
+        try { localStorage.setItem(DIGEST_KEY, JSON.stringify(last)); } catch {}
+      }
+    },
+  },
+
   // ── Stale Case Monitor Rule (D1) ──────────────────────────────────────
   {
     id: 'stale-case-rule',

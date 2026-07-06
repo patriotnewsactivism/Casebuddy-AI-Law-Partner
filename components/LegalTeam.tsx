@@ -419,7 +419,7 @@ const LegalTeam: React.FC = () => {
       let caseCtx: string | undefined;
       if (activeCase) {
         try {
-          caseCtx = await buildCaseBrief(activeCase, { maxChars: 7000 });
+          caseCtx = await buildCaseBrief(activeCase, { maxChars: 7000, forAgentId: activeId });
         } catch { /* fall through to sync fallback */ }
         if (!caseCtx) {
           caseCtx = `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`;
