@@ -283,6 +283,61 @@ const extractPdfText = async (file: File): Promise<string> => {
   return fullText.trim();
 };
 
+// Azure Computer Vision (v3.2 Read API) — supports PDFs and images
+const ocrWithAzureVision = async (file: File): Promise<string> => {
+  const endpoint = import.meta.env.VITE_AZURE_VISION_ENDPOINT || '';
+  const key = import.meta.env.VITE_AZURE_VISION_KEY || '';
+  if (!endpoint || !key) throw new Error('No Azure Vision credentials');
+
+  const arrayBuffer = await file.arrayBuffer();
+  
+  // POST to /vision/v3.2/read/analyze
+  const url = `${endpoint.replace(/\/$/, '')}/vision/v3.2/read/analyze`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': key,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: arrayBuffer,
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Azure Vision error ${resp.status}: ${err}`);
+  }
+
+  const operationLocation = resp.headers.get('Operation-Location');
+  if (!operationLocation) throw new Error('No Operation-Location header in Azure response');
+
+  // Poll for results
+  let status = 'running';
+  let data: any = null;
+  // Poll up to 15 times, 1 second apart
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const pollResp = await fetch(operationLocation, {
+      headers: { 'Ocp-Apim-Subscription-Key': key }
+    });
+    if (!pollResp.ok) throw new Error(`Azure polling error ${pollResp.status}`);
+    data = await pollResp.json();
+    status = data.status;
+    if (status === 'succeeded' || status === 'failed') break;
+  }
+
+  if (status !== 'succeeded') {
+    throw new Error(`Azure OCR failed or timed out. Status: ${status}`);
+  }
+
+  let fullText = '';
+  for (const page of data.analyzeResult?.readResults || []) {
+    for (const line of page.lines || []) {
+      fullText += line.text + '\n';
+    }
+  }
+  return fullText.trim();
+};
+
 // GitHub Models GPT-4o vision — images only (not PDFs)
 const ocrWithGitHubModels = async (imageFile: File): Promise<string> => {
   const ghToken = import.meta.env.VITE_GITHUB_TOKEN || import.meta.env.VITE_GITHUB_MODELS_TOKEN || '';
@@ -319,7 +374,18 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
   const isPdf = mime.includes('pdf');
   const isImage = !isPdf && (mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|tiff)$/i.test(imageOrDocFile.name));
 
-  // 1a. PDFs: extract text directly with PDF.js (free, no API, works offline)
+  // 1. Azure Computer Vision (if configured)
+  const azureKey = import.meta.env.VITE_AZURE_VISION_KEY || '';
+  if (azureKey) {
+    try {
+      const text = await withTimeout(ocrWithAzureVision(imageOrDocFile), 60000);
+      if (text) return text;
+    } catch (e) {
+      console.warn('[performOCR] Azure Vision failed, falling back:', e);
+    }
+  }
+
+  // 2a. PDFs: extract text directly with PDF.js (free, no API, works offline)
   if (isPdf) {
     try {
       const text = await withTimeout(extractPdfText(imageOrDocFile), 30000);
@@ -330,7 +396,7 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
     }
   }
 
-  // 1b. Images: GitHub Models GPT-4o vision (free)
+  // 2b. Images: GitHub Models GPT-4o vision (free)
   if (isImage) {
     try {
       const text = await withTimeout(ocrWithGitHubModels(imageOrDocFile), 45000);
@@ -340,7 +406,7 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
     }
   }
 
-  // 2. Gemini fallback (handles scanned PDFs, complex images) — with retry for 429 rate limits
+  // 3. Gemini fallback (handles scanned PDFs, complex images) — with retry for 429 rate limits
   try {
     const part = await fileToGenerativePart(imageOrDocFile);
     const response = await retryWithBackoff(async () => {
