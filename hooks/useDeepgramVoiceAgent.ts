@@ -467,12 +467,11 @@ export function useDeepgramVoiceAgent(
           : {
               type: 'deepgram',
               model: opts.voiceModel,
-              speed: speakRate,
             };
 
         const speakEndpoint = useEl
           ? {
-              url: `wss://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/multi-stream-input`,
+              url: `https://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/stream`,
               headers: { 'xi-api-key': elevKey },
             }
           : undefined;
