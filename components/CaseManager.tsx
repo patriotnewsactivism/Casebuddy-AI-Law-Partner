@@ -10,7 +10,8 @@ import { handleError, handleSuccess } from '../utils/errorHandler';
 import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
 import AgentHeader from './AgentHeader';
-import { OPERATIONAL_AGENTS } from '../agents/personas';
+import CrossCasePanel from './CrossCasePanel';
+import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
@@ -30,8 +31,38 @@ const CaseManager = () => {
     client: '',
     opposingCounsel: '',
     judge: '',
-    summary: ''
+    summary: '',
+    caseType: 'Criminal Law',
+    assignedSpecialistId: 'criminal-defense'
   });
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'updated' | 'title' | 'status' | 'client'>('updated');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  const filteredCases = React.useMemo(() => {
+    let list = [...cases];
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter(c =>
+        c.title?.toLowerCase().includes(q) ||
+        c.client?.toLowerCase().includes(q) ||
+        c.judge?.toLowerCase().includes(q) ||
+        c.opposingCounsel?.toLowerCase().includes(q) ||
+        c.summary?.toLowerCase().includes(q)
+      );
+    }
+    if (filterStatus !== 'all') {
+      list = list.filter(c => c.status === filterStatus);
+    }
+    list.sort((a, b) => {
+      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
+      if (sortBy === 'client') return (a.client || '').localeCompare(b.client || '');
+      if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '');
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    });
+    return list;
+  }, [cases, searchTerm, sortBy, filterStatus]);
 
   const handleAnalyze = async () => {
     if (!inputText.trim()) {
@@ -105,12 +136,14 @@ const CaseManager = () => {
       judge: newCaseData.judge?.trim() || 'Unknown',
       nextCourtDate: 'TBD',
       summary: newCaseData.summary?.trim() || 'No summary provided.',
-      winProbability: 50
+      winProbability: 50,
+      caseType: newCaseData.caseType,
+      assignedSpecialistId: newCaseData.assignedSpecialistId
     };
     addCase(newCase);
     handleSuccess(`Case "${newCase.title}" created successfully`);
     setShowNewCaseModal(false);
-    setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '' });
+    setNewCaseData({ title: '', client: '', opposingCounsel: '', judge: '', summary: '', caseType: 'Criminal Law', assignedSpecialistId: 'criminal-defense' });
     // Case handoff — brief Sol + open War Room
     setTimeout(() => {
       toast.info(
@@ -180,7 +213,59 @@ const CaseManager = () => {
         </div>
 
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden min-h-[200px] flex-1 flex flex-col">
-          {cases.length === 0 ? (
+          {/* Search, Sort, Filter bar */}
+          <div className="px-4 pt-3 pb-2 space-y-2 border-b border-slate-700">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search cases, clients, judges..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-800 text-slate-200 text-sm pl-9 pr-3 py-2 rounded-lg border border-slate-700 focus:border-gold-500 focus:outline-none placeholder-slate-500"
+              />
+              {searchTerm && (
+                <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+                className="flex-1 bg-slate-800 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-700 focus:border-gold-500 focus:outline-none"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Discovery">Discovery</option>
+                <option value="Trial">Trial</option>
+                <option value="Appeal">Appeal</option>
+                <option value="Closed">Closed</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="flex-1 bg-slate-800 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-700 focus:border-gold-500 focus:outline-none"
+              >
+                <option value="updated">Recent</option>
+                <option value="title">Title A-Z</option>
+                <option value="client">Client A-Z</option>
+                <option value="status">Status</option>
+              </select>
+            </div>
+            {(searchTerm || filterStatus !== 'all') && (
+              <p className="text-xs text-slate-500">{filteredCases.length} of {cases.length} cases</p>
+            )}
+          </div>
+
+          {filteredCases.length === 0 && cases.length > 0 ? (
+            <div className="p-6 text-center text-slate-400 text-sm">
+              <Search size={24} className="mx-auto mb-2 opacity-40" />
+              No cases match your search.
+              <button onClick={() => { setSearchTerm(''); setFilterStatus('all'); }} className="block mx-auto mt-2 text-gold-500 hover:underline text-xs">Clear filters</button>
+            </div>
+          ) : cases.length === 0 ? (
             <div className="p-8 text-center text-slate-500 flex-1 flex flex-col items-center justify-center">
               <BookOpen size={32} className="mb-3 opacity-50" />
               <p className="mb-4">No active cases found.</p>
@@ -202,7 +287,7 @@ const CaseManager = () => {
             </div>
           ) : (
             <div className="overflow-y-auto max-h-[600px]">
-              {cases.map(c => (
+              {filteredCases.map(c => (
                 <div 
                   key={c.id}
                   onClick={() => setActiveCase(c)}
@@ -232,6 +317,20 @@ const CaseManager = () => {
                 <span className="text-slate-400 block">Summary</span>
                 <span className="text-slate-300 leading-relaxed">{activeCase.summary}</span>
               </div>
+              {activeCase.caseType && (
+                <div>
+                  <span className="text-slate-400 block">Case Type</span>
+                  <span className="text-slate-200">{activeCase.caseType}</span>
+                </div>
+              )}
+              {activeCase.assignedSpecialistId && (
+                <div>
+                  <span className="text-slate-400 block">Assigned Attorney</span>
+                  <span className="text-slate-200">
+                    {LEGAL_SPECIALISTS.find(s => s.id === activeCase.assignedSpecialistId)?.name ?? activeCase.assignedSpecialistId}
+                  </span>
+                </div>
+              )}
             </div>
             {/* Cross-agent quick actions */}
             <div className="mt-5 pt-4 border-t border-slate-700 space-y-2">
@@ -256,6 +355,9 @@ const CaseManager = () => {
             </div>
           </div>
         )}
+
+        {/* Cross-Case Intelligence Panel */}
+        {activeCase && <CrossCasePanel activeCase={activeCase} />}
       </div>
 
       {/* Document Analysis Area */}
@@ -416,11 +518,67 @@ const CaseManager = () => {
                   <textarea 
                     required
                     rows={3}
-                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:border-gold-500 outline-none"
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:border-gold-500 outline-none mb-3"
                     placeholder="Briefly describe the charges or civil complaint..."
                     value={newCaseData.summary}
                     onChange={e => setNewCaseData({...newCaseData, summary: e.target.value})}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Case Type</label>
+                    <select
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white focus:border-gold-500 outline-none text-sm"
+                      value={newCaseData.caseType}
+                      onChange={e => {
+                        const ct = e.target.value;
+                        const mapping: Record<string, string> = {
+                          'Criminal Law': 'criminal-defense',
+                          'Personal Injury': 'personal-injury',
+                          'Family Law': 'family-law',
+                          'Immigration Law': 'immigration',
+                          'IP / Patent Law': 'intellectual-property',
+                          'Corporate / Business Law': 'corporate',
+                          'Employment / Labor Law': 'employment',
+                          'Real Estate Law': 'real-estate',
+                          'Bankruptcy / Insolvency': 'bankruptcy',
+                          'Civil Litigation': 'civil-litigation',
+                          'Estate Planning & Probate': 'estate-planning',
+                          'Tax Law': 'tax-law'
+                        };
+                        setNewCaseData({
+                          ...newCaseData,
+                          caseType: ct,
+                          assignedSpecialistId: mapping[ct] || 'criminal-defense'
+                        });
+                      }}
+                    >
+                      <option value="Criminal Law">Criminal Law</option>
+                      <option value="Personal Injury">Personal Injury</option>
+                      <option value="Family Law">Family Law</option>
+                      <option value="Immigration Law">Immigration Law</option>
+                      <option value="IP / Patent Law">IP / Patent Law</option>
+                      <option value="Corporate / Business Law">Corporate / Business Law</option>
+                      <option value="Employment / Labor Law">Employment / Labor Law</option>
+                      <option value="Real Estate Law">Real Estate Law</option>
+                      <option value="Bankruptcy / Insolvency">Bankruptcy / Insolvency</option>
+                      <option value="Civil Litigation">Civil Litigation</option>
+                      <option value="Estate Planning & Probate">Estate Planning & Probate</option>
+                      <option value="Tax Law">Tax Law</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Assigned Attorney</label>
+                    <select
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white focus:border-gold-500 outline-none text-sm"
+                      value={newCaseData.assignedSpecialistId}
+                      onChange={e => setNewCaseData({...newCaseData, assignedSpecialistId: e.target.value})}
+                    >
+                      {LEGAL_SPECIALISTS.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.practiceArea})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <button 
                   type="submit"

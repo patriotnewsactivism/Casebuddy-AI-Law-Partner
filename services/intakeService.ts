@@ -3,14 +3,61 @@ import { getGeminiKey } from './runtimeKeys';
 import { IntakeData, IntakeScore } from '../types';
 import { LEGAL_SPECIALISTS } from '../agents/personas';
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
+import { deepseekChat } from './deepseek';
 
-// Lazy proxy — reads the key fresh on every call so it works even if the key
-// was fetched after module load (e.g. after the voice session starts).
-const ai = new Proxy({} as InstanceType<typeof GoogleGenAI>, {
-  get(_target, prop) {
-    return (new GoogleGenAI({ apiKey: getGeminiKey() }) as any)[prop];
-  },
-});
+// Intake text analysis uses DeepSeek as primary (per project architecture).
+// Gemini is only used for multimodal (OCR/transcription).
+const callDeepSeekJson = async (system: string, user: string, maxTokens = 3000): Promise<string> => {
+  const text = await deepseekChat({
+    systemInstruction: system,
+    messages: [{ role: 'user', content: user }],
+    temperature: 0.3,
+    jsonMode: true,
+    maxTokens,
+    timeoutMs: 30000,
+  });
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+};
+
+// Intake AI calls go through the server-side proxy (/api/ai/gemini), which holds
+// the GEMINI_API_KEY. This keeps the key out of the browser and avoids depending
+// on a per-session client key that may be missing or restricted — the cause of
+// intakes silently failing at the extraction step. If the proxy isn't reachable
+// (e.g. a host without the edge function) we fall back to direct browser call.
+const callGeminiProxy = async (params: {
+  model: string;
+  contents: unknown;
+  config?: unknown;
+}): Promise<string> => {
+  // Retry on rate limit or transient errors
+  return retryWithBackoff(async () => {
+    const resp = await fetch('/api/ai/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!resp.ok) {
+      let message = `Gemini proxy error (${resp.status})`;
+      try {
+        const body = await resp.json();
+        if (body?.error) message = body.error;
+      } catch { /* non-JSON error body */ }
+      // Retry on rate limit, throw on other errors
+      if (resp.status === 429) throw new Error(message);
+      throw new Error(message);
+    }
+    const data: any = await resp.json();
+    const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+      .map((p: any) => p?.text ?? '')
+      .join('')
+      .trim();
+    if (!text) throw new Error('Gemini proxy returned an empty response');
+    return text;
+  }, 3);
+};
+
+/** Export the proxy caller for use by IntakePage.tsx */
+export { callGeminiProxy };
 
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
 // manual review; anything under REVIEW is politely declined.
@@ -25,67 +72,91 @@ const transcriptToText = (transcript: Turn[]): string =>
     .join('\n');
 
 /**
+ * Parse a model's JSON response defensively.
+ */
+const safeParseJson = <T = any>(raw: string | undefined, context: string): T => {
+  const text = (raw || '').trim();
+  if (!text) throw new Error(`${context}: empty response from model`);
+
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1)) as T;
+      } catch { /* fall through */ }
+    }
+    throw new Error(`${context}: model did not return valid JSON`);
+  }
+};
+
+/**
  * Distill a free-form intake conversation into a structured IntakeData record.
+ * Uses DeepSeek as primary (per project architecture) with Gemini fallback.
  */
 export const extractIntake = async (transcript: Turn[]): Promise<IntakeData> => {
   const convo = transcriptToText(transcript);
   return retryWithBackoff(async () => {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-          parts: [
-            {
-              text: `You are the intake processor for a law firm. Read the following intake conversation between MAYA (the firm's intake specialist) and a prospective CLIENT. Extract the facts into a structured record.
+    // DeepSeek is the primary text model per project architecture
+    const text = await callDeepSeekJson(
+      `You are the senior intake analyst for a law firm. Read the full intake call between MAYA (the firm's intake specialist) and a prospective CLIENT, and produce a thorough, faithful case report the attorneys can act on.
 
-Rules:
-- Use the client's own words where possible. Be concise.
-- If something was never discussed, use an empty string "" — never invent facts.
-- "matterType" should be the legal practice area in plain English (e.g. "Personal Injury", "Criminal Defense", "Family Law", "Employment", "Immigration", "Landlord-Tenant / Real Estate", "Civil Rights", "Contract Dispute"). If unclear, give your best single-label guess.
+ABSOLUTE RULE — NO HALLUCINATION:
+- Every single field must be grounded in what the CLIENT actually said in this transcript. Do NOT infer, assume, embellish, or fill gaps with plausible-sounding detail.
+- If a detail was not stated, leave that field empty ("" or []). Never guess a date, a dollar amount, a name, or a legal conclusion that the client did not give.
+- Do not diagnose the legal merits or state law. You are recording their story accurately, not advising.
+- Prefer the client's own words. When you quote, quote exactly.
 
-CONVERSATION:
-${convo}`,
-            },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              fullName: { type: Type.STRING },
-              contact: { type: Type.STRING },
-              matterType: { type: Type.STRING },
-              jurisdiction: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              incidentDate: { type: Type.STRING },
-              opposingParties: { type: Type.STRING },
-              deadlines: { type: Type.STRING },
-              injuriesOrDamages: { type: Type.STRING },
-              desiredOutcome: { type: Type.STRING },
-              priorCounsel: { type: Type.STRING },
-            },
-            required: ['fullName', 'matterType', 'summary'],
-          },
-        },
-      }),
-      30000
+CAPTURE EVERYTHING — this caller may be long-winded, upset, or out of order. Pull every concrete detail out of the whole conversation, not just the last few turns. Losing information is a serious failure.
+
+FIELD GUIDANCE:
+- "summary": ONE tight sentence for a list view.
+- "detailedNarrative": a complete, well-organized factual write-up (multiple short paragraphs) of what happened, in plain English, strictly from what the client said.
+- "keyFacts": the concrete facts the client stated, each as its own short bullet.
+- "timeline": events in chronological order with whatever date/time reference the client gave.
+- "parties": every person or entity named, with their role.
+- "clientQuotes": a few short, exact verbatim quotes in the client's own words.
+- "openQuestions": important things that are still unknown or unclear.
+- "matterType": the legal practice area in plain English.
+
+Return ONLY valid JSON with these fields: fullName, contact, matterType, jurisdiction, summary, detailedNarrative, incidentDate, opposingParties, deadlines, injuriesOrDamages, desiredOutcome, priorCounsel, witnesses, evidenceMentioned, financialImpact, priorLegalActions, emotionalState, keyFacts, clientQuotes, openQuestions, timeline, parties.`,
+      `CONVERSATION:\n${convo}`,
+      4000
     );
-    const data = JSON.parse(response.text || '{}');
+    const data = safeParseJson<Partial<IntakeData>>(text, 'extractIntake');
+    const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
     return {
       fullName: data.fullName || 'Prospective Client',
       contact: data.contact || '',
       matterType: data.matterType || 'General Inquiry',
       jurisdiction: data.jurisdiction || '',
       summary: data.summary || '',
+      detailedNarrative: data.detailedNarrative || '',
       incidentDate: data.incidentDate || '',
       opposingParties: data.opposingParties || '',
       deadlines: data.deadlines || '',
       injuriesOrDamages: data.injuriesOrDamages || '',
       desiredOutcome: data.desiredOutcome || '',
       priorCounsel: data.priorCounsel || '',
+      witnesses: data.witnesses || '',
+      evidenceMentioned: data.evidenceMentioned || '',
+      financialImpact: data.financialImpact || '',
+      priorLegalActions: data.priorLegalActions || '',
+      emotionalState: data.emotionalState || '',
+      keyFacts: arr<string>(data.keyFacts),
+      clientQuotes: arr<string>(data.clientQuotes),
+      openQuestions: arr<string>(data.openQuestions),
+      timeline: arr<{ date: string; event: string }>(data.timeline),
+      parties: arr<{ name: string; role: string }>(data.parties),
     };
-  }, 3);
+}, 3);
 };
 
 const specialistList = LEGAL_SPECIALISTS.map(
@@ -94,17 +165,12 @@ const specialistList = LEGAL_SPECIALISTS.map(
 
 /**
  * Score the intake for case strength + firm fit, decide a disposition, and route
- * it to the right specialist department.
+ * it to the right specialist department. Uses DeepSeek as primary.
  */
 export const scoreIntake = async (intake: IntakeData): Promise<IntakeScore> => {
   return retryWithBackoff(async () => {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-          parts: [
-            {
-              text: `You are the case evaluation committee for a law firm. Score this intake from 0-100 on overall case strength and firm fit, then route it.
+    const text = await callDeepSeekJson(
+      `You are the case evaluation committee for a law firm. Score this intake from 0-100 on overall case strength and firm fit, then route it.
 
 Scoring guidance:
 - Strong liability/merits, clear damages, within deadlines, and a viable defendant → high score (75-100).
@@ -123,49 +189,17 @@ ${specialistList}
 "clientMessage" is shown directly to the prospective client — make it warm, professional, and human:
 - accepted: tell them the firm is taking a close look and the relevant team will reach out, reference their matter type.
 - review: tell them their matter is under review and someone will follow up.
-- denied: kindly explain the firm may not be the right fit, encourage them to seek other counsel promptly (especially if deadlines apply), and stay respectful and supportive. Never be cold or dismissive.
+- denied: kindly explain the firm may not be the right fit, encourage them to seek other counsel promptly.
 
-INTAKE RECORD:
-${JSON.stringify(intake, null, 2)}`,
-            },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              score: { type: Type.NUMBER },
-              recommendedDepartment: { type: Type.STRING },
-              recommendedAgentId: { type: Type.STRING },
-              urgency: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
-              reasoning: { type: Type.STRING },
-              clientMessage: { type: Type.STRING },
-              factors: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    label: { type: Type.STRING },
-                    impact: { type: Type.STRING, enum: ['positive', 'negative', 'neutral'] },
-                    note: { type: Type.STRING },
-                  },
-                  required: ['label', 'impact'],
-                },
-              },
-            },
-            required: ['score', 'recommendedAgentId', 'clientMessage', 'urgency'],
-          },
-        },
-      }),
-      30000
+Return ONLY valid JSON with fields: score, recommendedDepartment, recommendedAgentId, urgency, reasoning, clientMessage, factors[].`,
+      `INTAKE RECORD:\n${JSON.stringify(intake, null, 2)}`,
+      3000
     );
-    const data = JSON.parse(response.text || '{}');
+    const data = safeParseJson<any>(text, 'scoreIntake');
     const rawScore = Math.max(0, Math.min(100, Math.round(Number(data.score) || 0)));
     const disposition =
       rawScore >= ACCEPT_BENCHMARK ? 'accepted' : rawScore >= REVIEW_BENCHMARK ? 'review' : 'denied';
 
-    // Resolve the routed specialist (fall back gracefully if the model picked an unknown id).
     const matched = LEGAL_SPECIALISTS.find(s => s.id === data.recommendedAgentId);
 
     return {

@@ -1,26 +1,30 @@
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, BrainCircuit, Gavel, Settings as SettingsIcon,
-  Menu, X, Mic, FileAudio, ClipboardList, Archive, UserCheck, BookOpen, TrendingUp,
-  Mail, ChevronDown, ChevronUp, Scale, Zap, DollarSign, UserCircle2, Shield, PhoneCall, Inbox, Network,
-  Cloud, CloudOff, Loader2, LogOut
+  Menu, X, Mic, FileAudio, ClipboardList,   Archive, UserCheck, BookOpen, TrendingUp, BarChart3,
+  Mail, ChevronDown, ChevronUp, Scale, Zap, Search, DollarSign, CreditCard, UserCircle2, Shield, PhoneCall, Inbox, Network, Calculator,
+  Cloud, CloudOff, Loader2, LogOut, Activity, MessageSquare, FileSearch, Upload, User, Clock, GitCompare, Calendar, Download, Youtube
 } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
 // ─── Eagerly loaded (needed on every page or at auth boundary) ────────────
 import ErrorBoundary from './components/ErrorBoundary';
-import FloatingVoiceButton from './components/FloatingVoiceButton';
 import ActiveCaseBar from './components/ActiveCaseBar';
 import CopilotSidebar from './components/CopilotSidebar';
 
 // ─── Lazy-loaded pages ────────────────────────────────────────────────────
 const Dashboard        = React.lazy(() => import('./components/Dashboard'));
+const IntakeHub        = React.lazy(() => import('./components/IntakeHub'));
+const MediaStudio      = React.lazy(() => import('./components/MediaStudio'));
+const AITeamHub        = React.lazy(() => import('./components/AITeamHub'));
 const CaseManager      = React.lazy(() => import('./components/CaseManager'));
 const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
 const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
+const MailRoom         = React.lazy(() => import('./components/MailRoom'));
+const IntercomPanel    = React.lazy(() => import('./components/IntercomPanel'));
 const ArgumentPractice = React.lazy(() => import('./components/ArgumentPractice'));
 const LandingPage      = React.lazy(() => import('./components/LandingPage'));
 const PrivacyPolicy    = React.lazy(() => import('./components/PrivacyPolicy'));
@@ -38,7 +42,7 @@ const LegalTeam        = React.lazy(() => import('./components/LegalTeam'));
 const WitnessPrep      = React.lazy(() => import('./components/WitnessPrep'));
 const JurySimulator    = React.lazy(() => import('./components/JurySimulator'));
 const Pricing          = React.lazy(() => import('./components/Pricing'));
-const OnboardingModal  = React.lazy(() => import('./components/OnboardingModal'));
+const OnboardingWizard = React.lazy(() => import('./components/OnboardingWizard'));
 const Integrations     = React.lazy(() => import('./components/Integrations'));
 const DeadlineTracker  = React.lazy(() => import('./components/DeadlineTracker'));
 const IntakePage       = React.lazy(() => import('./components/IntakePage'));
@@ -50,11 +54,43 @@ const PublicIntake     = React.lazy(() => import('./components/PublicIntake'));
 const CaseOrchestrator = React.lazy(() => import('./components/CaseOrchestrator'));
 const UserGuide        = React.lazy(() => import('./components/UserGuide'));
 const AuthPage         = React.lazy(() => import('./components/AuthPage'));
+const EnrollPage       = React.lazy(() => import('./components/EnrollPage'));
+const FirmAdminPanel   = React.lazy(() => import('./components/FirmAdminPanel'));
+const CaseThreadView   = React.lazy(() => import('./components/CaseThread'));
+const DiscoveryManager = React.lazy(() => import('./components/DiscoveryManager'));
+const EvidenceTimeline = React.lazy(() => import('./components/EvidenceTimeline'));
+const BulkDocumentUpload = React.lazy(() => import('./components/BulkDocumentUpload'));
+const ClientPortal     = React.lazy(() => import('./components/ClientPortal'));
+const CasePipeline     = React.lazy(() => import('./components/CasePipeline'));
+const KnowledgeBase     = React.lazy(() => import('./components/KnowledgeBase'));
+const GrowthDashboard   = React.lazy(() => import('./components/GrowthDashboard'));
+const CourtRules        = React.lazy(() => import('./components/CourtRules'));
+const TubeScribe        = React.lazy(() => import('./components/TubeScribe'));
+const AnalyticsDashboard = React.lazy(() => import('./components/AnalyticsDashboard'));
+const PaymentCenter     = React.lazy(() => import('./components/PaymentCenter'));
+const PracticeTools     = React.lazy(() => import('./components/PracticeTools'));
+const DocumentCompare   = React.lazy(() => import('./components/DocumentCompare'));
+const ExportImport      = React.lazy(() => import('./components/ExportImport'));
+const CalendarView      = React.lazy(() => import('./components/CalendarView'));
+const EvidenceMapper    = React.lazy(() => import('./components/EvidenceMapper'));
+const BillingDashboard = React.lazy(() => import('./components/BillingDashboard'));
+const ProSeIntakeWizard= React.lazy(() => import('./components/ProSeIntakeWizard'));
 
 import { MOCK_CASES } from './constants';
 import { Case } from './types';
-import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences } from './utils/storage';
-import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel } from './services/caseStore';
+import { loadCases, saveCases, loadActiveCaseId, saveActiveCaseId, loadPreferences, savePreferences, OperatingMode } from './utils/storage';
+import { backgroundEngine } from './services/backgroundAgentEngine';
+import { getCurrentTier, isFeatureAvailable, getTierLabel } from './services/tierService';
+import type { ProductTier } from './types';
+import { caseMonitor } from './services/caseMonitor';
+import { orchestrator } from './services/agentOrchestrator';
+import { consolidateMemory } from './services/agentMemory';
+import { OPERATIONAL_AGENTS } from './agents/personas';
+import { flushRetryQueue } from './services/intakeStore';
+import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
+import NotificationCenter from './components/NotificationCenter';
+import AgentStatusDashboard from './components/AgentStatusDashboard';
+import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel, adoptFirmIdFromUser } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import type { User } from '@supabase/supabase-js';
@@ -66,54 +102,52 @@ const PageSpinner = () => (
   </div>
 );
 
+// Menu philosophy: 4 groups that mirror how a firm actually works —
+// daily essentials, working a case, courtroom prep, and running the office.
+// Sibling features live behind ONE entry as tabbed hubs (Client Intake =
+// inbox + Maya voice; AI Legal Team = chat + voice reception; Media Studio =
+// transcriber + TubeScribe). Badges only where they carry real information.
 const NAV_GROUPS = [
   {
-    label: 'Case Management',
+    label: 'Daily',
     items: [
       { path: '/app', icon: LayoutDashboard, label: 'Dashboard' },
-      { path: '/app/intake-inbox', icon: Inbox, label: 'Intake Inbox', badge: 'Live' },
-      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
       { path: '/app/cases', icon: Gavel, label: 'Case Files' },
-      { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
-      { path: '/app/war-room', icon: Shield, label: 'War Room' },
+      { path: '/app/intake-hub', icon: Inbox, label: 'Client Intake', badge: 'Maya' },
+      { path: '/app/calendar', icon: Calendar, label: 'Calendar' },
     ]
   },
   {
-    label: 'Legal Team',
+    label: 'Case Work',
     items: [
-      { path: '/app/firm', icon: PhoneCall, label: 'Talk to the Firm', badge: 'Voice' },
-      { path: '/app/legal-team', icon: Scale, label: 'AI Lawyers', badge: '12' },
+      { path: '/app/evidence', icon: Archive, label: 'Evidence Vault' },
+      { path: '/app/discovery', icon: FileSearch, label: 'Discovery' },
+      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy Room' },
+      { path: '/app/docs', icon: FileText, label: 'Drafting' },
+      { path: '/app/pipeline', icon: Activity, label: 'Case Pipeline' },
+      { path: '/app/knowledge', icon: BookOpen, label: 'Knowledge Base' },
     ]
   },
   {
-    label: 'Courtroom Prep',
+    label: 'Courtroom',
     items: [
       { path: '/app/practice', icon: Mic, label: 'Trial Simulator' },
-      { path: '/app/witness-lab', icon: Users, label: 'Witness Lab' },
       { path: '/app/witnesses', icon: UserCheck, label: 'Witness Prep' },
-      { path: '/app/jury', icon: UserCircle2, label: 'Jury Analyzer' },
-      { path: '/app/jury-sim', icon: Users, label: 'Jury Simulator' },
       { path: '/app/deposition', icon: ClipboardList, label: 'Deposition Prep' },
+      { path: '/app/jury-sim', icon: Users, label: 'Jury Analysis' },
     ]
   },
   {
-    label: 'Drafting & Strategy',
+    label: 'Firm Office',
     items: [
-      { path: '/app/statements', icon: BookOpen, label: 'Statement Builder' },
-      { path: '/app/docs', icon: FileText, label: 'Drafting Assistant' },
-      { path: '/app/strategy', icon: BrainCircuit, label: 'Strategy & AI' },
-      { path: '/app/verdict', icon: TrendingUp, label: 'Verdict Predictor' },
-    ]
-  },
-  {
-    label: 'Tools',
-    items: [
-      { path: '/app/transcriber', icon: FileAudio, label: 'Transcriber & OCR' },
-      { path: '/app/client-update', icon: Mail, label: 'Client Updates' },
-      { path: '/app/deadlines', icon: ClipboardList, label: 'Deadline Tracker' },
-      { path: '/app/foia', icon: FileText, label: 'FOIA & Records' },
-      { path: '/app/integrations', icon: Zap, label: 'Integrations' },
-      { path: '/app/guide', icon: BookOpen, label: 'User Guide' },
+      { path: '/app/ai-team', icon: Scale, label: 'AI Legal Team', badge: '12' },
+      { path: '/app/firm-command', icon: Network, label: 'Firm Command', badge: 'Auto' },
+      { path: '/app/mail-room', icon: Mail, label: 'Mail Room' },
+      { path: '/app/client-portal', icon: User, label: 'Client Portal' },
+      { path: '/app/growth', icon: TrendingUp, label: 'CRM & Growth' },
+      { path: '/app/billing', icon: DollarSign, label: 'Billing' },
+      { path: '/app/media', icon: FileAudio, label: 'Media Studio' },
+      { path: '/app/analytics', icon: BarChart3, label: 'Analytics' },
     ]
   },
 ];
@@ -122,7 +156,42 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const { syncStatus } = React.useContext(AppContext);
+  const [navSearch, setNavSearch] = useState('');
+  const { syncStatus, operatingMode, productTier } = React.useContext(AppContext);
+
+  const filteredNavGroups = React.useMemo(() => {
+    let groups = NAV_GROUPS;
+    if (operatingMode === 'companion') {
+      // Pro-se companion mode: hide firm-management features, keep the
+      // personal case-work essentials.
+      groups = groups.map(group => {
+        if (group.label === 'Daily') {
+          return {
+            ...group,
+            label: 'My Case',
+            items: group.items.filter(item => item.label !== 'Client Intake'),
+          };
+        }
+        if (group.label === 'Firm Office') {
+          return {
+            ...group,
+            label: 'My Tools',
+            items: group.items.filter(item =>
+              ['AI Legal Team', 'Media Studio', 'Client Portal'].includes(item.label)
+            ),
+          };
+        }
+        return group;
+      }).filter(group => group.items.length > 0);
+    }
+
+    if (!navSearch.trim()) return groups;
+    const q = navSearch.toLowerCase();
+    return groups.map(group => ({
+      ...group,
+      items: group.items.filter((item: any) => item.label.toLowerCase().includes(q)),
+    })).filter(group => group.items.length > 0);
+  }, [navSearch, operatingMode, productTier]);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -153,7 +222,19 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3">
-          {NAV_GROUPS.map(group => (
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={navSearch}
+                onChange={e => setNavSearch(e.target.value)}
+                className="w-full bg-slate-800/60 text-slate-300 text-xs pl-7 pr-2 py-1.5 rounded-lg border border-slate-700/60 focus:border-gold-500/50 focus:outline-none placeholder-slate-600"
+              />
+            </div>
+          </div>
+          {filteredNavGroups.map(group => (
             <div key={group.label} className="mb-1">
               <button
                 onClick={() => toggleGroup(group.label)}
@@ -194,6 +275,17 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
             {syncStatus === 'error' && <><CloudOff size={13} className="text-amber-400" /><span className="text-amber-400">Cloud unavailable</span></>}
             {syncStatus === 'local-only' && <><CloudOff size={13} className="text-slate-600" /><span className="text-slate-600">Local only</span></>}
           </div>
+          {/* Product tier badge */}
+          <Link to="/app/firm-admin" onClick={() => setIsOpen(false)}
+            className="flex items-center gap-2 px-5 py-2 text-xs">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              productTier === 'enterprise' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+              productTier === 'professional' ? 'bg-gold-500/20 text-gold-400 border border-gold-500/30' :
+              'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+            }`}>
+              {getTierLabel(productTier)}
+            </span>
+          </Link>
           <Link to="/pricing" onClick={() => setIsOpen(false)}
             className="flex items-center gap-3 px-5 py-2.5 text-sm text-slate-400 hover:text-white transition-all">
             <DollarSign size={17} />
@@ -216,7 +308,7 @@ const Sidebar = ({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
 
 const Layout = ({ children }: { children?: React.ReactNode }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { user } = React.useContext(AppContext);
+  const { user, theme } = React.useContext(AppContext);
   const location = useLocation();
 
   // Derive display name from user metadata, falling back to preferences then email
@@ -229,15 +321,16 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100">
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-gray-50 text-gray-900' : 'bg-[#020617] text-slate-100'}`}>
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
       <div className="md:ml-64 min-h-screen flex flex-col">
-        <header className="h-14 glass-dark border-b border-white/5 sticky top-0 z-30 px-6 flex items-center justify-between">
+        <header className="h-14 glass-dark border-b border-white/5 sticky top-0 z-30 px-3 sm:px-4 md:px-6 flex items-center justify-between">
           <button className="md:hidden text-slate-400" onClick={() => setIsSidebarOpen(true)}>
             <Menu size={22} />
           </button>
           <div className="flex items-center gap-4 ml-auto">
+            <NotificationCenter />
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-sm font-semibold text-white">{displayName}</span>
               {titleLine && <span className="text-xs text-slate-400">{titleLine}</span>}
@@ -264,7 +357,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
-              className="flex-1 p-4 sm:p-6 md:p-8"
+              className="flex-1 p-3 sm:p-4 md:p-6 lg:p-8"
             >
               <ErrorBoundary label={location.pathname.split('/').pop() || 'Page'}>
                 <Suspense fallback={<PageSpinner />}>
@@ -315,6 +408,9 @@ export const AppContext = React.createContext<{
   deleteCase: (id: string) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
+  operatingMode: OperatingMode;
+  setOperatingMode: (m: OperatingMode) => void;
+  productTier: ProductTier;
   syncStatus: SyncStatus;
   user: User | null;
   authLoading: boolean;
@@ -327,6 +423,9 @@ export const AppContext = React.createContext<{
   deleteCase: () => {},
   theme: 'dark',
   setTheme: () => {},
+  operatingMode: 'partner',
+  setOperatingMode: () => {},
+  productTier: 'professional',
   syncStatus: 'local-only',
   user: null,
   authLoading: true,
@@ -347,6 +446,8 @@ const App = () => {
   });
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const [theme, setThemeState] = useState<'dark' | 'light'>(() => loadPreferences().theme ?? 'dark');
+  const [operatingMode, setOperatingModeState] = useState<OperatingMode>(() => loadPreferences().operatingMode ?? 'partner');
+  const [productTier, setProductTierState] = useState<ProductTier>(() => getCurrentTier());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -362,6 +463,13 @@ const App = () => {
     const unsub = onAuthStateChange((u, _session) => {
       setUser(u);
       setAuthLoading(false);
+      // Claim a firm_memberships row for the signed-in user. Firm-scoped RLS
+      // (cases, client_invites, intakes, …) resolves the user's firm via
+      // get_user_firm_id(), which reads firm_memberships — without this the
+      // user has no firm and every firm-scoped write is rejected by RLS
+      // ("new row violates row-level security policy"). Fires on the initial
+      // session and on sign-in; it's idempotent and best-effort.
+      if (u) void adoptFirmIdFromUser(u);
     });
     // Safety net: if auth check takes >5 s, unblock the UI anyway
     const timeout = setTimeout(() => setAuthLoading(false), 5000);
@@ -400,6 +508,11 @@ const App = () => {
     savePreferences({ theme: t });
   };
 
+  const setOperatingMode = (m: OperatingMode) => {
+    setOperatingModeState(m);
+    savePreferences({ operatingMode: m });
+  };
+
   const setActiveCase = (c: Case) => {
     setActiveCaseState(c);
     saveActiveCaseId(c.id);
@@ -413,9 +526,12 @@ const App = () => {
     if (!activeCase) {
       setActiveCase(newCase);
     }
+    // Auto-trigger new case intake workflow
+    onCaseCreated(newCase).catch(() => {});
   };
 
   const updateCase = (updatedCase: Case) => {
+    const previous = cases.find(c => c.id === updatedCase.id);
     const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
     setCases(updated);
     saveCases(updated);
@@ -424,6 +540,8 @@ const App = () => {
       setActiveCaseState(updatedCase);
       saveActiveCaseId(updatedCase.id);
     }
+    // Auto-trigger event-based workflows (deadline proximity, win prob drop, etc.)
+    onCaseUpdated(updatedCase, previous).catch(() => {});
   };
 
   const deleteCase = (id: string) => {
@@ -464,15 +582,9 @@ const App = () => {
     return unsub;
   }, []);
 
-  // Keep localStorage + Supabase in sync on every cases change.
-  const hasMounted = React.useRef(false);
+  // Keep localStorage in sync on every cases change.
   useEffect(() => {
     saveCases(cases);
-    if (hasMounted.current) {
-      syncLocalCasesToCloud(cases);
-    } else {
-      hasMounted.current = true;
-    }
   }, [cases]);
 
   const handleCloseOnboarding = () => {
@@ -480,12 +592,35 @@ const App = () => {
     setShowOnboarding(false);
   };
 
+  // ─── Start autonomous AI engine on mount ──────────────────────────────────
+  useEffect(() => {
+    backgroundEngine.start();
+    caseMonitor.start();
+    orchestrator.cleanup(); // clean up stale completed workflows
+    flushRetryQueue().catch(() => {}); // retry any intakes that failed to save
+
+    // Periodic memory consolidation — runs every 6 hours while the app is open
+    const consolidationInterval = setInterval(() => {
+      const storedCaseId = loadActiveCaseId();
+      if (!storedCaseId) return;
+      for (const agent of OPERATIONAL_AGENTS) {
+        consolidateMemory(agent.id, storedCaseId).catch(() => {});
+      }
+    }, 6 * 60 * 60 * 1000);
+
+    return () => {
+      backgroundEngine.stop();
+      caseMonitor.stop();
+      clearInterval(consolidationInterval);
+    };
+  }, []);
+
   return (
-    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, syncStatus, user, authLoading }}>
+    <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, operatingMode, setOperatingMode, productTier, syncStatus, user, authLoading }}>
       <BrowserRouter>
         {showOnboarding && user && (
           <Suspense fallback={null}>
-            <OnboardingModal onClose={handleCloseOnboarding} />
+            <OnboardingWizard onClose={handleCloseOnboarding} />
           </Suspense>
         )}
 
@@ -496,12 +631,24 @@ const App = () => {
             <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/tos" element={<TermsOfService />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="/enroll" element={<EnrollPage />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/start" element={<IntakePage />} />
             <Route path="/intake" element={<PublicIntake />} />
+            <Route path="/intake/:token" element={<PublicIntake />} />
+            <Route path="/client" element={<ClientPortal />} />
 
             {/* Protected routes — require authentication */}
             <Route path="/app" element={<AuthGate><Layout><Dashboard /></Layout></AuthGate>} />
+            <Route path="/app/client-portal" element={<AuthGate><Layout><ClientPortal /></Layout></AuthGate>} />
+            {/* Tabbed hubs — combine sibling features under one menu entry.
+                The original standalone routes below stay registered so old
+                links and in-app navigations keep working. */}
+            <Route path="/app/intake-hub" element={<AuthGate><Layout><IntakeHub /></Layout></AuthGate>} />
+            <Route path="/app/media" element={<AuthGate><Layout><MediaStudio /></Layout></AuthGate>} />
+            <Route path="/app/ai-team" element={<AuthGate><Layout><AITeamHub /></Layout></AuthGate>} />
+            <Route path="/app/intake" element={<AuthGate><Layout><IntakePage /></Layout></AuthGate>} />
             <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
             <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
             <Route path="/app/cases" element={<AuthGate><Layout><CaseManager /></Layout></AuthGate>} />
@@ -509,29 +656,50 @@ const App = () => {
             <Route path="/app/witness-lab" element={<AuthGate><Layout><WitnessLab /></Layout></AuthGate>} />
             <Route path="/app/witnesses" element={<AuthGate><Layout><WitnessPrep /></Layout></AuthGate>} />
             <Route path="/app/strategy" element={<AuthGate><Layout><StrategyRoom /></Layout></AuthGate>} />
+              <Route path="/app/mail-room" element={<AuthGate><Layout><MailRoom /></Layout></AuthGate>} />
+              <Route path="/app/intercom" element={<AuthGate><Layout><IntercomPanel /></Layout></AuthGate>} />
             <Route path="/app/transcriber" element={<AuthGate><Layout><Transcriber /></Layout></AuthGate>} />
             <Route path="/app/docs" element={<AuthGate><Layout><DraftingAssistant /></Layout></AuthGate>} />
             <Route path="/app/settings" element={<AuthGate><Layout><SettingsPage /></Layout></AuthGate>} />
+            <Route path="/app/firm-admin" element={<AuthGate><Layout><FirmAdminPanel /></Layout></AuthGate>} />
             <Route path="/app/deposition" element={<AuthGate><Layout><DepositionPrep /></Layout></AuthGate>} />
+            <Route path="/app/calculator" element={<AuthGate><Layout><PracticeTools /></Layout></AuthGate>} />
             <Route path="/app/evidence" element={<AuthGate><Layout><EvidenceVault /></Layout></AuthGate>} />
+            <Route path="/app/timeline" element={<AuthGate><Layout><EvidenceTimeline /></Layout></AuthGate>} />
+            <Route path="/app/discovery" element={<AuthGate><Layout><DiscoveryManager /></Layout></AuthGate>} />
+            <Route path="/app/upload" element={<AuthGate><Layout><BulkDocumentUpload /></Layout></AuthGate>} />
             <Route path="/app/jury" element={<AuthGate><Layout><JuryAnalyzer /></Layout></AuthGate>} />
             <Route path="/app/jury-sim" element={<AuthGate><Layout><JurySimulator /></Layout></AuthGate>} />
             <Route path="/app/statements" element={<AuthGate><Layout><StatementBuilder /></Layout></AuthGate>} />
             <Route path="/app/verdict" element={<AuthGate><Layout><VerdictPredictor /></Layout></AuthGate>} />
+            <Route path="/app/knowledge" element={<AuthGate><Layout><KnowledgeBase /></Layout></AuthGate>} />
+            <Route path="/app/tubescribe" element={<AuthGate><Layout><TubeScribe /></Layout></AuthGate>} />
+            <Route path="/app/compare" element={<AuthGate><Layout><DocumentCompare /></Layout></AuthGate>} />
+            <Route path="/app/court-rules" element={<AuthGate><Layout><CourtRules /></Layout></AuthGate>} />
+            <Route path="/app/analytics" element={<AuthGate><Layout><AnalyticsDashboard /></Layout></AuthGate>} />
             <Route path="/app/client-update" element={<AuthGate><Layout><ClientUpdate /></Layout></AuthGate>} />
             <Route path="/app/legal-team" element={<AuthGate><Layout><LegalTeam /></Layout></AuthGate>} />
+            <Route path="/app/agent-status" element={<AuthGate><Layout><AgentStatusDashboard /></Layout></AuthGate>} />
             <Route path="/app/integrations" element={<AuthGate><Layout><Integrations /></Layout></AuthGate>} />
+            <Route path="/app/export" element={<AuthGate><Layout><ExportImport /></Layout></AuthGate>} />
             <Route path="/app/deadlines" element={<AuthGate><Layout><DeadlineTracker /></Layout></AuthGate>} />
             <Route path="/app/war-room" element={<AuthGate><Layout><WarRoom /></Layout></AuthGate>} />
             <Route path="/app/foia" element={<AuthGate><Layout><FoiaCenter /></Layout></AuthGate>} />
+            <Route path="/app/pipeline" element={<AuthGate><Layout><CasePipeline /></Layout></AuthGate>} />
+            <Route path="/app/mapper" element={<AuthGate><Layout><EvidenceMapper /></Layout></AuthGate>} />
+            <Route path="/app/billing" element={<AuthGate><Layout><BillingDashboard /></Layout></AuthGate>} />
+            <Route path="/app/calendar" element={<AuthGate><Layout><CalendarView /></Layout></AuthGate>} />
+            <Route path="/app/payments" element={<AuthGate><Layout><PaymentCenter /></Layout></AuthGate>} />
+            <Route path="/app/growth" element={<AuthGate><Layout><GrowthDashboard /></Layout></AuthGate>} />
             <Route path="/app/firm" element={<AuthGate><Layout><FirmReception /></Layout></AuthGate>} />
             <Route path="/app/guide" element={<AuthGate><Layout><UserGuide /></Layout></AuthGate>} />
+            <Route path="/app/companion-setup" element={<AuthGate><Layout><ProSeIntakeWizard /></Layout></AuthGate>} />
 
+            <Route path="/app/case-thread" element={<AuthGate><Layout><CaseThreadView /></Layout></AuthGate>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </BrowserRouter>
-      <FloatingVoiceButton />
       <ToastContainer aria-label="Notifications" />
     </AppContext.Provider>
   );

@@ -227,7 +227,7 @@ Based on ROADMAP.md analysis, implement in this order:
 
 ## 💡 Unique Selling Points
 
-LexSim stands out with:
+CaseBuddy stands out with:
 
 1. **Live Voice Trial Simulation** - No competitor has this
 2. **AI Jury Deliberation** (planned) - Unique feature
@@ -339,7 +339,7 @@ Audio:
 
 ## 📝 Summary
 
-**LexSim is now a functional MVP with:**
+**CaseBuddy is now a functional MVP with:**
 - ✅ Persistent storage (no data loss!)
 - ✅ Full settings functionality
 - ✅ Industry-leading voice features

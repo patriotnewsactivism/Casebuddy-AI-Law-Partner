@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo} from 'react';
 import {
   FileText, Sparkles, Download, Copy, Check, AlertCircle, Loader2,
   Send, Trash2, Save, Mail, X, Clock,
@@ -123,6 +123,16 @@ const FoiaCenter: React.FC = () => {
     try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : []; }
     catch { return []; }
   });
+  const [requestSearch, setRequestSearch] = React.useState('');
+  const filteredRequests = useMemo(() => {
+    if (!requestSearch.trim()) return requests;
+    const q = requestSearch.toLowerCase();
+    return requests.filter(r =>
+      r.agency?.toLowerCase().includes(q) ||
+      r.recordsSought?.toLowerCase().includes(q) ||
+      r.status?.toLowerCase().includes(q)
+    );
+  }, [requests, requestSearch]);
   const [followUpId, setFollowUpId] = useState<string | null>(null);
   const [followUpText, setFollowUpText] = useState('');
   const [followUpLoading, setFollowUpLoading] = useState(false);
@@ -521,7 +531,7 @@ Output ONLY the follow-up letter.`;
           </div>
         ) : (
           <div className="space-y-3">
-            {requests.map(req => (
+            {filteredRequests.map(req => (
               <div key={req.id} className={`rounded-xl border transition-all p-4 ${cardBorder(req)}`}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">

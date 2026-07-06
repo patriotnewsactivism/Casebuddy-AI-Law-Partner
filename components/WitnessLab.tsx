@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useMemo} from 'react';
 import { MOCK_WITNESSES } from '../constants';
 import { AppContext } from '../App';
 import { generateWitnessResponse, generateWitnessCoaching } from '../services/geminiService';
 import { Message, Witness } from '../types';
 import { Send, User, ShieldAlert, HeartPulse, Lightbulb, MessageSquare, BookOpen, AlertTriangle } from 'lucide-react';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 import VoiceMicButton from './VoiceMicButton';
 
@@ -91,8 +92,7 @@ const WitnessLab = () => {
         activeCase?.summary || "A generic legal case."
       );
       setCoachingTip(coaching);
-    } catch (error) {
-      console.error('Witness simulation error:', error);
+    } catch (err) {
       const errorMsg: Message = {
         id: Date.now().toString(),
         sender: 'system',
@@ -100,14 +100,15 @@ const WitnessLab = () => {
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
     }
-
-    setIsTyping(false);
   };
 
   return (
     <div className="space-y-4">
       <AgentHeader agent={REX} compact />
+      <AIDisclaimer variant="full" className="mb-4" />
       <div className="h-[calc(100vh-10rem)] flex gap-4">
       {/* Left Sidebar: Witness Selection */}
       <div className="w-64 flex flex-col gap-4 bg-slate-800 border border-slate-700 rounded-xl p-4 overflow-y-auto hidden lg:flex">

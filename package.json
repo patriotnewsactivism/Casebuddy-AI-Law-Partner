@@ -1,7 +1,7 @@
 {
   "name": "casebuddy-ai-lawfirm",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,12 +28,15 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "react-toastify": "^11.0.5",
-    "recharts": "^3.4.1"
+    "recharts": "^3.4.1",
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "pdfjs-dist": "^4.4.168"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vercel/node": "^5.8.17",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.15",

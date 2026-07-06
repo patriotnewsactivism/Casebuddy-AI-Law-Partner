@@ -5,6 +5,7 @@ import { generateWitnessPrepPackage } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError, handleSuccess } from '../utils/errorHandler';
 import AgentHeader from './AgentHeader';
+import AIDisclaimer from './AIDisclaimer';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
 
 const rex = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
@@ -250,13 +251,14 @@ const WitnessPrep: React.FC = () => {
     }
   };
 
-  const deleteWitness = (id: string) => save(witnesses.filter(w => w.id !== id));
+  const deleteWitness = (id: string) => { if (!window.confirm('Remove this witness profile?')) return; save(witnesses.filter(w => w.id !== id)); };
 
   const viewing = viewingId ? witnesses.find(w => w.id === viewingId) : null;
 
   return (
     <div className="space-y-6">
       <AgentHeader agent={rex} />
+      <AIDisclaimer variant="full" className="mb-4" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Input form */}

@@ -1,10 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2 } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock, HeartHandshake, AlertCircle, Loader2, Copy, Upload } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
-import { IntakeScore } from '../types';
+import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
+import { emailIntakeHandoff } from '../services/firmComms';
+import { IntakeData, IntakeScore } from '../types';
+import { toast } from 'react-toastify';
+import {
+  detectAndSwitchLanguage, getMayaLanguageProfile, getMayaWrapUpText,
+  generateDocumentRequestLink, getDocumentRequestText,
+  type SupportedLanguage, type MayaLanguageProfile
+} from '../services/mayaEnhancementsService';
 
 // Public, link-shareable voice intake. A prospect opens the link, Maya picks up
 // in her own voice, greets them, and conducts the intake. On finish we distill
@@ -14,48 +22,150 @@ import { IntakeScore } from '../types';
 // Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
 const MAYA_VOICE = 'aura-2-thalia-en';
 
-const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. Warm, quick, and sharp.
+// When a client token is present, Maya already knows who she's speaking with
+// This is injected at runtime inside the component after invite resolves
+const MAYA_INTAKE_PROMPT = `You are Maya, the intake specialist at CaseBuddy. You answer the phone like a real person at a real law firm — warm, professional, and genuinely interested in helping. You're the first voice people hear, and you make them feel like they called the right place.
 
-YOUR GOAL: learn these four things, then wrap up:
-1. What happened (let them say it once — never re-ask)
-2. When it happened
-3. Who's involved (them + the other party)
-4. What they want (advice, representation, or referral?)
+YOUR GOAL — come away with ALL of this (it goes straight into the attorney's file):
+1. Their NAME — right after they explain what's going on, ask naturally: "Of course — and who am I speaking with?" Then use their first name for the rest of the call.
+2. What HAPPENED — let them tell the full story. Don't interrupt, don't rush. If they pause, wait — silence is fine.
+3. WHEN it happened (rough timeframe is fine)
+4. WHO they're up against (person, company, employer, insurer, landlord, etc.)
+5. Any INJURIES, damages, or financial impact
+6. What they're hoping for — advice, representation, or a referral?
+7. Their CONTACT INFO — ask before wrapping up: "What's the best number to reach you at?" Read it back to confirm.
+8. SCHEDULING — offer a consultation directly. Don't just say "we'll be in touch." Give them real options: "The attorney has some availability — would Tuesday afternoon or Thursday morning work better?" Lock in a time and confirm it.
 
-PACING — keep it moving:
-- One clear answer = move on immediately.
-- Once you have all four points, give a warm 1-sentence wrap-up and tell them the team will be in touch.
-- Target: under 3 minutes. Don't pad. Don't linger.
+PACING — efficient, never rushed:
+- Let them finish completely. If they're mid-story, stay quiet. A scared or upset person may ramble — that's okay. Capture everything.
+- Never re-ask something they've already told you. Track what you know.
+- Once you have a piece of info, move forward — don't pad or repeat.
+- After you have everything, wrap up warmly and confirm contact info and consultation time.
 
-VOICE STYLE — sound human, not scripted:
-- Short sentences. Contractions. Real phrases: "Got it", "Okay and—", "Makes sense."
-- Never say "I understand your frustration" or "Thank you for sharing that" — robotic.
-- If they're upset: "I hear you." Then move forward with care.
-- NEVER say "Certainly!", "Absolutely!", "Of course!" — ever.
-- No legal advice. If they ask about their case: "Our attorneys will review everything and reach out."
+VOICE STYLE — sound like a real human:
+- Contractions always: "I'm", "we'll", "that's", "you're", "don't".
+- Natural transitions: "So…", "Okay, and…", "Got it — and when did this happen?", "Tell me a little more about…"
+- Vary acknowledgments: "Got it.", "Okay.", "Right.", "I see.", "Mm-hmm." — never the same one back to back.
+- NEVER say "Certainly!", "Absolutely!", "Of course!" — ever. These are dead giveaways of a script.
+- NEVER say "I understand your frustration" or "Thank you for sharing that" — hollow and robotic.
+- When they describe something hard: "That sounds really stressful." or "That's a lot." — then a brief natural pause, then continue.
+- When they finish a long story: "Okay, I got all of that." or "Okay, I'm with you." Then move forward.
 
 CRITICAL — NO LOOPING:
-- Track what they've already told you. Never re-ask anything.
-- If they covered multiple items at once, move forward — don't retrace.
-- You do NOT need every detail. Name + what happened + basic context = enough to wrap up.
+- Never re-ask for their name once given. Never re-ask for contact info. Never re-ask anything.
+- If they gave you multiple pieces at once, absorb it all and only ask about what's genuinely still missing.
+- Track the conversation state in your head. Move forward, not in circles.
 
-If directly asked: you're an AI intake specialist at CaseBuddy — not a licensed attorney.`;
+WRAPPING UP:
+- Before closing, confirm you have: their name, a phone number or email, and a consultation time (or that they declined one).
+- Close warmly: "Okay [name], I've got everything I need. One of our attorneys is going to take a look at this and reach out to you at the number you gave me. You did the right thing calling." If they booked a time, confirm it once more.
 
-// Short, punchy greeting — gets Maya talking fast without a long intro
-const MAYA_GREETING = "Hey — Maya at CaseBuddy. What's going on?";
+BOUNDARIES:
+- No legal advice. If asked: "Our attorneys will review everything and advise you — I'm just making sure they have all the details."
+- If asked directly whether you're AI: "I'm Maya, CaseBuddy's AI intake specialist — not a licensed attorney, but I'll make sure the right one sees your case."
+- Never invent facts, dates, names, or legal conclusions the caller didn't state.`;
+
+// Professional, warm greeting// Professional, warm greeting — like a real receptionist picking up the phone
+const MAYA_GREETING = "Hi, this is Maya over at CaseBuddy — how can I help you today?";
+
+type Transcript = { speaker: string; text: string }[];
+
+// If AI extraction is unavailable, we still keep the lead: build a minimal
+// record from the raw conversation so the firm can follow up by hand. The full
+// transcript is persisted alongside this, so nothing the caller said is lost.
+const fallbackIntake = (transcript: Transcript): IntakeData => {
+  const summary =
+    transcript
+      .filter(t => t.speaker === 'you' || t.speaker === 'user')
+      .map(t => t.text)
+      .join(' ')
+      .slice(0, 280) || 'Voice intake — see transcript for details.';
+  return {
+    fullName: 'Prospective Client',
+    contact: '',
+    matterType: 'General Inquiry',
+    jurisdiction: '',
+    summary,
+    incidentDate: '',
+    opposingParties: '',
+    deadlines: '',
+    injuriesOrDamages: '',
+    desiredOutcome: '',
+    priorCounsel: '',
+  };
+};
+
+// If scoring is unavailable, route to manual review rather than denying — a real
+// person decides, and the caller still hears a warm, human close.
+const fallbackScore = (): IntakeScore => ({
+  score: 50,
+  disposition: 'review',
+  recommendedDepartment: 'General Practice',
+  recommendedAgentId: 'civil-litigation',
+  factors: [],
+  reasoning: 'Automated scoring was unavailable; routed for manual review.',
+  clientMessage:
+    "Thanks so much for taking the time to share what's going on. I've passed everything along to our team, and one of our attorneys will review it and reach out to you shortly.",
+  urgency: 'medium',
+});
 
 type Phase = 'welcome' | 'talking' | 'processing' | 'result';
 
 const PublicIntake: React.FC = () => {
+  const { token } = useParams<{ token?: string }>();
+  const [firmId, setFirmId] = React.useState<string | null>(null);
+
+  const [clientInvite, setClientInvite] = React.useState<ResolvedClientInvite | null>(null);
+
+  // Resolve the client invite token on mount — gets firm_id + client context for Maya
+  React.useEffect(() => {
+    if (token) {
+      resolveClientToken(token).then(invite => {
+        if (invite) {
+          setFirmId(invite.firm_id);
+          setClientInvite(invite);
+        } else {
+          console.warn('[PublicIntake] Unknown token — intake will use default firm_id');
+        }
+      });
+    }
+  }, [token]);
+
   const [phase, setPhase] = useState<Phase>('welcome');
   const [result, setResult] = useState<IntakeScore | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [docRequest, setDocRequest] = useState<ReturnType<typeof generateDocumentRequestLink> | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // When a client token resolves, inject client context so Maya greets by name
+  // and skips re-asking for info the attorney already captured
+  const firstName = clientInvite?.client_name?.split(' ')[0] ?? '';
+
+  // Get Maya's language profile (defaults to English, switches if Spanish detected)
+  const storedLang = (localStorage.getItem('casebuddy_maya_language') || 'en') as SupportedLanguage;
+  const mayaProfile = getMayaLanguageProfile(storedLang);
+
+  // Build system instruction with language-aware Maya prompt
+  const basePrompt = mayaProfile.systemPrompt || MAYA_INTAKE_PROMPT;
+
+  const systemInstruction = clientInvite?.client_name
+    ? `${basePrompt}
+
+IMPORTANT — you already know who you are speaking with:
+Client name: ${clientInvite.client_name}${clientInvite.client_phone ? `
+Phone on file: ${clientInvite.client_phone}` : ''}${clientInvite.client_email ? `
+Email on file: ${clientInvite.client_email}` : ''}${clientInvite.notes ? `
+Attorney notes: ${clientInvite.notes}` : ''}
+
+Open with: "Hi ${firstName}, thanks for calling in — " and use their name naturally. You already have their contact info so skip asking for it unless they want to update it.`
+    : basePrompt;
 
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
-    systemInstruction: MAYA_INTAKE_PROMPT,
-    greeting: MAYA_GREETING,
+    agentId: 'maya',
+    useElevenLabs: true,
+    systemInstruction,
+    greeting: mayaProfile.greeting,
     publicEndpoint: true,
   });
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
@@ -63,6 +173,14 @@ const PublicIntake: React.FC = () => {
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, liveCaption]);
+
+  // Detect language from the first few exchanges
+  useEffect(() => {
+    if (transcript.length >= 3 && transcript.length <= 5) {
+      const text = transcript.map(t => t.text).join(' ');
+      detectAndSwitchLanguage(text).catch(() => {});
+    }
+  }, [transcript.length]);
 
   const begin = async () => {
     setSubmitError(null);
@@ -77,18 +195,54 @@ const PublicIntake: React.FC = () => {
       return;
     }
     setPhase('processing');
+
+    // A prospect just told us their whole story — never lose the lead to a
+    // transient AI hiccup. Extract and score best-effort, but always persist
+    // what we have (at minimum the full transcript) and give the caller a warm,
+    // human close. If the AI steps failed, the case is routed for manual review.
+    let intake: IntakeData;
     try {
-      const intake = await extractIntake(transcript);
-      const score = await scoreIntake(intake);
-      await submitIntake({ intake, score, transcript });
-      setResult(score);
-      setPhase('result');
-    } catch (e) {
-      setSubmitError(
-        'We captured your information but hit a snag finishing up. Please try submitting again, or call the office directly.'
-      );
-      setPhase('result');
+      intake = await extractIntake(transcript);
+    } catch {
+      intake = fallbackIntake(transcript);
     }
+
+    let score: IntakeScore;
+    try {
+      score = await scoreIntake(intake);
+    } catch {
+      score = fallbackScore();
+    }
+
+    let intakeId: string | undefined;
+    try {
+      const result = await submitIntake({
+        firmId:         firmId ?? undefined,
+        clientInviteId: clientInvite?.invite_id,
+        intake,
+        score,
+        transcript,
+      });
+      intakeId = result?.id;
+      // Mark the invite as completed so attorney can track it
+      if (clientInvite?.invite_id && result?.id) {
+        void markInviteCompleted(clientInvite.invite_id, result.id);
+      }
+    } catch (saveErr: any) {
+      // submitIntake already falls back to localStorage on Supabase errors, so
+      // reaching here is rare — but log what happened for debugging.
+      console.error('[PublicIntake] submitIntake failed:', saveErr?.message);
+    }
+    // Hand the case off to the routed specialist by email (best-effort — never
+    // blocks the prospect's confirmation screen).
+    void emailIntakeHandoff(intake, score);
+    setResult(score);
+    // Generate document upload request for this intake
+    if (intakeId) {
+      const docReq = generateDocumentRequestLink(intakeId);
+      setDocRequest(docReq);
+    }
+    setPhase('result');
   };
 
   return (
@@ -263,9 +417,38 @@ const PublicIntake: React.FC = () => {
                   </p>
                   {result && (
                     <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-sm font-semibold">
-                      Case priority: {result.priority ?? 'Standard'}
+                      Case priority: {result.urgency ?? 'Standard'}
                     </div>
                   )}
+                </div>
+              )}
+              {/* Document Upload CTA */}
+              {docRequest && (
+                <div className="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <Upload size={18} className="text-blue-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-300">
+                        {storedLang === 'es' ? 'Subir Documentos' : 'Upload Documents'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {storedLang === 'es'
+                          ? 'Use este enlace para subir fotos, informes policiales, registros médicos o cualquier documento relacionado con su caso.'
+                          : 'Use this link to upload photos, police reports, medical records, or any documents related to your case.'
+                        }
+                      </p>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(docRequest.uploadUrl);
+                          toast.success(storedLang === 'es' ? 'Enlace copiado' : 'Link copied');
+                        }}
+                        className="mt-2 flex items-center gap-1.5 text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 px-3 py-1.5 rounded-lg hover:bg-blue-500/30 transition-all"
+                      >
+                        <Copy size={12} />
+                        {storedLang === 'es' ? 'Copiar Enlace' : 'Copy Upload Link'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

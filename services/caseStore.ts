@@ -15,6 +15,7 @@
 import type { User } from '@supabase/supabase-js';
 import { Case } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { getSession } from './authService';
 import { saveCases, loadCases } from '../utils/storage';
 
 const CASES_TABLE = 'cases';
@@ -36,31 +37,143 @@ export const setFirmId = (id: string) => {
 };
 
 /**
- * Bridges the localStorage firm_id into the signed-in user's Supabase
- * user_metadata so it's available as a JWT claim for Postgres RLS policies
- * (see supabase/migrations/0003_auth_hardening.sql). Without this, an
- * authenticated user has no firm_id claim and firm-scoped RLS would match
- * nothing.
+ * Ensures the signed-in user has a row in `firm_memberships` so that
+ * firm-scoped RLS policies can resolve their firm_id.
+ *
+ * ATTORNEY-CLIENT PRIVILEGE ISOLATION:
+ * Every account gets its own unique firm_id generated server-side at first
+ * sign-in. We NEVER inherit a firm_id from localStorage on first claim —
+ * that would allow a shared/compromised device to pull one account's cases
+ * into another account's view.
+ *
+ * Flow:
+ *  1. Fetch the user's existing membership from firm_memberships.
+ *     If found, that value is the authoritative firm_id — sync localStorage.
+ *  2. If no membership exists (new account), generate a FRESH UUID here
+ *     (not from localStorage) and INSERT it. This guarantees every new
+ *     account gets a unique, never-before-seen firm_id that cannot collide
+ *     with any other user's data.
+ *  3. PRIMARY KEY on user_id prevents double-claiming; 23505 is a no-op.
+ *
+ * Firm sharing (for multi-attorney practices):
+ *  Use the invite_codes flow (claim_firm_with_invite SQL function) so a
+ *  second attorney can be explicitly added to an existing firm. Never
+ *  share firm_ids by pasting UUIDs — use invite codes only.
  */
 export const adoptFirmIdFromUser = async (user: User | null): Promise<void> => {
   if (!user) return;
-  const metaFirmId = user.user_metadata?.firm_id as string | undefined;
-  if (metaFirmId) {
-    setFirmId(metaFirmId);
-    return;
-  }
-
   const sb = getSupabase();
   if (!sb) return;
-  const { error } = await sb.auth.updateUser({ data: { firm_id: getFirmId() } });
-  if (!error) {
-    await sb.auth.refreshSession();
+
+  try {
+    // Step 1 — check for existing membership (source of truth)
+    const { data: membership } = await sb
+      .from('firm_memberships')
+      .select('firm_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (membership?.firm_id) {
+      // Existing membership overrides anything in localStorage.
+      setFirmId(membership.firm_id);
+      return;
+    }
+
+    // Step 2 — new account: generate a FRESH, unique firm_id.
+    // IMPORTANT: do NOT use getFirmId() here — that reads localStorage and
+    // could contain a stale/shared/attacker-controlled UUID. Always generate
+    // a new UUID for each new account to guarantee strict isolation.
+    const freshFirmId = crypto.randomUUID();
+
+    const { error } = await sb
+      .from('firm_memberships')
+      .insert({ user_id: user.id, firm_id: freshFirmId });
+
+    if (error && error.code !== '23505') {
+      // 23505 = unique_violation: another tab beat us to it — safe to re-fetch.
+      console.warn('[caseStore] firm membership claim failed:', error.message);
+      return;
+    }
+
+    // On success (or harmless 23505 race), sync localStorage to the claimed id.
+    if (!error) {
+      setFirmId(freshFirmId);
+    } else {
+      // Race condition: re-fetch what was actually inserted.
+      const { data: refetch } = await sb
+        .from('firm_memberships')
+        .select('firm_id')
+        .eq('user_id', user.id)
+        .single();
+      if (refetch?.firm_id) setFirmId(refetch.firm_id);
+    }
+  } catch {
+    // Best-effort: if Supabase is unreachable, fall back to localStorage.
+    // This is acceptable for offline mode; the firm_id will be reconciled
+    // on the next successful connection.
   }
 };
 
 // ─── sync status ─────────────────────────────────────────────────────────────
 
 export type SyncStatus = 'syncing' | 'synced' | 'local-only' | 'error';
+
+// ─── cloud row mapping ─────────────────────────────────────────────────────────
+//
+// The deployed `cases` table is per-user: `id` is a uuid, `user_id` defaults to
+// auth.uid() (and RLS requires it to match the caller), and `name`/`case_type`/
+// `client_name` are NOT NULL. The app, however, keys cases by ids like
+// `Date.now().toString()` and stores the whole Case object. We bridge the two:
+//
+//   • id        — a deterministic uuid (v5: SHA-1 over a fixed namespace + the
+//                 app id) so every case maps to exactly one cloud row and
+//                 re-saves upsert idempotently. The real app id is preserved
+//                 inside `data`, which is what we read back.
+//   • data      — the full Case (source of truth for the client).
+//   • name/…    — populated to satisfy the table's NOT NULL columns.
+//   • user_id   — deliberately omitted so the column default (auth.uid()) fills
+//                 it, satisfying the "auth.uid() = user_id" insert policy and
+//                 making the creator the case 'owner' for later updates/deletes.
+
+// RFC-4122 DNS namespace, as raw bytes.
+const CASE_ID_NAMESPACE = Uint8Array.from(
+  '6ba7b8109dad11d180b400c04fd430c8'.match(/.{2}/g)!.map(h => parseInt(h, 16))
+);
+
+export const deriveCaseRowId = async (appId: string): Promise<string> => {
+  const idBytes = new TextEncoder().encode(appId);
+  const input = new Uint8Array(CASE_ID_NAMESPACE.length + idBytes.length);
+  input.set(CASE_ID_NAMESPACE, 0);
+  input.set(idBytes, CASE_ID_NAMESPACE.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', input));
+  const b = digest.slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const toCaseRow = async (c: Case) => ({
+  id: await deriveCaseRowId(c.id),
+  firm_id: getFirmId(),
+  data: c,
+  name: c.title?.trim() || 'Untitled Case',
+  case_type: 'general',
+  client_name: c.client?.trim() || 'Unknown',
+});
+
+// Cloud writes hit a per-user table whose insert policy needs auth.uid(), so
+// only attempt them with a real session. Without this, anonymous page loads
+// (e.g. a visitor with stale localStorage cases) fire inserts that fail the
+// user_id NOT NULL constraint with a 400.
+const hasAuthedSession = async (): Promise<boolean> => {
+  try {
+    const session = await getSession();
+    return !!session?.access_token;
+  } catch {
+    return false;
+  }
+};
 
 // ─── fetch ────────────────────────────────────────────────────────────────────
 
@@ -85,12 +198,18 @@ export const upsertCaseToCloud = async (c: Case): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
   const sb = getSupabase();
   if (!sb) return false;
+  if (!(await hasAuthedSession())) return false;
 
-  const { error } = await sb.from(CASES_TABLE).upsert(
-    { id: c.id, firm_id: getFirmId(), data: c },
-    { onConflict: 'id' }
-  );
-  return !error;
+  // Never throw: callers often fire this without awaiting, so a network-level
+  // rejection here would surface as an unhandled rejection and lose the case
+  // silently. Swallow to a boolean instead.
+  try {
+    const { error } = await sb.from(CASES_TABLE).upsert(await toCaseRow(c), { onConflict: 'id' });
+    if (error) console.warn('[caseStore] case upsert failed:', error.message);
+    return !error;
+  } catch {
+    return false;
+  }
 };
 
 // ─── upsert batch (initial sync of localStorage cases) ───────────────────────
@@ -99,15 +218,16 @@ export const syncLocalCasesToCloud = async (cases: Case[]): Promise<boolean> => 
   if (!isSupabaseConfigured || cases.length === 0) return false;
   const sb = getSupabase();
   if (!sb) return false;
+  if (!(await hasAuthedSession())) return false;
 
-  const rows = cases.map(c => ({
-    id: c.id,
-    firm_id: getFirmId(),
-    data: c,
-  }));
-
-  const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });
-  return !error;
+  try {
+    const rows = await Promise.all(cases.map(toCaseRow));
+    const { error } = await sb.from(CASES_TABLE).upsert(rows, { onConflict: 'id' });
+    if (error) console.warn('[caseStore] batch case sync failed:', error.message);
+    return !error;
+  } catch {
+    return false;
+  }
 };
 
 // ─── delete ───────────────────────────────────────────────────────────────────
@@ -116,8 +236,10 @@ export const deleteCaseFromCloud = async (id: string): Promise<boolean> => {
   if (!isSupabaseConfigured) return false;
   const sb = getSupabase();
   if (!sb) return false;
+  if (!(await hasAuthedSession())) return false;
 
-  const { error } = await sb.from(CASES_TABLE).delete().eq('id', id).eq('firm_id', getFirmId());
+  const rowId = await deriveCaseRowId(id);
+  const { error } = await sb.from(CASES_TABLE).delete().eq('id', rowId).eq('firm_id', getFirmId());
   return !error;
 };
 

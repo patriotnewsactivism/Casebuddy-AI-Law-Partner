@@ -3,25 +3,97 @@
   publish = "dist"
   functions = "netlify/functions"
 
-# SPA Routing: Redirect all requests to index.html so React Router can handle them.
-# This prevents 404 errors on page refresh.
+[build.environment]
+  NODE_VERSION = "20"
+
+# ── Netlify Functions config ─────────────────────────────────────────────────
+[functions]
+  node_bundler = "esbuild"
+  directory = "netlify/functions"
+
+# extract-audio needs more time for FFmpeg WASM
+[functions."extract-audio"]
+  external_node_modules = ["@ffmpeg/ffmpeg", "@ffmpeg/core"]
+
+# ── API redirects: /api/* → /.netlify/functions/* ────────────────────────────
+# These map the Vercel-style /api/ routes to Netlify Functions
+
+[[redirects]]
+  from = "/api/ai/gemini"
+  to = "/.netlify/functions/ai-gemini"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/orchestrate"
+  to = "/.netlify/functions/ai-orchestrate"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/voice-keys"
+  to = "/.netlify/functions/ai-voice-keys"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/voice-keys-public"
+  to = "/.netlify/functions/ai-voice-keys-public"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/send"
+  to = "/.netlify/functions/email-send"
+  status = 200
+
+[[redirects]]
+  from = "/api/twilio-actions"
+  to = "/.netlify/functions/twilio-actions"
+  status = 200
+
+[[redirects]]
+  from = "/api/twilio-voice"
+  to = "/.netlify/functions/twilio-voice"
+  status = 200
+
+[[redirects]]
+  from = "/api/cron"
+  to = "/.netlify/functions/cron"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhooks"
+  to = "/.netlify/functions/webhooks"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin"
+  to = "/.netlify/functions/admin"
+  status = 200
+
+[[redirects]]
+  from = "/api/stripe/checkout"
+  to = "/.netlify/functions/stripe-checkout"
+  status = 200
+
+[[redirects]]
+  from = "/api/media/extract-audio"
+  to = "/.netlify/functions/extract-audio"
+  status = 200
+
+# Catch-all: any other /api/* returns 404
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/404"
+  status = 404
+
+# SPA fallback — serve index.html for all non-file routes
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# API Redirection: Map /api routes to our Netlify functions.
-[[redirects]]
-  from = "/api/ai/orchestrate"
-  to = "/.netlify/functions/orchestrate"
-  status = 200
-
-[[redirects]]
-  from = "/api/ai/voice-keys"
-  to = "/.netlify/functions/voice-keys"
-  status = 200
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+# ── Headers ──────────────────────────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

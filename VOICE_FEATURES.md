@@ -1,6 +1,6 @@
 # Voice Features Guide
 
-LexSim's Trial Simulator provides industry-leading voice recognition and 2-way audio for immersive legal training.
+CaseBuddy's Trial Simulator provides industry-leading voice recognition and 2-way audio for immersive legal training.
 
 ## What Makes Our Audio Special?
 

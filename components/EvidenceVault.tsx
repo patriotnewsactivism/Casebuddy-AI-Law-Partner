@@ -1,6 +1,7 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useContext, useEffect, useRef, useMemo} from 'react';
 import { AppContext } from '../App';
-import { analyzeEvidence } from '../services/geminiService';
+import { uploadDocument, reanalyzeDocument } from '../services/documentPipeline';
+import { onDiscoveryReceived, onEvidenceConcernsFound } from '../services/caseEventHooks';
 import { Archive, Upload, Trash2, Eye, AlertCircle, CheckCircle, Tag, Loader, FileImage, FileAudio, FileText, X, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentHeader from './AgentHeader';
@@ -64,10 +65,25 @@ const EvidenceVault = () => {
         reader.readAsDataURL(file);
       });
 
-      const analysis = await analyzeEvidence(file, activeCase.summary || activeCase.title);
+      // Real pipeline: upload to Supabase Storage (durable), then OCR via
+      // Google Cloud Vision -> Gemini -> OCR.space, plus legal analysis via
+      // Gemini -> OpenAI -> Cohere (shared edge function used across the app).
+      const { document } = await uploadDocument(file, activeCase.id);
+      const result = await reanalyzeDocument(document.id);
+
+      const analysis = {
+        summary: result?.summary || 'Evidence uploaded — analysis pending.',
+        relevance: result?.keyFacts?.length ? Math.min(95, 60 + result.keyFacts.length * 5) : 50,
+        keyFacts: result?.keyFacts || [],
+        concerns: result?.adverseFindings || [],
+        tags: [
+          result?.ocrProvider ? `ocr:${result.ocrProvider}` : 'uploaded',
+          ...(result?.favorableFindings?.length ? ['favorable-findings'] : []),
+        ],
+      };
 
       const item: EvidenceItem = {
-        id: Date.now().toString(),
+        id: document.id,
         caseId: activeCase.id,
         name: file.name,
         type: file.type,
@@ -81,6 +97,23 @@ const EvidenceVault = () => {
       save(updated);
       setSelected(item);
       toast.success('Evidence analyzed and stored!');
+
+      // Auto-trigger discovery pipeline if the file looks like discovery material
+      const discoveryKeywords = ['discovery', 'subpoena', 'interrogator', 'deposition', 'request', 'production', 'disclosure'];
+      const isDiscovery = discoveryKeywords.some(kw =>
+        file.name.toLowerCase().includes(kw) ||
+        (analysis.tags || []).some((t: string) => t.toLowerCase().includes(kw))
+      );
+      if (isDiscovery) {
+        onDiscoveryReceived(activeCase.id, activeCase.title).catch(() => {});
+        toast.info('📋 Discovery pipeline started — agents are drafting responses.');
+      }
+
+      // Auto-flag concerning evidence to Rex for credibility assessment
+      if (analysis.concerns && analysis.concerns.length > 0) {
+        onEvidenceConcernsFound(activeCase.id, analysis, activeCase.title).catch(() => {});
+        toast.info('⚠️ Concern flagged — Rex is assessing witness evidence credibility.');
+      }
     } catch (err) {
       toast.error('Analysis failed. Please try again.');
       console.error(err);
@@ -90,8 +123,10 @@ const EvidenceVault = () => {
     }
   };
 
-  const allTags = Array.from(new Set(items.flatMap(i => i.tags)));
-  const filtered = filterTag ? items.filter(i => i.tags.includes(filterTag)) : items;
+  const { allTags, filtered } = useMemo(() => ({
+    allTags: Array.from(new Set(items.flatMap(i => i.tags))),
+    filtered: filterTag ? items.filter(i => i.tags.includes(filterTag)) : items,
+  }), [items, filterTag]);
 
   const FileIcon = ({ type }: { type: string }) => {
     if (type.startsWith('image/')) return <FileImage size={16} className="text-blue-400" />;
@@ -178,7 +213,7 @@ const EvidenceVault = () => {
               <p className="text-slate-400 text-xs line-clamp-2">{item.summary}</p>
 
               <div className="flex flex-wrap gap-1 mt-2">
-                {item.tags.slice(0, 3).map((tag, i) => (
+                {(item.tags || []).slice(0, 3).map((tag, i) => (
                   <span key={i} className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-xs rounded">{tag}</span>
                 ))}
               </div>

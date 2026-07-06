@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo} from 'react';
 import { AppContext } from '../App';
 import { generateStatement } from '../services/geminiService';
 import { BookOpen, Loader, Copy, Download, RefreshCw, ChevronLeft, Mic, Maximize2, Minimize2, FileDown } from 'lucide-react';
@@ -28,10 +28,17 @@ interface Statement {
 
 const StatementBuilder = () => {
   const { activeCase } = useContext(AppContext);
-  const [type, setType] = useState<'opening' | 'closing'>('opening');
-  const [theory, setTheory] = useState('');
-  const [keyEvidence, setKeyEvidence] = useState('');
-  const [tone, setTone] = useState('persuasive and confident');
+  const [form, setForm] = useState<{ type: 'opening' | 'closing'; theory: string; keyEvidence: string; tone: string }>({
+    type: 'opening', theory: '', keyEvidence: '', tone: 'persuasive and confident'
+  });
+  const type = form.type;
+  const theory = form.theory;
+  const keyEvidence = form.keyEvidence;
+  const tone = form.tone;
+  const setType        = (v: 'opening' | 'closing') => setForm(f => ({ ...f, type: v }));
+  const setTheory      = (v: string) => setForm(f => ({ ...f, theory: v }));
+  const setKeyEvidence = (v: string) => setForm(f => ({ ...f, keyEvidence: v }));
+  const setTone        = (v: string) => setForm(f => ({ ...f, tone: v }));
   const [loading, setLoading] = useState(false);
   const [statement, setStatement] = useState<Statement | null>(null);
   const [history, setHistory] = useState<Statement[]>(() => {
@@ -194,7 +201,7 @@ const StatementBuilder = () => {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-sm text-slate-400">Theory of the Case *</label>
-                <VoiceMicButton size={15} onTranscript={t => setTheory(prev => prev + (prev ? ' ' : '') + t)} />
+                <VoiceMicButton size={15} onTranscript={t => setForm(f => ({ ...f, theory: f.theory ? f.theory + ' ' + t : t }))} />
               </div>
               <textarea value={theory} onChange={e => setTheory(e.target.value)}
                 placeholder="e.g. My client acted in self-defense after being threatened. The prosecution's case relies entirely on a single unreliable witness with motive to lie."

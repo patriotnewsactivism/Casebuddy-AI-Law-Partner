@@ -10,6 +10,7 @@ import { OPERATIONAL_AGENTS } from '../agents/personas';
 import { generateWarRoomBriefing } from '../services/geminiService';
 import { WarRoomBriefing, WarRoomTask } from '../types';
 import { toast } from 'react-toastify';
+import AIDisclaimer from './AIDisclaimer';
 
 const STORAGE_KEY = (caseId: string) => `warroom_briefing_${caseId}`;
 
@@ -48,6 +49,7 @@ const TaskRow: React.FC<{ task: WarRoomTask; onToggle: (id: string) => void }> =
     <div className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
       task.done ? 'bg-slate-900/30 border-slate-800 opacity-60' : 'bg-slate-800/60 border-slate-700'
     }`}>
+      <AIDisclaimer variant="full" className="mb-5" />
       <button
         onClick={() => onToggle(task.id)}
         className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${

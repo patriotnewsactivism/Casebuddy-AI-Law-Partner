@@ -1,6 +1,7 @@
 import { getAgentById, getSpecialistById, LEGAL_SPECIALISTS } from '../agents/personas';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { getSession } from './authService';
+import { deriveCaseRowId } from './caseStore';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export const createRun = async (
   // Create the run
   const { data: run, error: runErr } = await supabase
     .from('firm_runs')
-    .insert({ case_id: caseId, user_id: user.id, specialist_id: specialistId })
+    .insert({ case_id: await deriveCaseRowId(caseId), user_id: user.id, specialist_id: specialistId })
     .select('id')
     .single();
   if (runErr || !run) throw runErr || new Error('Failed to create run');
@@ -174,7 +175,7 @@ export const loadRunFromSupabase = async (
   const { data: runs } = await supabase
     .from('firm_runs')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', await deriveCaseRowId(caseId))
     .order('created_at', { ascending: false })
     .limit(1);
 

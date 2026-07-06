@@ -1,16 +1,26 @@
+import { toast } from 'react-toastify';
 
-import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2 } from 'lucide-react';
-import { LEGAL_SPECIALISTS, LegalSpecialist } from '../agents/personas';
+import React, { useState, useRef, useEffect, useContext, useMemo} from 'react';
+import { Send, MessageSquare, ChevronRight, ChevronLeft, RotateCcw, Scale, Mic, MicOff, Info, Briefcase, FileDown, Trash2, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
+import { LEGAL_SPECIALISTS, PARALEGALS, LegalSpecialist, Paralegal, getParalegalsByAttorney } from '../agents/personas';
 import AgentHeader from './AgentHeader';
-import { consultSpecialist } from '../services/geminiService';
+import { consultSpecialist, consultSpecialistStream } from '../services/geminiService';
 import { AppContext } from '../App';
 import { handleError } from '../utils/errorHandler';
+import AIDisclaimer from './AIDisclaimer';
+import { buildMemoryContext, recordAction } from '../services/agentMemory';
+import { buildCaseBrief } from '../services/caseContext';
+import { recordFeedback, buildPatternsContext, recordLearningEvent } from '../services/agentLearning';
+import { runReasoning, selectReasoningMode } from '../services/agentReasoning';
+import { ReasoningModeSelector, ReasoningResultBadge } from './ReasoningIndicator';
+import type { ReasoningMode } from '../types';
 
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
+  reasoningMode?: ReasoningMode;
+  confidence?: number;
 }
 
 interface ConsultationSession {
@@ -70,14 +80,17 @@ const VoiceButton = ({ onTranscript }: { onTranscript: (text: string) => void })
 interface ChatPanelProps {
   specialist: LegalSpecialist;
   session: ConsultationSession;
-  onSend: (text: string) => Promise<void> | void;
+  onSend: (text: string, mode: ReasoningMode) => Promise<void> | void;
   onReset: () => void;
   loading: boolean;
+  streamingText?: string;
   onBack?: () => void;
   activeCase?: { title: string } | null;
+  onFeedback: (msgIdx: number, feedback: 'positive' | 'negative') => void;
 }
-const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, onBack, activeCase }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onReset, loading, streamingText, onBack, activeCase, onFeedback }) => {
   const [input, setInput] = useState('');
+  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('standard');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const exportTranscript = () => {
@@ -102,6 +115,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
       </head><body>
         <h1>Consultation: ${specialist.name} — ${specialist.practiceArea}</h1>
         <div class="meta">
+      <AIDisclaimer variant="full" className="mb-5" />
           Exported ${new Date().toLocaleDateString()} · ${session.messages.length} messages
           ${activeCase ? `· Case: ${activeCase.title}` : ''}
         </div>
@@ -126,7 +140,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
-    onSend(text);
+    // Auto-select reasoning mode based on query length/complexity
+    const autoMode = selectReasoningMode(text, reasoningMode);
+    onSend(text, autoMode);
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -171,7 +187,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-4">
               {specialist.commonTopics.slice(0, 3).map(t => (
-                <button key={t} onClick={() => onSend(`Tell me about ${t.toLowerCase()}.`)}
+                <button key={t} onClick={() => onSend(`Tell me about ${t.toLowerCase()}.`, reasoningMode)}
                   className={`text-xs px-3 py-1.5 rounded-lg border ${specialist.bgClass} ${specialist.borderClass} ${specialist.colorClass} hover:opacity-80 transition-opacity`}>
                   {t}
                 </button>
@@ -188,17 +204,63 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
                 {specialist.emoji}
               </div>
             )}
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-              msg.role === 'user'
-                ? 'bg-slate-700 text-white rounded-tr-sm'
-                : `${specialist.bgClass} border ${specialist.borderClass} text-slate-200 rounded-tl-sm`
-            }`}>
-              {msg.text}
+            <div className="max-w-[80%] space-y-1">
+              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-slate-700 text-white rounded-tr-sm'
+                  : `${specialist.bgClass} border ${specialist.borderClass} text-slate-200 rounded-tl-sm`
+              }`}>
+                {msg.text}
+              </div>
+              {/* Reasoning badge + feedback for model messages */}
+              {msg.role === 'model' && (
+                <div className="flex items-center gap-2 px-1">
+                  {msg.reasoningMode && msg.reasoningMode !== 'standard' && (
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                      msg.reasoningMode === 'deep-think' ? 'border-violet-500/30 text-violet-400 bg-violet-500/10' :
+                      msg.reasoningMode === 'expert-panel' ? 'border-cyan-500/30 text-cyan-400 bg-cyan-500/10' :
+                      'border-red-500/30 text-red-400 bg-red-500/10'
+                    }`}>
+                      {msg.reasoningMode === 'deep-think' ? '🧠 Deep' :
+                       msg.reasoningMode === 'expert-panel' ? '👥 Panel' : '⚔️ Adversarial'}
+                      {msg.confidence ? ` · ${msg.confidence}%` : ''}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onFeedback(i, 'positive')}
+                    className="text-slate-600 hover:text-green-400 transition-colors"
+                    title="Helpful"
+                  >
+                    <ThumbsUp size={11} />
+                  </button>
+                  <button
+                    onClick={() => onFeedback(i, 'negative')}
+                    className="text-slate-600 hover:text-red-400 transition-colors"
+                    title="Not helpful"
+                  >
+                    <ThumbsDown size={11} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
 
-        {loading && (
+        {/* Streaming response */}
+        {loading && streamingText && (
+          <div className="flex justify-start">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 mt-1 shrink-0 border ${specialist.borderClass}`}
+              style={{ background: 'rgba(0,0,0,0.3)' }}>
+              {specialist.emoji}
+            </div>
+            <div className={`max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${specialist.bgClass} border ${specialist.borderClass} text-slate-200`}>
+              {streamingText}
+              <span className="inline-block w-1.5 h-4 bg-current ml-0.5 animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {loading && !streamingText && (
           <div className="flex justify-start">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 mt-1 shrink-0 border ${specialist.borderClass}`}
               style={{ background: 'rgba(0,0,0,0.3)' }}>
@@ -213,7 +275,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-4 border-t border-slate-800 shrink-0">
+      <div className="p-4 border-t border-slate-800 shrink-0 space-y-2">
+        {/* Quick action buttons — contextual to active case */}
+        {activeCase && session.messages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: '📋 Summarize case', prompt: `Provide a comprehensive summary and analysis of the ${activeCase.title} case, including key facts, legal issues, and potential strategies.` },
+              { label: '⚖️ Draft motion', prompt: `Draft a motion to dismiss for the ${activeCase.title} case. Include legal grounds, relevant case law, and a proposed order.` },
+              { label: '📅 Check deadlines', prompt: `List all critical deadlines and statutes of limitation for ${activeCase.title}. Flag any that are approaching within 30 days.` },
+              { label: '🔍 Find weaknesses', prompt: `Identify the top weaknesses and risks in the ${activeCase.title} case. For each weakness, suggest a mitigation strategy.` },
+            ].map(({ label, prompt }) => (
+              <button key={label} onClick={() => onSend(prompt, reasoningMode)}
+                disabled={loading}
+                className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-colors disabled:opacity-40">
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Reasoning mode selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500 font-medium shrink-0">Mode:</span>
+          <ReasoningModeSelector value={reasoningMode} onChange={setReasoningMode} disabled={loading} compact />
+        </div>
+
         <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 focus-within:border-slate-600">
           <textarea
             value={input}
@@ -231,7 +317,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ specialist, session, onSend, onRe
             </button>
           </div>
         </div>
-        <p className="text-xs text-slate-600 mt-2 text-center">{DISCLAIMER}</p>
+        <p className="text-xs text-slate-600 text-center">{DISCLAIMER}</p>
       </div>
     </div>
   );
@@ -281,6 +367,7 @@ const SESSIONS_KEY = 'casebuddy_legal_sessions';
 
 const LegalTeam: React.FC = () => {
   const { activeCase } = useContext(AppContext);
+  const [activeTab, setActiveTab] = useState<'attorneys' | 'staff'>('attorneys');
   const [activeId, setActiveId] = useState<string>(LEGAL_SPECIALISTS[0].id);
   const [sessions, setSessions] = useState<Record<string, ConsultationSession>>(() => {
     try {
@@ -289,6 +376,7 @@ const LegalTeam: React.FC = () => {
     } catch { return {}; }
   });
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [showInfo, setShowInfo] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
@@ -296,12 +384,17 @@ const LegalTeam: React.FC = () => {
     try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)); } catch {}
   }, [sessions]);
 
-  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId)!
+  const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId);
+  const activeParalegal = PARALEGALS.find(p => p.id === activeId);
+  // Resolve the effective system instruction regardless of persona type
+  const effectiveInstruction: string = activeParalegal?.systemInstruction
+    ?? specialist?.systemInstruction
+    ?? LEGAL_SPECIALISTS[0].systemInstruction;
 
   const getSession = (id: string): ConsultationSession =>
     sessions[id] || { specialistId: id, messages: [] };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, mode: ReasoningMode = 'standard') => {
     const session = getSession(activeId);
     const userMsg: ChatMessage = { role: 'user', text, timestamp: Date.now() };
     const updatedMessages = [...session.messages, userMsg];
@@ -312,24 +405,102 @@ const LegalTeam: React.FC = () => {
     }));
 
     setLoading(true);
+    setStreamingText('');
+
     try {
       const history = updatedMessages.slice(0, -1).map(m => ({
         role: m.role as 'user' | 'model',
         parts: [{ text: m.text }],
       }));
 
-      const caseCtx = activeCase
-        ? `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`
-        : undefined;
+      // Full case file: intake narrative from Maya, analyzed documents &
+      // discovery, transcripts, and existing work product — the attorney
+      // sees everything the firm knows, not a one-line summary.
+      let caseCtx: string | undefined;
+      if (activeCase) {
+        try {
+          caseCtx = await buildCaseBrief(activeCase, { maxChars: 7000 });
+        } catch { /* fall through to sync fallback */ }
+        if (!caseCtx) {
+          caseCtx = `Case: ${activeCase.title} | Client: ${activeCase.client} | Status: ${activeCase.status} | Summary: ${activeCase.summary}`;
+        }
+      }
 
-      const reply = await consultSpecialist(
-        specialist.systemInstruction,
-        history,
-        text,
-        caseCtx
-      );
+      // Load memory context for this specialist
+      const memCtx = await buildMemoryContext(activeId, activeCase?.id ?? 'general');
+      // Inject learned patterns into context so agents improve over time
+      const patternsCtx = await buildPatternsContext(activeId);
+      const fullMemCtx = memCtx + patternsCtx;
 
-      const modelMsg: ChatMessage = { role: 'model', text: reply, timestamp: Date.now() };
+      let reply: string;
+      let confidence: number | undefined;
+
+      if (mode === 'standard') {
+        // Use streaming for standard mode
+        let accumulated = '';
+        try {
+          const stream = consultSpecialistStream(
+            effectiveInstruction,
+            history,
+            text,
+            caseCtx,
+            fullMemCtx
+          );
+          for await (const chunk of stream) {
+            accumulated += chunk;
+            setStreamingText(accumulated);
+          }
+          reply = accumulated || await consultSpecialist(effectiveInstruction, history, text, caseCtx, fullMemCtx);
+        } catch {
+          // Streaming failed — fall back to non-streaming
+          reply = await consultSpecialist(effectiveInstruction, history, text, caseCtx, fullMemCtx);
+        }
+      } else {
+        // Deep reasoning modes
+        const result = await runReasoning({
+          mode,
+          agentId: activeId,
+          caseId: activeCase?.id ?? 'general',
+          systemInstruction: effectiveInstruction,
+          task: text,
+          caseContext: caseCtx ?? '',
+        });
+        reply = result.synthesis;
+        if (result.critique) {
+          reply += `\n\n---\n**Self-Critique:** ${result.critique}`;
+        }
+        confidence = result.confidence;
+      }
+
+      // Record action in memory
+      await recordAction(activeId, activeCase?.id ?? 'general', {
+        type: 'consultation',
+        description: `Consulted on: ${text.slice(0, 80)}`,
+        result: reply.slice(0, 150),
+      });
+
+      // Record learning event for pattern extraction
+      recordLearningEvent({
+        agentId: activeId,
+        caseId: activeCase?.id ?? 'general',
+        action: 'consultation',
+        outcome: 'neutral',
+        context: {
+          mode,
+          questionLength: text.length,
+          replyLength: reply.length,
+          winProbability: activeCase?.winProbability,
+        },
+      }).catch(() => { /* non-critical */ });
+
+      const modelMsg: ChatMessage = {
+        role: 'model',
+        text: reply,
+        timestamp: Date.now(),
+        reasoningMode: mode !== 'standard' ? mode : undefined,
+        confidence,
+      };
+
       setSessions(prev => ({
         ...prev,
         [activeId]: {
@@ -338,20 +509,38 @@ const LegalTeam: React.FC = () => {
         },
       }));
     } catch (err) {
-      handleError(err, `${specialist.name} is unavailable. Please try again.`, 'LegalTeam');
+      const label = activeParalegal?.name ?? specialist?.name ?? 'Agent';
+      handleError(err, `${label} is unavailable. Please try again.`, 'LegalTeam');
     } finally {
       setLoading(false);
+      setStreamingText('');
     }
+  };
+
+  const handleFeedback = async (msgIdx: number, feedback: 'positive' | 'negative') => {
+    await recordFeedback(activeId, activeCase?.id ?? 'general', msgIdx, feedback, {
+      specialistId: activeId,
+      caseId: activeCase?.id,
+    });
   };
 
   const handleReset = () => {
     setSessions(prev => ({ ...prev, [activeId]: { specialistId: activeId, messages: [] } }));
   };
 
+  const [confirmClear, setConfirmClear] = useState(false);
+
   const handleClearAllMemory = () => {
-    if (!window.confirm('Clear all consultation histories for all specialists? This cannot be undone.')) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      toast.info('Click again to confirm clearing all consultation history.');
+      setTimeout(() => setConfirmClear(false), 5000);
+      return;
+    }
     setSessions({});
     localStorage.removeItem(SESSIONS_KEY);
+    setConfirmClear(false);
+    toast.success('Consultation history cleared.');
   };
 
   return (
@@ -396,35 +585,131 @@ const LegalTeam: React.FC = () => {
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
-        {/* Specialist list — full-width on mobile when chat is hidden */}
-        <div className={`${mobileShowChat ? 'hidden md:block' : 'block'} w-full md:w-72 shrink-0 overflow-y-auto space-y-2 pr-1`}>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <MessageSquare size={12} />
-            Select a Specialist
-          </p>
-          {LEGAL_SPECIALISTS.map(s => (
-            <SpecialistCard
-              key={s.id}
-              specialist={s}
-              isActive={s.id === activeId}
-              onClick={() => { setActiveId(s.id); setMobileShowChat(true); }}
-              hasHistory={(sessions[s.id]?.messages.length ?? 0) > 0}
-            />
-          ))}
+        <div className={`${mobileShowChat ? 'hidden md:block' : 'block'} w-full md:w-72 shrink-0 overflow-y-auto pr-1`}>
+          <div className="flex gap-1 p-1 bg-slate-800/70 rounded-xl mb-3">
+            <button
+              onClick={() => setActiveTab('attorneys')}
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-all ${activeTab === 'attorneys' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              🏛️ Attorneys ({LEGAL_SPECIALISTS.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('staff')}
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-all ${activeTab === 'staff' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              📋 Paralegals ({PARALEGALS.length})
+            </button>
+          </div>
+
+          {activeTab === 'attorneys' ? (
+            <>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <MessageSquare size={12} />
+                Select a Specialist
+              </p>
+              {LEGAL_SPECIALISTS.map(s => (
+                <SpecialistCard
+                  key={s.id}
+                  specialist={s}
+                  isActive={s.id === activeId}
+                  onClick={() => { setActiveId(s.id); setMobileShowChat(true); }}
+                  hasHistory={(sessions[s.id]?.messages.length ?? 0) > 0}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <MessageSquare size={12} />
+                Select a Paralegal
+              </p>
+              {LEGAL_SPECIALISTS.map(atty => {
+                const paralegals = getParalegalsByAttorney(atty.id);
+                return (
+                  <div key={atty.id} className="mb-3">
+                    <p className={`text-[10px] font-bold uppercase tracking-widest px-1 mb-1 ${atty.colorClass}`}>
+                      {atty.emoji} {atty.name}
+                    </p>
+                    <div className="space-y-1">
+                      {paralegals.map(pl => (
+                        <button
+                          key={pl.id}
+                          onClick={() => { setActiveId(pl.id); setMobileShowChat(true); }}
+                          className={`w-full text-left p-3 rounded-xl border transition-all group ${
+                            activeId === pl.id
+                              ? `${pl.bgClass} ${pl.borderClass}`
+                              : 'bg-slate-800/40 border-slate-700 hover:border-slate-600 hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0 border ${pl.borderClass}`} style={{ background: 'rgba(0,0,0,0.3)' }}>
+                              {pl.emoji}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${activeId === pl.id ? pl.colorClass : 'text-white'}`}>{pl.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{pl.specialty}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
 
-        {/* Chat panel — full-width on mobile when shown */}
         <div className={`${mobileShowChat ? 'flex flex-col' : 'hidden md:flex md:flex-col'} flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden`}>
-          <ChatPanel
-            key={activeId}
-            specialist={specialist}
-            session={getSession(activeId)}
-            onSend={handleSend}
-            onReset={handleReset}
-            loading={loading}
-            onBack={() => setMobileShowChat(false)}
-            activeCase={activeCase}
-          />
+          {(() => {
+            const paralegal = PARALEGALS.find(p => p.id === activeId);
+            const specialist = LEGAL_SPECIALISTS.find(s => s.id === activeId);
+            if (paralegal) {
+              const syntheticSpecialist: LegalSpecialist = {
+                id: paralegal.id,
+                name: paralegal.name,
+                title: paralegal.title,
+                practiceArea: paralegal.specialty,
+                description: paralegal.description,
+                colorClass: paralegal.colorClass,
+                bgClass: paralegal.bgClass,
+                borderClass: paralegal.borderClass,
+                emoji: paralegal.emoji,
+                personality: 'Efficient, organized, detail-oriented',
+                yearsExperience: 5,
+                commonTopics: [paralegal.specialty],
+                systemInstruction: paralegal.systemInstruction,
+              };
+              return (
+                <ChatPanel
+                  key={activeId}
+                  specialist={syntheticSpecialist}
+                  session={getSession(activeId)}
+                  onSend={handleSend}
+                  onReset={handleReset}
+                  loading={loading}
+                  streamingText={streamingText}
+                  onBack={() => setMobileShowChat(false)}
+                  activeCase={activeCase}
+                  onFeedback={handleFeedback}
+                />
+              );
+            }
+            return (
+              <ChatPanel
+                key={activeId}
+                specialist={specialist ?? LEGAL_SPECIALISTS[0]}
+                session={getSession(activeId)}
+                onSend={handleSend}
+                onReset={handleReset}
+                loading={loading}
+                streamingText={streamingText}
+                onBack={() => setMobileShowChat(false)}
+                activeCase={activeCase}
+                onFeedback={handleFeedback}
+              />
+            );
+          })()}
         </div>
       </div>
     </div>

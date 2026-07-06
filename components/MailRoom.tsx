@@ -1,3 +1,5 @@
+import { toast } from 'react-toastify';
+import { getGeminiKey } from '../services/runtimeKeys';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Mail, Send, Inbox, Star, Trash2, Plus, X,
@@ -267,6 +269,7 @@ const MailRoom: React.FC = () => {
   const [compose, setCompose] = useState<Compose>(emptyCompose);
   const [search, setSearch] = useState('');
   const [aiDrafting, setAiDrafting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [activeCall, setActiveCall] = useState<PhoneCall | null>(null);
   const [callTimer, setCallTimer] = useState(0);
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -278,6 +281,80 @@ const MailRoom: React.FC = () => {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(emails)); } catch {}
   }, [emails]);
+
+  // ── Live Supabase email sync ──────────────────────────────────────────────
+
+  // Gemini fetch with single 429-retry
+  const geminiGenerate = React.useCallback(async (prompt: string): Promise<string> => {
+    const key = getGeminiKey();
+    if (!key) throw new Error('Gemini API key not configured. Add it in Settings.');
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.6 } });
+    const doFetch = () => fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    let res = await doFetch();
+    if (res.status === 429) {
+      // Rate limited — wait 3s then retry once
+      await new Promise(r => setTimeout(r, 3000));
+      res = await doFetch();
+    }
+    if (!res.ok) throw new Error(res.status === 429 ? 'AI rate limit reached — please wait a moment and try again.' : `Gemini error ${res.status}`);
+    const data = await res.json() as any;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }, []);
+
+  const [syncStatus, setSyncStatus] = React.useState<'idle'|'syncing'|'ok'|'error'>('idle');
+
+  const syncFromSupabase = React.useCallback(async () => {
+    try {
+      setSyncStatus('syncing');
+      const sbUrl  = import.meta.env.VITE_SUPABASE_URL;
+      const sbAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!sbUrl || !sbAnon) { setSyncStatus('idle'); return; }
+
+      const res = await fetch(
+        `${sbUrl}/rest/v1/firm_emails?order=received_at.desc&limit=100`,
+        { headers: { apikey: sbAnon, Authorization: `Bearer ${sbAnon}` } }
+      );
+      if (!res.ok) {
+        // 401/403 = missing/invalid Supabase key — fail silently, don't log
+        setSyncStatus(res.status === 401 || res.status === 403 ? 'idle' : 'error');
+        return;
+      }
+      const rows: any[] = await res.json();
+
+      const mapped: Email[] = rows.map(r => ({
+        id: r.id,
+        from: r.from_address,
+        fromName: r.from_name || r.from_address,
+        to: r.to_address,
+        subject: r.subject,
+        body: r.body,
+        timestamp: r.received_at,
+        read: r.read ?? (r.direction === 'outbound'),
+        starred: r.starred ?? false,
+        folder: r.direction === 'outbound' ? 'sent' : 'inbox',
+        tag: r.intent !== 'general' ? r.intent : undefined,
+        aiSummary: r.metadata?.aiSummary,
+      }));
+
+      if (mapped.length > 0) {
+        setEmails(prev => {
+          const ids = new Set(mapped.map(m => m.id));
+          const local = prev.filter(e => !ids.has(e.id) && e.id.startsWith('seed-'));
+          return [...mapped, ...local];
+        });
+      }
+      setSyncStatus('ok');
+    } catch { setSyncStatus('error'); }
+  }, []);
+
+  React.useEffect(() => {
+    syncFromSupabase();
+    const interval = setInterval(syncFromSupabase, 30000);
+    return () => clearInterval(interval);
+  }, [syncFromSupabase]);
+
+
 
   // Call timer
   useEffect(() => {
@@ -319,9 +396,23 @@ const MailRoom: React.FC = () => {
     if (!email.read) markRead(email.id);
   };
 
-  const sendEmail = () => {
+  const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) return;
+    setIsSending(true);
     const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent);
+    // Send via real API if available
+    try {
+      await fetch('/api/mail/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: compose.fromAgent,
+          to: compose.to,
+          subject: compose.subject,
+          body: compose.body,
+        }),
+      });
+    } catch { /* fall through to local display */ }
     const newEmail: Email = {
       id: `sent-${Date.now()}`,
       from: `${compose.fromAgent}@casebuddy.live`,
@@ -335,6 +426,7 @@ const MailRoom: React.FC = () => {
       priority: compose.priority,
     };
     setEmails(prev => [newEmail, ...prev]);
+    setIsSending(false);
     setComposing(false);
     setCompose(emptyCompose);
   };
@@ -343,74 +435,29 @@ const MailRoom: React.FC = () => {
     if (!selected) return;
     setAiDrafting(true);
     try {
-      const key = (window as any).__GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
-      if (!key) throw new Error('No Gemini key');
       const agent = AGENT_SENDERS.find(a => a.id === compose.fromAgent) || AGENT_SENDERS[0];
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.
-Draft a professional, concise email reply in under 100 words. Be direct and action-oriented. Match the agent's voice.
-Original email:
-From: ${selected.fromName}
-Subject: ${selected.subject}
-Body: ${selected.body.slice(0, 800)}
-Write only the email body. Sign as "— ${agent.name}"`
-              }]
-            }],
-            generationConfig: { temperature: 0.6 },
-          }),
-        }
-      );
-      const data = await res.json() as any;
-      const draft = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      setCompose(c => ({
-        ...c,
-        to: selected.from,
-        subject: `Re: ${selected.subject}`,
-        body: draft,
-      }));
+      const prompt = `You are ${agent.name}, ${agent.role} at CaseBuddy AI Law Firm.\nDraft a professional, concise email reply in under 100 words. Be direct and action-oriented. Match the agent's voice.\nOriginal email:\nFrom: ${selected.fromName}\nSubject: ${selected.subject}\nBody: ${selected.body.slice(0, 800)}\nWrite only the email body. Sign as "— ${agent.name}"`;
+      const draft = await geminiGenerate(prompt);
+      if (!draft) throw new Error('Empty response from AI');
+      setCompose(c => ({ ...c, to: selected.from, subject: `Re: ${selected.subject}`, body: draft }));
       setComposing(true);
     } catch (e: any) {
-      alert('Could not generate AI draft: ' + e.message);
+      toast.error('AI draft failed: ' + e.message);
+    } finally {
+      setAiDrafting(false);
     }
-    setAiDrafting(false);
   };
 
   const generateAgentBrief = async (agentId: string) => {
     setAgentBrief({ agentId, loading: true, text: '' });
     try {
-      const key = (window as any).__GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
-      if (!key) throw new Error('No Gemini key');
       const agent = OPERATIONAL_AGENTS.find(a => a.id === agentId);
       const agentEmails = emails.filter(e => e.fromAgent === agentId).slice(0, 5);
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are ${agent?.name}, ${agent?.role} at CaseBuddy. 
-Give a 3-sentence status briefing on your current workload based on these recent emails. Be concise and in-character.
-Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('\n\n')}`
-              }]
-            }],
-            generationConfig: { temperature: 0.7 },
-          }),
-        }
-      );
-      const data = await res.json() as any;
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No briefing available.';
+      const prompt = `You are ${agent?.name}, ${agent?.role} at CaseBuddy. Give a 3-sentence status briefing on your current workload based on these recent emails. Be concise and in-character.\nEmails: ${agentEmails.map(e => '[' + e.subject + ']: ' + e.body.slice(0, 200)).join('\n\n')}`;
+      const text = await geminiGenerate(prompt) || 'No briefing available.';
       setAgentBrief({ agentId, loading: false, text });
-    } catch {
-      setAgentBrief({ agentId, loading: false, text: 'Could not load briefing.' });
+    } catch (e: any) {
+      setAgentBrief({ agentId, loading: false, text: 'Could not load briefing: ' + e.message });
     }
   };
 
@@ -492,6 +539,14 @@ Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('
                 {urgentCount}
               </span>
             )}
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-500">
+              {syncStatus === 'syncing' && '⟳ Syncing…'}
+              {syncStatus === 'ok' && '✓ Live'}
+              {syncStatus === 'error' && '⚠ Offline'}
+            </span>
+            <button onClick={syncFromSupabase} className="text-xs text-slate-500 hover:text-white transition-colors">Refresh</button>
           </div>
           <button
             onClick={() => { setComposing(true); setSelected(null); }}
@@ -715,7 +770,7 @@ Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('
                 <input
                   value={compose.to}
                   onChange={e => setCompose(c => ({ ...c, to: e.target.value }))}
-                  placeholder="client@example.com or firm@casebuddy.live"
+                  placeholder="client@your@firm.com"
                   className="flex-1 bg-slate-700 text-white text-sm rounded-lg px-3 py-2 border border-slate-600 focus:border-gold-500 focus:outline-none placeholder:text-slate-500"
                 />
               </div>
@@ -758,10 +813,10 @@ Emails: ${agentEmails.map(e => `[${e.subject}]: ${e.body.slice(0, 200)}`).join('
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <button
                 onClick={sendEmail}
-                disabled={!compose.to || !compose.subject || !compose.body}
+                disabled={isSending || !compose.to || !compose.subject || !compose.body}
                 className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-40 text-slate-900 font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
               >
-                <Send size={14} /> Send
+                <Send size={14} />{isSending ? 'Sending…' : 'Send'}
               </button>
               <button
                 onClick={aiDraftReply}
