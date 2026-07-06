@@ -127,6 +127,9 @@ export default defineConfig(({ mode }) => {
         // Set VITE_FIRM_ID in .env.local or Vercel env vars. Falls back to the
         // device localStorage UUID when not set (single-user installs).
         'import.meta.env.VITE_FIRM_ID': JSON.stringify(env.VITE_FIRM_ID || ''),
+        // Azure Computer Vision
+        'import.meta.env.VITE_AZURE_VISION_ENDPOINT': JSON.stringify(env.VITE_AZURE_VISION_ENDPOINT || ''),
+        'import.meta.env.VITE_AZURE_VISION_KEY': JSON.stringify(env.VITE_AZURE_VISION_KEY || ''),
       },
       resolve: {
         alias: {

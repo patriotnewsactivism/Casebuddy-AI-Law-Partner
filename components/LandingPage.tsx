@@ -164,7 +164,6 @@ const TESTIMONIALS = [
     rating: 5,
   },
 ];
-
 const PRACTICE_AREAS = [
   'Criminal Defense', 'Personal Injury', 'Family Law', 'Immigration',
   'IP & Patent', 'Corporate', 'Employment', 'Real Estate',
@@ -501,8 +500,6 @@ const LandingPage = () => {
           </div>
         </div>
       </section>
-
-
       {/* ── Pricing Preview ───────────────────────────────────────────────── */}
       <section className="py-12 sm:py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">

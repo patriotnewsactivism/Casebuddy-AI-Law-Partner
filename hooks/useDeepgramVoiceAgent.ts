@@ -507,7 +507,12 @@ export function useDeepgramVoiceAgent(
                 }
               : geminiKey
               ? {
-                  provider: { type: 'google', model: 'gemini-2.0-flash', temperature: 0.7 },
+                  provider: { 
+                    type: 'google', 
+                    credentials: { api_key: geminiKey }, 
+                    model: 'gemini-1.5-flash', 
+                    temperature: 0.7 
+                  },
                   prompt,
                 }
               : {
