@@ -45,18 +45,45 @@ const statusBadge: Record<ClientInvite['status'], { label: string; icon: React.R
 // ── Generic shareable link banner ─────────────────────────────────────────────
 const GenericLinkBanner: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const url = `${window.location.origin}/intake`;
+  const [mode, setMode] = useState<'voice' | 'chat' | 'form'>('voice');
+
+  const getUrl = () => {
+    const base = `${window.location.origin}/intake`;
+    return mode === 'voice' ? base : `${base}?mode=${mode}`;
+  };
+
   const copy = async () => {
-    try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
+    try { await navigator.clipboard.writeText(getUrl()); } catch { /* noop */ }
     setCopied(true);
     toast.success('Generic intake link copied');
     setTimeout(() => setCopied(false), 2000);
   };
+
   return (
-    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-4 py-3 flex items-center gap-3">
-      <Share2 size={15} className="text-slate-400 shrink-0" />
-      <span className="text-xs text-slate-400 mr-1">Generic link:</span>
-      <code className="flex-1 text-xs text-slate-300 truncate">{url}</code>
+    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+      <div className="flex items-center gap-2">
+        <Share2 size={15} className="text-slate-400 shrink-0" />
+        <span className="text-xs text-slate-400">Generic link:</span>
+      </div>
+
+      <div className="flex items-center gap-1 bg-slate-900/60 p-0.5 rounded-lg border border-slate-700/40 shrink-0">
+        {(['voice', 'chat', 'form'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-colors ${
+              mode === m
+                ? 'bg-violet-600 text-white'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {m === 'voice' ? '🎙️ Voice' : m === 'chat' ? '💬 Chat' : '📝 Form'}
+          </button>
+        ))}
+      </div>
+
+      <code className="flex-1 text-xs text-slate-300 truncate font-mono">{getUrl()}</code>
       <button onClick={copy}
         className="shrink-0 flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-slate-700">
         {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
@@ -73,6 +100,7 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
   const [email, setEmail]     = useState('');
   const [phone, setPhone]     = useState('');
   const [notes, setNotes]     = useState('');
+  const [mode, setMode]       = useState<'voice' | 'chat' | 'form'>('voice');
   const [saving, setSaving]   = useState(false);
   const [newLink, setNewLink] = useState<string | null>(null);
   const [copied, setCopied]   = useState(false);
@@ -82,10 +110,16 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
   const handleCreate = async () => {
     if (!canSave) return;
     setSaving(true);
-    const invite = await createClientInvite({ clientName: name.trim(), clientEmail: email.trim(), clientPhone: phone.trim(), notes: notes.trim() });
+    const finalNotes = notes.trim() + (mode === 'voice' ? '' : `\n[mode:${mode}]`);
+    const invite = await createClientInvite({
+      clientName: name.trim(),
+      clientEmail: email.trim(),
+      clientPhone: phone.trim(),
+      notes: finalNotes,
+    });
     setSaving(false);
     if (!invite) { toast.error('Could not create link — check Supabase connection'); return; }
-    const url = `${window.location.origin}/intake/${invite.token}`;
+    const url = `${window.location.origin}/intake/${invite.token}${mode === 'voice' ? '' : `?mode=${mode}`}`;
     setNewLink(url);
     onCreated(invite);
   };
@@ -98,7 +132,7 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const reset = () => { setOpen(false); setName(''); setEmail(''); setPhone(''); setNotes(''); setNewLink(null); setCopied(false); };
+  const reset = () => { setOpen(false); setName(''); setEmail(''); setPhone(''); setNotes(''); setMode('voice'); setNewLink(null); setCopied(false); };
 
   return (
     <div className="border border-violet-500/30 bg-violet-500/5 rounded-2xl overflow-hidden">
@@ -171,6 +205,25 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
                   rows={2}
                   className="w-full bg-slate-900 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none transition-colors resize-none" />
               </div>
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Intake Format</label>
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 p-1 rounded-xl">
+                  {(['voice', 'chat', 'form'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                        mode === m
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                      }`}
+                    >
+                      {m === 'voice' ? '🎙️ Voice Agent' : m === 'chat' ? '💬 AI Chatbot' : '📝 Structured Form'}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button onClick={handleCreate} disabled={!canSave || saving}
                 className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-sm transition-colors">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}
@@ -191,8 +244,12 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
 
   const shown = expanded ? invites : invites.slice(0, 5);
 
-  const copyLink = async (token: string, name: string) => {
-    const url = `${window.location.origin}/intake/${token}`;
+  const copyLink = async (token: string, name: string, notesText: string) => {
+    const match = (notesText || '').match(/\[mode:(voice|chat|form)\]/);
+    const mode = match ? match[1] : 'voice';
+    const base = `${window.location.origin}/intake/${token}`;
+    const url = mode === 'voice' ? base : `${base}?mode=${mode}`;
+    
     try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
     toast.success(`Link for ${name} copied`);
   };
@@ -206,6 +263,8 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
       <div className="divide-y divide-slate-800/60">
         {shown.map(inv => {
           const badge = statusBadge[inv.status];
+          const match = (inv.notes || '').match(/\[mode:(voice|chat|form)\]/);
+          const mode = match ? match[1] : 'voice';
           return (
             <div key={inv.id} className="px-5 py-3 flex items-center gap-3 hover:bg-slate-800/30 transition-colors">
               {/* Status dot */}
@@ -225,10 +284,14 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
               <span className={`shrink-0 flex items-center gap-1 border text-xs font-medium px-2 py-0.5 rounded-full ${badge.cls}`}>
                 {badge.icon} {badge.label}
               </span>
+              {/* Format Badge */}
+              <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400 font-bold">
+                {mode === 'voice' ? '🎙️ Voice' : mode === 'chat' ? '💬 Chat' : '📝 Form'}
+              </span>
               {/* Token chip */}
               <code className="text-xs text-slate-500 font-mono shrink-0 hidden sm:block">/{inv.token}</code>
               {/* Actions */}
-              <button onClick={() => copyLink(inv.token, inv.client_name)}
+              <button onClick={() => copyLink(inv.token, inv.client_name, inv.notes)}
                 className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 transition-colors" title="Copy link">
                 <Copy size={13} />
               </button>
@@ -293,57 +356,63 @@ const IntakeInbox: React.FC = () => {
     if (processedRef.current.has(intake.id)) return;
     processedRef.current.add(intake.id);
 
-    const hasRichIntake = !!(intake.intake && intake.score_detail);
-    const newCase: Case = hasRichIntake
-      ? convertIntakeToCase(intake.intake, intake.score_detail)
-      : ({
-          id: `case_${Date.now()}`,
-          title: `${intake.full_name} — ${intake.matter_type}`,
-          client: intake.full_name,
-          status: CaseStatus.PRE_TRIAL,
-          caseType: intake.matter_type,
-          summary: intake.summary,
-          winProbability: Math.min(Math.round((intake.score ?? 40) * 0.7), 95),
-          opposingCounsel: 'Unknown',
-          judge: 'TBD',
-          assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
-          updatedAt: new Date().toISOString(),
-        } as unknown as Case);
-    (newCase as any).intakeId = intake.id;
+    try {
+      const hasRichIntake = !!(intake.intake && intake.score_detail);
+      const newCase: Case = hasRichIntake
+        ? convertIntakeToCase(intake.intake, intake.score_detail)
+        : ({
+            id: `case_${Date.now()}`,
+            title: `${intake.full_name} — ${intake.matter_type}`,
+            client: intake.full_name,
+            status: CaseStatus.PRE_TRIAL,
+            caseType: intake.matter_type,
+            summary: intake.summary,
+            winProbability: Math.min(Math.round((intake.score ?? 40) * 0.7), 95),
+            opposingCounsel: 'Unknown',
+            judge: 'TBD',
+            assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
+            updatedAt: new Date().toISOString(),
+          } as unknown as Case);
+      (newCase as any).intakeId = intake.id;
 
-    // Hand off everything Maya collected — details first, then transcript.
-    if (intake.intake) populateCaseFromIntake(newCase.id, intake.intake);
-    if (intake.transcript?.length) saveIntakeTranscript(newCase.id, intake.transcript);
+      // Hand off everything Maya collected — details first, then transcript.
+      if (intake.intake) populateCaseFromIntake(newCase.id, intake.intake);
+      if (intake.transcript?.length) saveIntakeTranscript(newCase.id, intake.transcript);
 
-    // Creates the case everywhere (state, localStorage, cloud) and fires
-    // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
-    addCase(newCase);
-    await handleStatusChange(intake.id, 'accepted');
+      // Creates the case everywhere (state, localStorage, cloud) and fires
+      // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
+      addCase(newCase);
+      await handleStatusChange(intake.id, 'accepted');
 
-    // Matter-specific follow-on workflow (medical records, immigration, …)
-    const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
-    if (wf) orchestrator.executeWorkflowAsync(wf);
+      // Matter-specific follow-on workflow (medical records, immigration, …)
+      const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
+      if (wf) orchestrator.executeWorkflowAsync(wf);
 
-    // Engagement letter + warm client confirmation (best-effort)
-    if (intake.intake) {
-      generateEngagementLetter(intake.intake, newCase).then(letter => {
-        localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
-      }).catch(() => {});
-      if (intake.score_detail) {
-        generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
-          localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+      // Engagement letter + warm client confirmation (best-effort)
+      if (intake.intake) {
+        generateEngagementLetter(intake.intake, newCase).then(letter => {
+          localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
         }).catch(() => {});
+        if (intake.score_detail) {
+          generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
+            localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+          }).catch(() => {});
+        }
       }
-    }
 
-    if (opts.auto) {
-      toast.success(`🤖 Case auto-created from ${intake.full_name}'s intake — agent team briefed and working`, { autoClose: 6000 });
-    } else {
-      setActiveCase(newCase);
-      toast.success(`Case created: ${newCase.title}`);
-      navigate('/app/cases');
+      if (opts.auto) {
+        toast.success(`🤖 Case auto-created from ${intake.full_name}'s intake — agent team briefed and working`, { autoClose: 6000 });
+      } else {
+        setActiveCase(newCase);
+        toast.success(`Case created: ${newCase.title}`);
+        navigate('/app/cases');
+      }
+      return newCase;
+    } catch (err) {
+      processedRef.current.delete(intake.id);
+      console.error('[acceptIntake] failed:', err);
+      throw err;
     }
-    return newCase;
   }, [addCase, setActiveCase, navigate]);
 
   const shouldAutoAccept = useCallback((r: IntakeCase) =>
@@ -390,7 +459,10 @@ const IntakeInbox: React.FC = () => {
   }, []);
 
   const handleConvertToCase = (intake: IntakeCase) => {
-    acceptIntake(intake).catch(() => {});
+    acceptIntake(intake).catch((err) => {
+      console.error('[handleConvertToCase] failed:', err);
+      toast.error(`Failed to convert intake to case: ${err?.message || String(err)}`);
+    });
   };
 
   const handleDeleteInvite = async (id: string) => {
@@ -460,6 +532,7 @@ const IntakeInbox: React.FC = () => {
             const isOpen = expanded === intake.id;
             const badge  = dispositionBadge[intake.disposition] ?? dispositionBadge.review;
             const agent  = getSpecialistById(intake.recommended_agent_id);
+            const isConverted = (cases ?? []).some((c: any) => c.intakeId === intake.id);
             return (
               <div key={intake.id}
                 className="border border-slate-700/60 rounded-2xl overflow-hidden hover:border-slate-600/60 transition-colors">
@@ -509,23 +582,22 @@ const IntakeInbox: React.FC = () => {
                     )}
                     {/* Actions */}
                     <div className="flex flex-wrap gap-2">
-                      {intake.status !== 'routed' && (
+                      {isConverted ? (
+                        <span className="flex items-center gap-1.5 text-green-400 bg-green-900/20 border border-green-500/30 text-xs font-bold px-3 py-2 rounded-xl">
+                          <CheckCircle2 size={13} /> Converted to Case
+                        </span>
+                      ) : (
                         <button onClick={() => handleConvertToCase(intake)}
                           className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors">
                           <ArrowRightCircle size={13} /> Convert to Case
                         </button>
                       )}
-                      {intake.status === 'new' && (
-                        <>
-                          <button onClick={() => acceptIntake(intake).catch(() => {})}
-                            className="flex items-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/40 text-green-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
-                            <ThumbsUp size={13} /> Accept
-                          </button>
-                          <button onClick={() => handleStatusChange(intake.id, 'denied')}
-                            className="flex items-center gap-1.5 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/40 text-slate-400 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
-                            <ThumbsDown size={13} /> Decline
-                          </button>
-                        </>
+                      
+                      {!isConverted && intake.status !== 'denied' && (
+                        <button onClick={() => handleStatusChange(intake.id, 'denied')}
+                          className="flex items-center gap-1.5 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/40 text-slate-400 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
+                          <ThumbsDown size={13} /> Decline
+                        </button>
                       )}
                     </div>
                   </div>

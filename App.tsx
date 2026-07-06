@@ -93,7 +93,7 @@ import AgentStatusDashboard from './components/AgentStatusDashboard';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel, adoptFirmIdFromUser } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
-import type { User } from '@supabase/supabase-js';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 // ─── Page-level loading spinner ──────────────────────────────────────────
 const PageSpinner = () => (
@@ -412,7 +412,7 @@ export const AppContext = React.createContext<{
   setOperatingMode: (m: OperatingMode) => void;
   productTier: ProductTier;
   syncStatus: SyncStatus;
-  user: User | null;
+  user: SupabaseUser | null;
   authLoading: boolean;
 }>({
   cases: [],
@@ -449,7 +449,7 @@ const App = () => {
   const [operatingMode, setOperatingModeState] = useState<OperatingMode>(() => loadPreferences().operatingMode ?? 'partner');
   const [productTier, setProductTierState] = useState<ProductTier>(() => getCurrentTier());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // ─── Auth listener ─────────────────────────────────────────────────────────
@@ -519,10 +519,12 @@ const App = () => {
   };
 
   const addCase = (newCase: Case) => {
-    const updated = [...cases, newCase];
-    setCases(updated);
-    saveCases(updated);
-    upsertCaseToCloud(newCase);
+    setCases(prev => {
+      const updated = [...prev, newCase];
+      saveCases(updated);
+      upsertCaseToCloud(newCase);
+      return updated;
+    });
     if (!activeCase) {
       setActiveCase(newCase);
     }
@@ -531,29 +533,38 @@ const App = () => {
   };
 
   const updateCase = (updatedCase: Case) => {
-    const previous = cases.find(c => c.id === updatedCase.id);
-    const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
-    setCases(updated);
-    saveCases(updated);
-    upsertCaseToCloud(updatedCase);
+    setCases(prev => {
+      const previous = prev.find(c => c.id === updatedCase.id);
+      const updated = prev.map(c => c.id === updatedCase.id ? updatedCase : c);
+      saveCases(updated);
+      upsertCaseToCloud(updatedCase);
+      
+      // Auto-trigger event-based workflows
+      if (previous) {
+        onCaseUpdated(updatedCase, previous).catch(() => {});
+      }
+      return updated;
+    });
+    
     if (activeCase?.id === updatedCase.id) {
       setActiveCaseState(updatedCase);
       saveActiveCaseId(updatedCase.id);
     }
-    // Auto-trigger event-based workflows (deadline proximity, win prob drop, etc.)
-    onCaseUpdated(updatedCase, previous).catch(() => {});
   };
 
   const deleteCase = (id: string) => {
-    const updated = cases.filter(c => c.id !== id);
-    setCases(updated);
-    saveCases(updated);
-    deleteCaseFromCloud(id);
-    if (activeCase?.id === id) {
-      const next = updated[0] ?? null;
-      setActiveCaseState(next);
-      if (next) saveActiveCaseId(next.id);
-    }
+    setCases(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      saveCases(updated);
+      deleteCaseFromCloud(id);
+      
+      if (activeCase?.id === id) {
+        const next = updated[0] ?? null;
+        setActiveCaseState(next);
+        if (next) saveActiveCaseId(next.id);
+      }
+      return updated;
+    });
   };
 
   // Initial cloud sync

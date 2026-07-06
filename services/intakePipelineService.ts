@@ -1,4 +1,5 @@
-import type { IntakeData, IntakeCase, Case, CaseStatus, IntakeScore } from '../types';
+import { CaseStatus } from '../types';
+import type { IntakeData, IntakeCase, Case, IntakeScore } from '../types';
 import { loadCases, saveCases } from '../utils/storage';
 import { deepseekChat } from './deepseek';
 import { LEGAL_SPECIALISTS, getSpecialistById } from '../agents/personas';

@@ -824,7 +824,7 @@ describe('ArgumentPractice Integration', () => {
    - React 19 + TypeScript
    - Vite for fast builds
    - Tailwind CSS for styling
-   - HashRouter for static deployment
+   - BrowserRouter for standard routing and clean URLs
 
 4. **API Design**
    - Structured output with schemas

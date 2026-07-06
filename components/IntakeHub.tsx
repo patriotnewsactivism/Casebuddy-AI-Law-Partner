@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Inbox, Mic } from 'lucide-react';
+import { Inbox, Bot } from 'lucide-react';
 import HubTabs from './HubTabs';
 
 const IntakeInbox = React.lazy(() => import('./IntakeInbox'));
@@ -15,7 +15,7 @@ const IntakeHub: React.FC = () => (
   <HubTabs
     tabs={[
       { id: 'inbox', label: 'Intake Inbox', icon: <Inbox size={15} />, render: () => <IntakeInbox /> },
-      { id: 'maya',  label: 'Maya Live Intake', icon: <Mic size={15} />, badge: 'Voice', render: () => <IntakePage /> },
+      { id: 'maya',  label: 'Maya Assistant', icon: <Bot size={15} />, badge: 'Chat & Form', render: () => <IntakePage /> },
     ]}
   />
 );

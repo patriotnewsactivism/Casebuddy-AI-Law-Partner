@@ -37,7 +37,7 @@ Tailwind CSS is also loaded from CDN (`https://cdn.tailwindcss.com`) with config
 Source files live at **repo root** (no `src/` directory):
 
 ```
-App.tsx           # App shell, HashRouter, AppContext, Sidebar, Layout
+App.tsx           # App shell, BrowserRouter, AppContext, Sidebar, Layout
 index.tsx         # Entry point
 index.html        # Importmap, Tailwind CDN config
 types.ts          # All TypeScript types/enums
@@ -50,7 +50,7 @@ server/           # db.ts — Drizzle/Postgres stub (vestigial); ignore it
 supabase/         # Supabase CLI state files only
 ```
 
-## Routing (HashRouter — required for static hosting)
+## Routing (BrowserRouter — Standard Routing)
 
 Public: `/`, `/privacy-policy`, `/tos`, `/pricing`
 

@@ -196,12 +196,42 @@ async function saveDocumentAndEmailDraft(
 // ── Orchestrator ───────────────────────────────────────────────────────────
 
 class AgentOrchestrator {
+  private isDuplicateWorkflow(workflow: Workflow): boolean {
+    if (!workflow.caseId) return false;
+    const all = loadWorkflows();
+    return all.some(w => {
+      if (w.caseId !== workflow.caseId) return false;
+      if (w.name !== workflow.name) return false;
+      
+      // If one is running or pending, it is a duplicate
+      if (w.status === 'running' || w.status === 'pending') return true;
+
+      // If it's completed, check if it had the exact same inputs (like witnessName) to prevent duplicate runs
+      if (w.status === 'completed') {
+        const wInputs = workflow.steps[0]?.inputs ?? {};
+        const existingInputs = w.steps[0]?.inputs ?? {};
+        const clean = (obj: any) => {
+          const { caseContext, ...rest } = obj;
+          return JSON.stringify(rest);
+        };
+        return clean(wInputs) === clean(existingInputs);
+      }
+
+      return false;
+    });
+  }
+
   /** Execute a workflow, persisting state at each step. */
   async executeWorkflow(
     workflow: Workflow,
     caseData?: Case
   ): Promise<Workflow> {
     if (!AGENT_CONFIG.workflows.enabled) return workflow;
+
+    if (this.isDuplicateWorkflow(workflow)) {
+      console.warn(`[Orchestrator] Duplicate workflow "${workflow.name}" skipped for case ${workflow.caseId}.`);
+      return workflow;
+    }
 
     // Most callers (case event hooks) fire workflows with only a caseId —
     // resolve the case ourselves so agents never run without their case.

@@ -1,4 +1,5 @@
-import type { Case, CaseStatus } from '../types';
+import { CaseStatus } from '../types';
+import type { Case } from '../types';
 
 export type ImportFormat = 'csv' | 'json';
 
