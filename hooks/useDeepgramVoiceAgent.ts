@@ -323,6 +323,12 @@ export function useDeepgramVoiceAgent(
 
   const handleServerMessage = useCallback((data: any) => {
     const type = data.type;
+    // Log EVERY server message for debugging
+    console.log('[VoiceAgent] Server →', type, JSON.stringify(data));
+    if (type === 'Welcome' || type === 'SettingsApplied') {
+      // These are handshake messages — logged above, no action needed
+      return;
+    }
     if (type === 'UserStartedSpeaking') {
       // Debounce barge-in by 150ms — prevents ambient noise / false VAD
       // triggers from killing the agent's audio mid-sentence.
@@ -351,6 +357,10 @@ export function useDeepgramVoiceAgent(
       setLiveCaption({ speaker, text });
       clearTimeout(captionTimer.current);
       captionTimer.current = setTimeout(() => setLiveCaption(null), 3000);
+      return;
+    }
+    if (type === 'Warning') {
+      console.warn('[VoiceAgent] Warning:', JSON.stringify(data));
       return;
     }
     if (type === 'Error') {

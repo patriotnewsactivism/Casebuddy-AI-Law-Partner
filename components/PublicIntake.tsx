@@ -20,7 +20,7 @@ import {
 // the prospect a warm, human outcome.
 
 // Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
-const MAYA_VOICE = 'aura-asteria-en';
+const MAYA_VOICE = 'aura-2-thalia-en';
 
 // When a client token is present, Maya already knows who she's speaking with
 // This is injected at runtime inside the component after invite resolves
