@@ -45,18 +45,45 @@ const statusBadge: Record<ClientInvite['status'], { label: string; icon: React.R
 // ── Generic shareable link banner ─────────────────────────────────────────────
 const GenericLinkBanner: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const url = `${window.location.origin}/intake`;
+  const [mode, setMode] = useState<'voice' | 'chat' | 'form'>('voice');
+
+  const getUrl = () => {
+    const base = `${window.location.origin}/intake`;
+    return mode === 'voice' ? base : `${base}?mode=${mode}`;
+  };
+
   const copy = async () => {
-    try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
+    try { await navigator.clipboard.writeText(getUrl()); } catch { /* noop */ }
     setCopied(true);
     toast.success('Generic intake link copied');
     setTimeout(() => setCopied(false), 2000);
   };
+
   return (
-    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-4 py-3 flex items-center gap-3">
-      <Share2 size={15} className="text-slate-400 shrink-0" />
-      <span className="text-xs text-slate-400 mr-1">Generic link:</span>
-      <code className="flex-1 text-xs text-slate-300 truncate">{url}</code>
+    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+      <div className="flex items-center gap-2">
+        <Share2 size={15} className="text-slate-400 shrink-0" />
+        <span className="text-xs text-slate-400">Generic link:</span>
+      </div>
+
+      <div className="flex items-center gap-1 bg-slate-900/60 p-0.5 rounded-lg border border-slate-700/40 shrink-0">
+        {(['voice', 'chat', 'form'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-colors ${
+              mode === m
+                ? 'bg-violet-600 text-white'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {m === 'voice' ? '🎙️ Voice' : m === 'chat' ? '💬 Chat' : '📝 Form'}
+          </button>
+        ))}
+      </div>
+
+      <code className="flex-1 text-xs text-slate-300 truncate font-mono">{getUrl()}</code>
       <button onClick={copy}
         className="shrink-0 flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-slate-700">
         {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
@@ -73,6 +100,7 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
   const [email, setEmail]     = useState('');
   const [phone, setPhone]     = useState('');
   const [notes, setNotes]     = useState('');
+  const [mode, setMode]       = useState<'voice' | 'chat' | 'form'>('voice');
   const [saving, setSaving]   = useState(false);
   const [newLink, setNewLink] = useState<string | null>(null);
   const [copied, setCopied]   = useState(false);
@@ -82,10 +110,16 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
   const handleCreate = async () => {
     if (!canSave) return;
     setSaving(true);
-    const invite = await createClientInvite({ clientName: name.trim(), clientEmail: email.trim(), clientPhone: phone.trim(), notes: notes.trim() });
+    const finalNotes = notes.trim() + (mode === 'voice' ? '' : `\n[mode:${mode}]`);
+    const invite = await createClientInvite({
+      clientName: name.trim(),
+      clientEmail: email.trim(),
+      clientPhone: phone.trim(),
+      notes: finalNotes,
+    });
     setSaving(false);
     if (!invite) { toast.error('Could not create link — check Supabase connection'); return; }
-    const url = `${window.location.origin}/intake/${invite.token}`;
+    const url = `${window.location.origin}/intake/${invite.token}${mode === 'voice' ? '' : `?mode=${mode}`}`;
     setNewLink(url);
     onCreated(invite);
   };
@@ -98,7 +132,7 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const reset = () => { setOpen(false); setName(''); setEmail(''); setPhone(''); setNotes(''); setNewLink(null); setCopied(false); };
+  const reset = () => { setOpen(false); setName(''); setEmail(''); setPhone(''); setNotes(''); setMode('voice'); setNewLink(null); setCopied(false); };
 
   return (
     <div className="border border-violet-500/30 bg-violet-500/5 rounded-2xl overflow-hidden">
@@ -171,6 +205,25 @@ const GenerateLinkPanel: React.FC<{ onCreated: (invite: ClientInvite) => void }>
                   rows={2}
                   className="w-full bg-slate-900 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none transition-colors resize-none" />
               </div>
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Intake Format</label>
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 p-1 rounded-xl">
+                  {(['voice', 'chat', 'form'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                        mode === m
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                      }`}
+                    >
+                      {m === 'voice' ? '🎙️ Voice Agent' : m === 'chat' ? '💬 AI Chatbot' : '📝 Structured Form'}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button onClick={handleCreate} disabled={!canSave || saving}
                 className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-sm transition-colors">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}
@@ -191,8 +244,12 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
 
   const shown = expanded ? invites : invites.slice(0, 5);
 
-  const copyLink = async (token: string, name: string) => {
-    const url = `${window.location.origin}/intake/${token}`;
+  const copyLink = async (token: string, name: string, notesText: string) => {
+    const match = (notesText || '').match(/\[mode:(voice|chat|form)\]/);
+    const mode = match ? match[1] : 'voice';
+    const base = `${window.location.origin}/intake/${token}`;
+    const url = mode === 'voice' ? base : `${base}?mode=${mode}`;
+    
     try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
     toast.success(`Link for ${name} copied`);
   };
@@ -206,6 +263,8 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
       <div className="divide-y divide-slate-800/60">
         {shown.map(inv => {
           const badge = statusBadge[inv.status];
+          const match = (inv.notes || '').match(/\[mode:(voice|chat|form)\]/);
+          const mode = match ? match[1] : 'voice';
           return (
             <div key={inv.id} className="px-5 py-3 flex items-center gap-3 hover:bg-slate-800/30 transition-colors">
               {/* Status dot */}
@@ -225,10 +284,14 @@ const InviteTracker: React.FC<{ invites: ClientInvite[]; onDelete: (id: string) 
               <span className={`shrink-0 flex items-center gap-1 border text-xs font-medium px-2 py-0.5 rounded-full ${badge.cls}`}>
                 {badge.icon} {badge.label}
               </span>
+              {/* Format Badge */}
+              <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400 font-bold">
+                {mode === 'voice' ? '🎙️ Voice' : mode === 'chat' ? '💬 Chat' : '📝 Form'}
+              </span>
               {/* Token chip */}
               <code className="text-xs text-slate-500 font-mono shrink-0 hidden sm:block">/{inv.token}</code>
               {/* Actions */}
-              <button onClick={() => copyLink(inv.token, inv.client_name)}
+              <button onClick={() => copyLink(inv.token, inv.client_name, inv.notes)}
                 className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 transition-colors" title="Copy link">
                 <Copy size={13} />
               </button>

@@ -93,7 +93,7 @@ import AgentStatusDashboard from './components/AgentStatusDashboard';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel, adoptFirmIdFromUser } from './services/caseStore';
 import { onAuthStateChange, signOut, getSession } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
-import type { User } from '@supabase/supabase-js';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 // ─── Page-level loading spinner ──────────────────────────────────────────
 const PageSpinner = () => (
@@ -412,7 +412,7 @@ export const AppContext = React.createContext<{
   setOperatingMode: (m: OperatingMode) => void;
   productTier: ProductTier;
   syncStatus: SyncStatus;
-  user: User | null;
+  user: SupabaseUser | null;
   authLoading: boolean;
 }>({
   cases: [],
@@ -449,7 +449,7 @@ const App = () => {
   const [operatingMode, setOperatingModeState] = useState<OperatingMode>(() => loadPreferences().operatingMode ?? 'partner');
   const [productTier, setProductTierState] = useState<ProductTier>(() => getCurrentTier());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // ─── Auth listener ─────────────────────────────────────────────────────────

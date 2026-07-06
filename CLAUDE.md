@@ -44,7 +44,7 @@ server/          # db.ts — Drizzle/Postgres stub (vestigial, not wired to the 
 supabase/        # Supabase CLI state files
 ```
 
-### Routing (HashRouter — required for static hosting)
+### Routing (BrowserRouter — Standard Routing)
 
 Public routes (no Layout wrapper):
 - `/` → `LandingPage`
