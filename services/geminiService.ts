@@ -369,6 +369,28 @@ const ocrWithGitHubModels = async (imageFile: File): Promise<string> => {
   return data.choices?.[0]?.message?.content || '';
 };
 
+// Azure Computer Vision Read via the server proxy — the firm's primary OCR
+// (5,000 free requests/month, purpose-built for documents; handles images
+// and scanned PDFs). The key stays server-side; files ≤ 4MB only.
+const ocrWithAzure = async (file: File): Promise<string> => {
+  if (file.size > 4 * 1024 * 1024) throw new Error('too large for Azure proxy endpoint');
+  const buf = await file.arrayBuffer();
+  let bin = '';
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < view.length; i += 0x8000) {
+    bin += String.fromCharCode(...view.subarray(i, i + 0x8000));
+  }
+  const res = await fetch('/api/ai/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: btoa(bin), mimeType: file.type || 'application/octet-stream' }),
+  });
+  if (!res.ok) throw new Error(`Azure OCR proxy ${res.status}`);
+  const data = await res.json();
+  if (!data.text?.trim()) throw new Error('Azure OCR returned empty text');
+  return data.text;
+};
+
 export const performOCR = async (imageOrDocFile: File): Promise<string> => {
   const mime = imageOrDocFile.type || imageOrDocFile.name.toLowerCase();
   const isPdf = mime.includes('pdf');
@@ -390,13 +412,21 @@ export const performOCR = async (imageOrDocFile: File): Promise<string> => {
     try {
       const text = await withTimeout(extractPdfText(imageOrDocFile), 30000);
       if (text && text.length > 50) return text;
-      console.warn('[performOCR] PDF.js extracted minimal text (scanned PDF?), trying Gemini');
+      console.warn('[performOCR] PDF.js extracted minimal text (scanned PDF?), trying Azure OCR');
     } catch (e) {
       console.warn('[performOCR] PDF.js failed:', e);
     }
   }
 
-  // 2b. Images: GitHub Models GPT-4o vision (free)
+  // 1b. Azure Computer Vision Read (primary OCR — 5,000 free/month)
+  try {
+    const text = await withTimeout(ocrWithAzure(imageOrDocFile), 45000);
+    if (text) return text;
+  } catch (e) {
+    console.warn('[performOCR] Azure OCR unavailable, trying next provider:', e);
+  }
+
+  // 1c. Images: GitHub Models GPT-4o vision (free)
   if (isImage) {
     try {
       const text = await withTimeout(ocrWithGitHubModels(imageOrDocFile), 45000);
