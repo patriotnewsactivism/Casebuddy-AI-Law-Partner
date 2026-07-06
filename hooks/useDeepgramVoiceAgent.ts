@@ -442,43 +442,77 @@ export function useDeepgramVoiceAgent(
       const speakRate = opts.speakingRate ?? 1.0;
 
       ws.onopen = () => {
-        // Resolve speak provider: ElevenLabs when key is available + opted in + voice mapped;
-        // otherwise fall back to Deepgram Aura-2.
+        // ── Resolve speak (TTS) provider ──────────────────────────────
+        // ElevenLabs when key + opted in + voice mapped; else Deepgram native.
         const elVoiceId = opts.agentId ? getElevenLabsVoiceId(opts.agentId) : undefined;
         const useEl = !!(elevKey && opts.useElevenLabs && elVoiceId);
-
-        // Output sample rate: ElevenLabs outputs 16 kHz natively (no upsampling needed);
-        // Aura-2 outputs 24 kHz. Already set on outputRateRef in start() — read it here
-        // so the Settings message matches what playAudioChunk expects.
         const outRate = outputRateRef.current;
 
-        // Deepgram's schema is strict: for a BYO third-party TTS provider like
-        // ElevenLabs, `type` must be "eleven_labs" (with underscore) — "elevenlabs"
-        // isn't a recognized enum value and gets the ENTIRE Settings message
-        // rejected as UNPARSABLE_CLIENT_MESSAGE. Also voice_id/api_key/model
-        // don't belong inside `provider` at all — they go in a separate
-        // top-level `endpoint` block (WS URL + xi-api-key header).
-        const speakProvider = useEl
+        // Build speak block — MUST always be present per Deepgram spec.
+        const speakBlock: Record<string, any> = useEl
           ? {
-              type: 'eleven_labs',
-              model_id: 'eleven_turbo_v2_5',
-              language_code: 'en',
-            }
-          : {
-              type: 'deepgram',
-              model: opts.voiceModel,
-            };
-
-        const speakEndpoint = useEl
-          ? {
-              url: `https://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/stream`,
-              headers: { 
-                'xi-api-key': elevKey,
-                'Content-Type': 'application/json'
+              provider: {
+                type: 'eleven_labs',
+                model_id: 'eleven_turbo_v2_5',
+                language_code: 'en',
+              },
+              endpoint: {
+                url: `https://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/stream`,
+                headers: {
+                  'xi-api-key': elevKey,
+                  'Content-Type': 'application/json',
+                },
               },
             }
-          : undefined;
+          : {
+              provider: {
+                type: 'deepgram',
+                model: opts.voiceModel,
+              },
+            };
 
+        // ── Resolve think (LLM) provider ──────────────────────────────
+        // Priority: OpenAI BYO → Groq BYO → Gemini BYO → Deepgram-managed OpenAI
+        // Deepgram-managed = no endpoint/key needed, billed through your Deepgram account.
+        let thinkBlock: Record<string, any>;
+        if (openaiKey) {
+          thinkBlock = {
+            provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
+            endpoint: {
+              url: 'https://api.openai.com/v1/chat/completions',
+              headers: { Authorization: `Bearer ${openaiKey}` },
+            },
+            prompt,
+          };
+        } else if (groqKey) {
+          thinkBlock = {
+            provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
+            endpoint: {
+              url: 'https://api.groq.com/openai/v1/chat/completions',
+              headers: { Authorization: `Bearer ${groqKey}` },
+            },
+            prompt,
+          };
+        } else if (geminiKey) {
+          thinkBlock = {
+            provider: {
+              type: 'google',
+              credentials: { api_key: geminiKey },
+              model: 'gemini-2.0-flash',
+              temperature: 0.7,
+            },
+            prompt,
+          };
+        } else {
+          // Deepgram-managed OpenAI — no endpoint or API key needed.
+          // Billed through your Deepgram account automatically.
+          thinkBlock = {
+            provider: { type: 'open_ai', model: 'gpt-4o-mini' },
+            prompt,
+          };
+        }
+
+        // ── Build the Settings message ────────────────────────────────
         const settings = {
           type: 'Settings',
           audio: {
@@ -486,70 +520,18 @@ export function useDeepgramVoiceAgent(
             output: { encoding: 'linear16', sample_rate: outRate, container: 'none' },
           },
           agent: {
-            language: 'en',
             listen: {
               provider: {
                 type: 'deepgram',
-                model: LISTEN_MODEL,
-                // Flux end-of-turn tuning is only accepted on the v2 listen API.
-                // Audio encoding/sample_rate belong in audio.input (above) — the
-                // agent rejects them here as an unparseable client message.
-                version: 'v2',
-                // Be patient: don't take the turn until we're confident the
-                // caller is done, and tolerate long thinking pauses.
-                eot_threshold: EOT_THRESHOLD,
-                eot_timeout_ms: EOT_TIMEOUT_MS,
+                model: 'nova-3',
               },
             },
-// Deepgram's schema is strict here too (same lesson as eleven_labs):
-// provider.type is 'open_ai' WITH the underscore, and a BYO LLM's
-// url/api_key do NOT go inside `provider` — they belong in a
-// separate sibling `endpoint` block. Violating either gets the
-// whole Settings message rejected as UNPARSABLE_CLIENT_MESSAGE,
-// and the agent never speaks.
-            think: openaiKey
-              ? {
-                  provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
-                  endpoint: {
-                    url: 'https://api.openai.com/v1/chat/completions',
-                    headers: { Authorization: `Bearer ${openaiKey}` },
-                  },
-                  prompt,
-                }
-              : groqKey
-              ? {
-                  // BYO Groq (free tokens) via OpenAI-compatible endpoint
-                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
-                  endpoint: {
-                    url: 'https://api.groq.com/openai/v1/chat/completions',
-                    headers: { Authorization: `Bearer ${groqKey}` },
-                  },
-                  prompt,
-                }
-              : geminiKey
-              ? {
-                  provider: {
-                    type: 'google',
-                    credentials: { api_key: geminiKey },
-                    model: 'gemini-1.5-flash',
-                    temperature: 0.7,
-                  },
-                  prompt,
-                }
-              : {
-                  // Fallback proxy (billed through CaseBuddy)
-                  provider: {
-                    type: 'open_ai',
-                    model: 'gpt-4o-mini',
-                    temperature: 0.7,
-                  },
-                  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
-                  prompt,
-                },
-            ...(speakEndpoint ? { speak: { provider: speakProvider, endpoint: speakEndpoint } } : {}),
+            think: thinkBlock,
+            speak: speakBlock,
             greeting: opts.greeting,
           },
         };
+
         console.log('[VoiceAgent] Settings payload:', JSON.stringify(settings, null, 2));
         ws.send(JSON.stringify(settings));
         setStatus('live');
