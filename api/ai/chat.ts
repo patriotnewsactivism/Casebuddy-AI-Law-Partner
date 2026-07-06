@@ -27,10 +27,12 @@ const json = (body: object, status = 200) =>
 // ── Provider configs ──────────────────────────────────────────────────────
 
 const GROQ_KEY = (process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '').trim();
-const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
 const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || '').trim();
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || process.env.VITE_GITHUB_TOKEN || '').trim();
 const COHERE_KEY = (process.env.COHERE_API_KEY || '').trim();
+// Paid OpenAI credit — LAST RESORT ONLY. Every free provider must fail first.
+const OPENAI_KEY = (process.env.OPENAI_API_KEY || '').trim();
 
 // Free-tier models
 const GROQ_MODEL = 'llama-3.3-70b-versatile';        // 100K tokens/day free
@@ -224,6 +226,41 @@ function parseCohereResponse(data: any): string {
   return parts.filter((p: any) => p.type === 'text').map((p: any) => p.text || '').join('').trim();
 }
 
+// ── OpenAI (paid — strictly last resort to conserve the small credit) ──────
+// Uses gpt-4o-mini: the cheapest capable model (~$0.15/M input tokens), so
+// even fallback traffic barely dents the balance.
+
+async function callOpenAI(body: any): Promise<Response> {
+  if (!OPENAI_KEY) throw new Error('OpenAI not configured');
+
+  const oaBody = {
+    model: 'gpt-4o-mini',
+    messages: [
+      ...(body.system ? [{ role: 'system', content: body.system }] : []),
+      ...(body.messages || []),
+    ],
+    temperature: body.temperature ?? 0.3,
+    max_tokens: body.max_tokens ?? 2048,
+    ...(body.json_mode ? { response_format: { type: 'json_object' } } : {}),
+  };
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(oaBody),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => 'Unknown error');
+    throw new Error(`OpenAI ${resp.status}: ${err.slice(0, 300)}`);
+  }
+
+  return resp;
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -232,14 +269,17 @@ export default async function handler(req: Request): Promise<Response> {
   try { body = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
   if (!body.messages?.length) return json({ error: 'Missing messages' }, 400);
 
-  // Provider chain: Cohere → Gemini → GitHub (gpt-4o) → Groq → OpenRouter
-  // Cohere leads: 256K context window, excellent for long legal documents
+  // Provider chain: Cohere → Gemini → GitHub (gpt-4o) → Groq → OpenRouter → OpenAI
+  // Cohere leads: 256K context window, excellent for long legal documents.
+  // OpenAI is LAST on purpose — it's the only paid key (small credit), so it
+  // only fires when every free provider has failed.
   const providers = [
     { name: 'cohere', fn: callCohere, parse: parseCohereResponse, key: COHERE_KEY },
     { name: 'gemini', fn: callGemini, parse: parseGeminiResponse, key: GEMINI_KEY },
     { name: 'github', fn: callGitHubModels, parse: parseOpenRouterResponse, key: GITHUB_TOKEN },
     { name: 'groq', fn: callGroq, parse: parseGroqResponse, key: GROQ_KEY },
     { name: 'openrouter', fn: callOpenRouter, parse: parseOpenRouterResponse, key: OPENROUTER_KEY },
+    { name: 'openai', fn: callOpenAI, parse: parseOpenRouterResponse, key: OPENAI_KEY },
   ];
 
   for (const provider of providers) {
