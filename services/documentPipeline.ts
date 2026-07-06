@@ -141,6 +141,8 @@ export async function uploadDocument(
       bates_prefix: options?.batesPrefix || null,
       bates_formatted: batesFormatted,
       content_hash: contentHash,
+      // Provenance for cross-app sync (law-partner ⇄ companion ⇄ discoverylens)
+      source_app: 'law-partner',
     })
     .select('*')
     .single();
