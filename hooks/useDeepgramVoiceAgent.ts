@@ -404,9 +404,9 @@ export function useDeepgramVoiceAgent(
       setStatus('error');
       return;
     }
-    if (!geminiKey && !groqKey) {
-      // We'll use our proxy as the think provider — no external key needed
-      console.warn('[VoiceAgent] No external AI keys — using CaseBuddy proxy for think provider');
+    if (!groqKey) {
+      // Deepgram-managed OpenAI (gpt-4o-mini) will be used — no key needed
+      console.warn('[VoiceAgent] No Groq key — using Deepgram-managed OpenAI for think provider');
     }
 
     try {
@@ -499,37 +499,60 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: openaiKey
-              ? {
-                  provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
-                  endpoint: {
-                    url: 'https://api.openai.com/v1/chat/completions',
-                    headers: { Authorization: `Bearer ${openaiKey}` }
-                  },
-                  prompt,
-                }
-              : groqKey
-              ? {
-                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
-                  endpoint: {
-                    url: 'https://api.groq.com/openai/v1/chat/completions',
-                    headers: { Authorization: `Bearer ${groqKey}` }
-                  },
-                  prompt,
-                }
-              : geminiKey
-              ? {
-                  provider: {
-                    type: 'google',
-                    credentials: { api_key: geminiKey },
-                    model: 'gemini-1.5-flash',
-                    temperature: 0.7,
+// Deepgram's schema is strict here too (same lesson as eleven_labs):
+// provider.type is 'open_ai' WITH the underscore, and a BYO LLM's
+// url/api_key do NOT go inside `provider` — they belong in a
+// separate sibling `endpoint` block. Violating either gets the
+// whole Settings message rejected as UNPARSABLE_CLIENT_MESSAGE,
+// and the agent never speaks.
+think: openaiKey
+  ? {
+      provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
+      endpoint: {
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: { Authorization: `Bearer ${openaiKey}` },
+      },
+      prompt,
+    }
+  : groqKey
+  ? {
+      // BYO Groq (free tokens) via OpenAI-compatible endpoint
+      provider: {
+        type: 'open_ai',
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.7,
+      },
+      endpoint: {
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        headers: { Authorization: `Bearer ${groqKey}` },
+      },
+      prompt,
+    }
+  : geminiKey
+  ? {
+      provider: {
+        type: 'google',
+        credentials: { api_key: geminiKey },
+        model: 'gemini-1.5-flash',
+        temperature: 0.7,
+      },
+      prompt,
+    }
                   },
                   prompt,
                 }
               : {
-                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
-                  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
+{
+  // Deepgram-managed OpenAI — no API key needed at all, the
+  // most reliable fallback (billed through Deepgram).
+  provider: {
+    type: 'open_ai',
+    model: 'gpt-4o-mini',
+    temperature: 0.7,
+  },
+  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
+  prompt,
+},
                   prompt,
                 },
             speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { provider: speakProvider },
