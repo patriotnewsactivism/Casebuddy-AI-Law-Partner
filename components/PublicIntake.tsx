@@ -163,7 +163,12 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
     agentId: 'maya',
-    useElevenLabs: true,
+    // Use Deepgram's native Aura-2 voice (Thalia — warm, natural American
+    // female). The ElevenLabs BYO path opens a second WebSocket to
+    // ElevenLabs that fails with FAILED_TO_SPEAK when the voice/key/format
+    // don't line up; Aura-2 is single-connection and needs no external key,
+    // so intake always has a working voice.
+    useElevenLabs: false,
     systemInstruction,
     greeting: mayaProfile.greeting,
     publicEndpoint: true,
