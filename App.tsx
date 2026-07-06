@@ -20,6 +20,7 @@ const Dashboard        = React.lazy(() => import('./components/Dashboard'));
 const IntakeHub        = React.lazy(() => import('./components/IntakeHub'));
 const MediaStudio      = React.lazy(() => import('./components/MediaStudio'));
 const AITeamHub        = React.lazy(() => import('./components/AITeamHub'));
+const ConnectedApps    = React.lazy(() => import('./components/ConnectedApps'));
 const CaseManager      = React.lazy(() => import('./components/CaseManager'));
 const WitnessLab       = React.lazy(() => import('./components/WitnessLab'));
 const StrategyRoom     = React.lazy(() => import('./components/StrategyRoom'));
@@ -147,6 +148,7 @@ const NAV_GROUPS = [
       { path: '/app/growth', icon: TrendingUp, label: 'CRM & Growth' },
       { path: '/app/billing', icon: DollarSign, label: 'Billing' },
       { path: '/app/media', icon: FileAudio, label: 'Media Studio' },
+      { path: '/app/connected-apps', icon: Network, label: 'Connected Apps', badge: 'Sync' },
       { path: '/app/analytics', icon: BarChart3, label: 'Analytics' },
     ]
   },
@@ -648,6 +650,7 @@ const App = () => {
             <Route path="/app/intake-hub" element={<AuthGate><Layout><IntakeHub /></Layout></AuthGate>} />
             <Route path="/app/media" element={<AuthGate><Layout><MediaStudio /></Layout></AuthGate>} />
             <Route path="/app/ai-team" element={<AuthGate><Layout><AITeamHub /></Layout></AuthGate>} />
+            <Route path="/app/connected-apps" element={<AuthGate><Layout><ConnectedApps /></Layout></AuthGate>} />
             <Route path="/app/intake" element={<AuthGate><Layout><IntakePage /></Layout></AuthGate>} />
             <Route path="/app/intake-inbox" element={<AuthGate><Layout><IntakeInbox /></Layout></AuthGate>} />
             <Route path="/app/firm-command" element={<AuthGate><Layout><CaseOrchestrator /></Layout></AuthGate>} />
