@@ -462,7 +462,7 @@ export function useDeepgramVoiceAgent(
           ? {
               type: 'eleven_labs',
               model_id: 'eleven_turbo_v2_5',
-              language_code: 'en-US',
+              language_code: 'en',
             }
           : {
               type: 'deepgram',
@@ -472,7 +472,10 @@ export function useDeepgramVoiceAgent(
         const speakEndpoint = useEl
           ? {
               url: `https://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/stream`,
-              headers: { 'xi-api-key': elevKey },
+              headers: { 
+                'xi-api-key': elevKey,
+                'Content-Type': 'application/json'
+              },
             }
           : undefined;
 
@@ -543,7 +546,7 @@ export function useDeepgramVoiceAgent(
                   endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
                   prompt,
                 },
-            speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { provider: speakProvider },
+            speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { model: opts.voiceModel },
             greeting: opts.greeting,
           },
         };
