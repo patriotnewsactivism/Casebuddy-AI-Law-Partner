@@ -234,6 +234,75 @@ export async function buildMemoryContext(agentId: string, caseId: string): Promi
   return `\n\n--- Agent Long-Term Memory ---\n${parts.join('\n\n')}\n--- End Memory ---`;
 }
 
+/**
+ * Build a TEAM-WIDE context string for a case: what every agent on the case
+ * has discovered and which handoffs happened. This is how agents communicate
+ * across workflows and sessions — Lex's research becomes visible to Rex,
+ * Doc's drafts to the specialists, and so on. Per-agent memory
+ * (buildMemoryContext) stays private; this aggregates the shared knowledge.
+ */
+export async function buildTeamContext(
+  caseId: string,
+  excludeAgentId?: string,
+  maxInsights = 10
+): Promise<string> {
+  if (!AGENT_CONFIG.memory.enabled || !caseId || caseId === 'general') return '';
+
+  try {
+    const { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS } = await import('../agents/personas');
+    const roster: { id: string; name: string }[] = [
+      ...OPERATIONAL_AGENTS.map((a: any) => ({ id: a.id, name: a.name })),
+      ...LEGAL_SPECIALISTS.map((a: any) => ({ id: a.id, name: a.name })),
+      ...PARALEGALS.map((a: any) => ({ id: a.id, name: a.name })),
+    ];
+    const nameOf = (id: string) => roster.find(r => r.id === id)?.name ?? id;
+
+    const mems = await Promise.all(
+      roster
+        .filter(r => r.id !== excludeAgentId)
+        .map(r => loadMemory(r.id, caseId).catch(() => null))
+    );
+
+    // Collect insights from every teammate, newest + most confident first
+    const insights: AgentInsight[] = [];
+    const handoffs = new Map<string, AgentHandoff>(); // dedupe (stored on both sides)
+    for (const mem of mems) {
+      if (!mem) continue;
+      insights.push(...mem.longTerm.insights, ...mem.shortTerm.pendingInsights);
+      for (const h of mem.handoffs.slice(-5)) handoffs.set(h.id, h);
+    }
+
+    const parts: string[] = [];
+
+    const topInsights = insights
+      .sort((a, b) => (b.timestamp - a.timestamp) || (b.confidence - a.confidence))
+      .slice(0, maxInsights);
+    if (topInsights.length > 0) {
+      parts.push(
+        `What the team has found:\n${topInsights
+          .map(i => `• ${nameOf(i.agentId)} [${i.type} ${i.confidence}%]: ${i.title} — ${i.content.slice(0, 220)}`)
+          .join('\n')}`
+      );
+    }
+
+    const recentHandoffs = Array.from(handoffs.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 5);
+    if (recentHandoffs.length > 0) {
+      parts.push(
+        `Recent handoffs:\n${recentHandoffs
+          .map(h => `• ${nameOf(h.fromAgentId)} → ${nameOf(h.toAgentId)}: ${h.reason}`)
+          .join('\n')}`
+      );
+    }
+
+    if (parts.length === 0) return '';
+    return `\n\n--- Team Activity (shared across all agents) ---\n${parts.join('\n\n')}\n--- End Team Activity ---`;
+  } catch {
+    return '';
+  }
+}
+
 // ── Pattern management ─────────────────────────────────────────────────────
 
 export async function upsertPattern(
