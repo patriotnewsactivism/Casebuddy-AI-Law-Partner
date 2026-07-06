@@ -519,10 +519,12 @@ const App = () => {
   };
 
   const addCase = (newCase: Case) => {
-    const updated = [...cases, newCase];
-    setCases(updated);
-    saveCases(updated);
-    upsertCaseToCloud(newCase);
+    setCases(prev => {
+      const updated = [...prev, newCase];
+      saveCases(updated);
+      upsertCaseToCloud(newCase);
+      return updated;
+    });
     if (!activeCase) {
       setActiveCase(newCase);
     }
@@ -531,29 +533,38 @@ const App = () => {
   };
 
   const updateCase = (updatedCase: Case) => {
-    const previous = cases.find(c => c.id === updatedCase.id);
-    const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
-    setCases(updated);
-    saveCases(updated);
-    upsertCaseToCloud(updatedCase);
+    setCases(prev => {
+      const previous = prev.find(c => c.id === updatedCase.id);
+      const updated = prev.map(c => c.id === updatedCase.id ? updatedCase : c);
+      saveCases(updated);
+      upsertCaseToCloud(updatedCase);
+      
+      // Auto-trigger event-based workflows
+      if (previous) {
+        onCaseUpdated(updatedCase, previous).catch(() => {});
+      }
+      return updated;
+    });
+    
     if (activeCase?.id === updatedCase.id) {
       setActiveCaseState(updatedCase);
       saveActiveCaseId(updatedCase.id);
     }
-    // Auto-trigger event-based workflows (deadline proximity, win prob drop, etc.)
-    onCaseUpdated(updatedCase, previous).catch(() => {});
   };
 
   const deleteCase = (id: string) => {
-    const updated = cases.filter(c => c.id !== id);
-    setCases(updated);
-    saveCases(updated);
-    deleteCaseFromCloud(id);
-    if (activeCase?.id === id) {
-      const next = updated[0] ?? null;
-      setActiveCaseState(next);
-      if (next) saveActiveCaseId(next.id);
-    }
+    setCases(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      saveCases(updated);
+      deleteCaseFromCloud(id);
+      
+      if (activeCase?.id === id) {
+        const next = updated[0] ?? null;
+        setActiveCaseState(next);
+        if (next) saveActiveCaseId(next.id);
+      }
+      return updated;
+    });
   };
 
   // Initial cloud sync
