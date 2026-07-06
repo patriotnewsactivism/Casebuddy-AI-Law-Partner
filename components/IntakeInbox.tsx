@@ -293,57 +293,63 @@ const IntakeInbox: React.FC = () => {
     if (processedRef.current.has(intake.id)) return;
     processedRef.current.add(intake.id);
 
-    const hasRichIntake = !!(intake.intake && intake.score_detail);
-    const newCase: Case = hasRichIntake
-      ? convertIntakeToCase(intake.intake, intake.score_detail)
-      : ({
-          id: `case_${Date.now()}`,
-          title: `${intake.full_name} — ${intake.matter_type}`,
-          client: intake.full_name,
-          status: CaseStatus.PRE_TRIAL,
-          caseType: intake.matter_type,
-          summary: intake.summary,
-          winProbability: Math.min(Math.round((intake.score ?? 40) * 0.7), 95),
-          opposingCounsel: 'Unknown',
-          judge: 'TBD',
-          assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
-          updatedAt: new Date().toISOString(),
-        } as unknown as Case);
-    (newCase as any).intakeId = intake.id;
+    try {
+      const hasRichIntake = !!(intake.intake && intake.score_detail);
+      const newCase: Case = hasRichIntake
+        ? convertIntakeToCase(intake.intake, intake.score_detail)
+        : ({
+            id: `case_${Date.now()}`,
+            title: `${intake.full_name} — ${intake.matter_type}`,
+            client: intake.full_name,
+            status: CaseStatus.PRE_TRIAL,
+            caseType: intake.matter_type,
+            summary: intake.summary,
+            winProbability: Math.min(Math.round((intake.score ?? 40) * 0.7), 95),
+            opposingCounsel: 'Unknown',
+            judge: 'TBD',
+            assignedSpecialistId: intake.recommended_agent_id || 'criminal-defense',
+            updatedAt: new Date().toISOString(),
+          } as unknown as Case);
+      (newCase as any).intakeId = intake.id;
 
-    // Hand off everything Maya collected — details first, then transcript.
-    if (intake.intake) populateCaseFromIntake(newCase.id, intake.intake);
-    if (intake.transcript?.length) saveIntakeTranscript(newCase.id, intake.transcript);
+      // Hand off everything Maya collected — details first, then transcript.
+      if (intake.intake) populateCaseFromIntake(newCase.id, intake.intake);
+      if (intake.transcript?.length) saveIntakeTranscript(newCase.id, intake.transcript);
 
-    // Creates the case everywhere (state, localStorage, cloud) and fires
-    // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
-    addCase(newCase);
-    await handleStatusChange(intake.id, 'accepted');
+      // Creates the case everywhere (state, localStorage, cloud) and fires
+      // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
+      addCase(newCase);
+      await handleStatusChange(intake.id, 'accepted');
 
-    // Matter-specific follow-on workflow (medical records, immigration, …)
-    const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
-    if (wf) orchestrator.executeWorkflowAsync(wf);
+      // Matter-specific follow-on workflow (medical records, immigration, …)
+      const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
+      if (wf) orchestrator.executeWorkflowAsync(wf);
 
-    // Engagement letter + warm client confirmation (best-effort)
-    if (intake.intake) {
-      generateEngagementLetter(intake.intake, newCase).then(letter => {
-        localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
-      }).catch(() => {});
-      if (intake.score_detail) {
-        generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
-          localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+      // Engagement letter + warm client confirmation (best-effort)
+      if (intake.intake) {
+        generateEngagementLetter(intake.intake, newCase).then(letter => {
+          localStorage.setItem(`casebuddy_engagement_${newCase.id}`, letter);
         }).catch(() => {});
+        if (intake.score_detail) {
+          generateIntakeConfirmation(intake.intake, intake.score_detail).then(msg => {
+            localStorage.setItem(`casebuddy_intake_confirm_${intake.id}`, msg);
+          }).catch(() => {});
+        }
       }
-    }
 
-    if (opts.auto) {
-      toast.success(`🤖 Case auto-created from ${intake.full_name}'s intake — agent team briefed and working`, { autoClose: 6000 });
-    } else {
-      setActiveCase(newCase);
-      toast.success(`Case created: ${newCase.title}`);
-      navigate('/app/cases');
+      if (opts.auto) {
+        toast.success(`🤖 Case auto-created from ${intake.full_name}'s intake — agent team briefed and working`, { autoClose: 6000 });
+      } else {
+        setActiveCase(newCase);
+        toast.success(`Case created: ${newCase.title}`);
+        navigate('/app/cases');
+      }
+      return newCase;
+    } catch (err) {
+      processedRef.current.delete(intake.id);
+      console.error('[acceptIntake] failed:', err);
+      throw err;
     }
-    return newCase;
   }, [addCase, setActiveCase, navigate]);
 
   const shouldAutoAccept = useCallback((r: IntakeCase) =>
@@ -390,7 +396,10 @@ const IntakeInbox: React.FC = () => {
   }, []);
 
   const handleConvertToCase = (intake: IntakeCase) => {
-    acceptIntake(intake).catch(() => {});
+    acceptIntake(intake).catch((err) => {
+      console.error('[handleConvertToCase] failed:', err);
+      toast.error(`Failed to convert intake to case: ${err?.message || String(err)}`);
+    });
   };
 
   const handleDeleteInvite = async (id: string) => {
