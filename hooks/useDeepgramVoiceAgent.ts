@@ -399,9 +399,9 @@ export function useDeepgramVoiceAgent(
       setStatus('error');
       return;
     }
-    if (!geminiKey && !groqKey) {
-      // We'll use our proxy as the think provider — no external key needed
-      console.warn('[VoiceAgent] No external AI keys — using CaseBuddy proxy for think provider');
+    if (!groqKey) {
+      // Deepgram-managed OpenAI (gpt-4o-mini) will be used — no key needed
+      console.warn('[VoiceAgent] No Groq key — using Deepgram-managed OpenAI for think provider');
     }
 
     try {
@@ -494,32 +494,32 @@ export function useDeepgramVoiceAgent(
                 eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
+            // Deepgram's schema is strict here too (same lesson as eleven_labs):
+            // provider.type is 'open_ai' WITH the underscore, and a BYO LLM's
+            // url/api_key do NOT go inside `provider` — they belong in a
+            // separate sibling `endpoint` block. Violating either gets the
+            // whole Settings message rejected as UNPARSABLE_CLIENT_MESSAGE,
+            // and the agent never speaks.
             think: groqKey
               ? {
+                  // BYO Groq (free tokens) via OpenAI-compatible endpoint
                   provider: {
-                    type: 'openai',
-                    url: 'https://api.groq.com/openai/v1',
+                    type: 'open_ai',
                     model: 'llama-3.3-70b-versatile',
-                    api_key: groqKey,
                     temperature: 0.7,
                   },
-                  prompt,
-                }
-              : geminiKey
-              ? {
-                  provider: { 
-                    type: 'google', 
-                    credentials: { api_key: geminiKey }, 
-                    model: 'gemini-1.5-flash', 
-                    temperature: 0.7 
+                  endpoint: {
+                    url: 'https://api.groq.com/openai/v1/chat/completions',
+                    headers: { authorization: `Bearer ${groqKey}` },
                   },
                   prompt,
                 }
               : {
+                  // Deepgram-managed OpenAI — no API key needed at all, the
+                  // most reliable fallback (billed through Deepgram).
                   provider: {
-                    type: 'openai',
-                    url: 'https://casebuddy.live/api/ai/v1',
-                    model: 'llama-3.3-70b-versatile',
+                    type: 'open_ai',
+                    model: 'gpt-4o-mini',
                     temperature: 0.7,
                   },
                   prompt,
