@@ -89,6 +89,61 @@ function getGroqKey(): string {
   ).trim();
 }
 
+function getGeminiKey(): string {
+  return (
+    (window as any).__GEMINI_API_KEY ||
+    import.meta.env.VITE_GEMINI_API_KEY ||
+    import.meta.env.VITE_API_KEY ||
+    ''
+  ).trim();
+}
+
+async function callGeminiDirect(params: DeepSeekParams): Promise<string> {
+  const key = getGeminiKey();
+  if (!key) throw new Error('No Gemini API key available');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+  
+  const contents = params.messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const body: any = { contents };
+  if (params.systemInstruction) {
+    body.systemInstruction = {
+      parts: [{
+        text: params.jsonMode
+          ? `${params.systemInstruction}\n\nReturn ONLY valid JSON. No markdown, no explanation — just JSON.`
+          : params.systemInstruction
+      }]
+    };
+  }
+  
+  body.generationConfig = {
+    temperature: params.temperature ?? (params.jsonMode ? 0.2 : 0.7),
+    maxOutputTokens: params.maxTokens ?? (params.jsonMode ? 1024 : 2048),
+    ...(params.jsonMode ? { responseMimeType: 'application/json' } : {}),
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    throw new Error(`Gemini API error ${resp.status}: ${errBody.slice(0, 300)}`);
+  }
+
+  const data = await resp.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  if (!text) throw new Error('Empty response from Gemini');
+  return params.jsonMode ? cleanJsonResponse(text) : text;
+}
+
 async function callGroqDirect(params: DeepSeekParams): Promise<string> {
   const key = getGroqKey();
   if (!key) throw new Error('No Groq API key available');
@@ -149,6 +204,18 @@ export const deepseekChat = async (params: DeepSeekParams): Promise<string> => {
   } catch (serverErr: any) {
     const msg = serverErr?.message || String(serverErr);
     console.warn('[deepseek] Server proxy failed:', msg.slice(0, 150));
+  }
+
+  // Try direct Gemini call (bypasses 10s Vercel timeout)
+  if (getGeminiKey()) {
+    try {
+      return await retryWithBackoff(async () => {
+        return await withTimeout(callGeminiDirect(params), timeout);
+      }, 2);
+    } catch (geminiErr: any) {
+      const msg = geminiErr?.message || String(geminiErr);
+      console.warn('[deepseek] Direct Gemini failed:', msg.slice(0, 150));
+    }
   }
 
   // Try direct Groq call (if key is available client-side)

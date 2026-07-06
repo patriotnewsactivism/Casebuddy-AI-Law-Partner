@@ -460,6 +460,7 @@ const IntakeInbox: React.FC = () => {
             const isOpen = expanded === intake.id;
             const badge  = dispositionBadge[intake.disposition] ?? dispositionBadge.review;
             const agent  = getSpecialistById(intake.recommended_agent_id);
+            const isConverted = (cases ?? []).some((c: any) => c.intakeId === intake.id);
             return (
               <div key={intake.id}
                 className="border border-slate-700/60 rounded-2xl overflow-hidden hover:border-slate-600/60 transition-colors">
@@ -509,23 +510,22 @@ const IntakeInbox: React.FC = () => {
                     )}
                     {/* Actions */}
                     <div className="flex flex-wrap gap-2">
-                      {intake.status !== 'routed' && (
+                      {isConverted ? (
+                        <span className="flex items-center gap-1.5 text-green-400 bg-green-900/20 border border-green-500/30 text-xs font-bold px-3 py-2 rounded-xl">
+                          <CheckCircle2 size={13} /> Converted to Case
+                        </span>
+                      ) : (
                         <button onClick={() => handleConvertToCase(intake)}
                           className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors">
                           <ArrowRightCircle size={13} /> Convert to Case
                         </button>
                       )}
-                      {intake.status === 'new' && (
-                        <>
-                          <button onClick={() => acceptIntake(intake).catch(() => {})}
-                            className="flex items-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/40 text-green-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
-                            <ThumbsUp size={13} /> Accept
-                          </button>
-                          <button onClick={() => handleStatusChange(intake.id, 'denied')}
-                            className="flex items-center gap-1.5 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/40 text-slate-400 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
-                            <ThumbsDown size={13} /> Decline
-                          </button>
-                        </>
+                      
+                      {!isConverted && intake.status !== 'denied' && (
+                        <button onClick={() => handleStatusChange(intake.id, 'denied')}
+                          className="flex items-center gap-1.5 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/40 text-slate-400 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
+                          <ThumbsDown size={13} /> Decline
+                        </button>
                       )}
                     </div>
                   </div>
