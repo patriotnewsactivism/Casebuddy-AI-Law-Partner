@@ -163,7 +163,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
     agentId: 'maya',
-    useElevenLabs: true,
+    useElevenLabs: false,
     systemInstruction,
     greeting: mayaProfile.greeting,
     publicEndpoint: true,
