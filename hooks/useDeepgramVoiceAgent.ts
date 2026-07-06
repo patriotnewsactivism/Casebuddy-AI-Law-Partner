@@ -505,54 +505,43 @@ export function useDeepgramVoiceAgent(
 // separate sibling `endpoint` block. Violating either gets the
 // whole Settings message rejected as UNPARSABLE_CLIENT_MESSAGE,
 // and the agent never speaks.
-think: openaiKey
-  ? {
-      provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
-      endpoint: {
-        url: 'https://api.openai.com/v1/chat/completions',
-        headers: { Authorization: `Bearer ${openaiKey}` },
-      },
-      prompt,
-    }
-  : groqKey
-  ? {
-      // BYO Groq (free tokens) via OpenAI-compatible endpoint
-      provider: {
-        type: 'open_ai',
-        model: 'llama-3.3-70b-versatile',
-        temperature: 0.7,
-      },
-      endpoint: {
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        headers: { Authorization: `Bearer ${groqKey}` },
-      },
-      prompt,
-    }
-  : geminiKey
-  ? {
-      provider: {
-        type: 'google',
-        credentials: { api_key: geminiKey },
-        model: 'gemini-1.5-flash',
-        temperature: 0.7,
-      },
-      prompt,
-    }
+            think: openaiKey
+              ? {
+                  provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
+                  endpoint: {
+                    url: 'https://api.openai.com/v1/chat/completions',
+                    headers: { Authorization: `Bearer ${openaiKey}` },
+                  },
+                  prompt,
+                }
+              : groqKey
+              ? {
+                  // BYO Groq (free tokens) via OpenAI-compatible endpoint
+                  provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
+                  endpoint: {
+                    url: 'https://api.groq.com/openai/v1/chat/completions',
+                    headers: { Authorization: `Bearer ${groqKey}` },
+                  },
+                  prompt,
+                }
+              : geminiKey
+              ? {
+                  provider: {
+                    type: 'google',
+                    credentials: { api_key: geminiKey },
+                    model: 'gemini-1.5-flash',
+                    temperature: 0.7,
                   },
                   prompt,
                 }
               : {
-{
-  // Deepgram-managed OpenAI — no API key needed at all, the
-  // most reliable fallback (billed through Deepgram).
-  provider: {
-    type: 'open_ai',
-    model: 'gpt-4o-mini',
-    temperature: 0.7,
-  },
-  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
-  prompt,
-},
+                  // Fallback proxy (billed through CaseBuddy)
+                  provider: {
+                    type: 'open_ai',
+                    model: 'gpt-4o-mini',
+                    temperature: 0.7,
+                  },
+                  endpoint: { url: 'https://casebuddy.live/api/ai/v1/chat/completions' },
                   prompt,
                 },
             speak: speakEndpoint ? { provider: speakProvider, endpoint: speakEndpoint } : { provider: speakProvider },
