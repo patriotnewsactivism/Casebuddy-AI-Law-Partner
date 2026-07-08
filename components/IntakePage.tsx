@@ -223,7 +223,7 @@ const IntakePage: React.FC = () => {
     await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
     setConversation([{
       role: 'maya',
-      content: "Hi! I'm Maya, the intake specialist here at CaseBuddy. I'll be gathering some details about your situation so our attorneys can review it.\n\nTo get started — what's going on? Tell me what brings you in today.",
+      content: "Hi! I'm Maya, the intake specialist here at CaseBuddy. I'll be gathering some details so our attorneys can review your situation.\n\nBefore we dive in — who am I speaking with?",
       timestamp: Date.now(),
     }]);
     setMayaTyping(false);
