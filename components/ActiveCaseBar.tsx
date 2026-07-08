@@ -3,6 +3,7 @@ import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { CaseStatus } from '../types';
+import { safeText } from '../utils/safeText';
 
 const STATUS_COLORS: Record<CaseStatus, string> = {
   [CaseStatus.PRE_TRIAL]: 'bg-blue-500/20 border-blue-500/40 text-blue-400',
@@ -20,7 +21,7 @@ const ActiveCaseBar: React.FC = () => {
       {activeCase ? (
         <>
           <span className="text-slate-500 text-xs font-medium uppercase tracking-wider shrink-0">Active Case:</span>
-          <span className="text-white font-semibold text-sm truncate min-w-0">{activeCase.title}</span>
+          <span className="text-white font-semibold text-sm truncate min-w-0">{safeText(activeCase.title, 'Untitled Case')}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${STATUS_COLORS[activeCase.status]}`}>
             {activeCase.status}
           </span>
