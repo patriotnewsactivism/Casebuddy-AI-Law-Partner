@@ -676,6 +676,9 @@ serve(async (req) => {
     const cohereApiKey = Deno.env.get('COHERE_API_KEY');
     const hasCohere = !!cohereApiKey;
 
+    const groqApiKey = Deno.env.get('GROQ_API_KEY') || Deno.env.get('VITE_GROQ_API_KEY');
+    const hasGroq = !!groqApiKey;
+
     // AI provider for analysis (OpenRouter free → Gemini → OpenAI)
     const openrouterApiKey = Deno.env.get('OPENROUTER_API_KEY');
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -688,7 +691,7 @@ serve(async (req) => {
     const hasGoogleVision = isGoogleVisionConfigured();
     const geminiModelCandidates = getPreferredGeminiCandidates(Deno.env.get('GOOGLE_AI_MODEL'));
 
-    console.log(`OCR providers: AzureRead=${hasAzureVision}, GoogleVision=${hasGoogleVision}, Gemini=${hasGemini}, OCR.space=${hasOcrSpace}`);
+    console.log(`OCR providers: AzureRead=${hasAzureVision}, GoogleVision=${hasGoogleVision}, Gemini=${hasGemini}, Groq=${hasGroq}, OCR.space=${hasOcrSpace}`);
     console.log(`Analysis providers: OpenAI/OpenRouter=${hasOpenAI}, Gemini=${hasGemini}, Cohere=${hasCohere}`);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -972,6 +975,45 @@ serve(async (req) => {
       return text;
     };
 
+    const groqOcr = async (fileBlob: Blob, mimeType: string, isImage: boolean): Promise<string> => {
+      if (!groqApiKey) throw new Error('Groq API key not configured');
+      if (!isImage) throw new Error('Groq vision OCR only supports images, not raw PDFs');
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const base64 = arrayBufferToBase64(arrayBuffer);
+      const prompt = `You are a professional legal document OCR system. Extract ALL text from this image with the highest possible accuracy. Preserve exact formatting, line breaks, headings, tables, stamps, dates, signatures, marginalia, Bates numbers, exhibit numbers, and document identifiers. Return plain text only.`;
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+              ],
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq OCR failed: ${await response.text()}`);
+      }
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content?.trim() || '';
+      if (!text) throw new Error('Groq returned empty OCR text');
+      console.log('Groq OCR succeeded');
+      return text;
+    };
+
     const ocrSpaceExtract = async (blob, isImage, ct) => {
       if (!ocrSpaceApiKey) throw new Error('OCR.space API key not configured');
       console.log('Using OCR.space fallback...');
@@ -1072,6 +1114,16 @@ serve(async (req) => {
 
       const errors: string[] = [];
 
+      // Wall-clock budget for the whole OCR chain. Supabase Edge Functions get
+      // forcibly killed past their platform execution limit — if that happens
+      // mid-retry-storm, the code never reaches the outer catch/status update
+      // and the pipeline_jobs row is orphaned in 'processing' forever. Bail
+      // out cleanly with a real error well before that limit instead.
+      const ocrChainStartedAt = Date.now();
+      const OCR_TIME_BUDGET_MS = 90_000;
+      const ocrTimeRemaining = () => OCR_TIME_BUDGET_MS - (Date.now() - ocrChainStartedAt);
+      const ocrBudgetOk = () => ocrTimeRemaining() > 5000;
+
       // Tier 0: PDF embedded text extraction (fast, free — works for PDFs with text layers)
       if (isPdf && !isImage) {
         try {
@@ -1109,9 +1161,23 @@ serve(async (req) => {
         }
       }
 
+      // Tier 0.8: Groq vision OCR (meta-llama/llama-4-scout — free-tier friendly,
+      // very fast; images only, PDFs fall through to the next tier)
+      if (!extractedText && hasGroq && isImage && ocrBudgetOk()) {
+        try {
+          console.log('Attempting Groq vision OCR...');
+          const mimeType = resolvedContentType || 'image/jpeg';
+          extractedText = await groqOcr(fileBlob, mimeType, isImage);
+          ocrProvider = 'groq';
+        } catch (error) {
+          console.error('Groq OCR error:', error);
+          errors.push(`Groq: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
       // Tier 1: Google Cloud Vision (DOCUMENT_TEXT_DETECTION — purpose-built OCR,
       // typically best for dense text, tables, stamps, and scanned legal documents)
-      if (!extractedText && hasGoogleVision) {
+      if (!extractedText && hasGoogleVision && ocrBudgetOk()) {
         try {
           console.log('Attempting Google Cloud Vision OCR (primary)...');
           extractedText = await googleVisionOcr(fileBlob, isImage);
@@ -1123,7 +1189,7 @@ serve(async (req) => {
       }
 
       // Tier 1.5: Cohere Vision OCR
-      if (!extractedText && hasCohere && isImage) {
+      if (!extractedText && hasCohere && isImage && ocrBudgetOk()) {
         try {
           console.log('Attempting Cohere OCR (command-a-vision)...');
           const mimeType = resolvedContentType || 'image/jpeg';
@@ -1136,7 +1202,7 @@ serve(async (req) => {
       }
 
       // Tier 2: Gemini 2.5 Pro (best multimodal AI for legal docs — tables, stamps, Bates numbers)
-      if (!extractedText && hasGemini) {
+      if (!extractedText && hasGemini && ocrBudgetOk()) {
         try {
           console.log('Attempting Gemini OCR (primary — best for legal documents)...');
           const mimeType = resolvedContentType || (isImage ? 'image/jpeg' : 'application/pdf');
@@ -1153,7 +1219,7 @@ serve(async (req) => {
       // Tier 3: Tesseract.js (removed to conserve memory and prevent serverless timeouts)
 
       // Tier 4: OCR.space (backup — 25k/month free, 1MB file limit on free tier)
-      if (!extractedText && hasOcrSpace) {
+      if (!extractedText && hasOcrSpace && ocrTimeRemaining() > 2000) {
         try {
           extractedText = await ocrSpaceExtract(fileBlob, isImage, resolvedContentType);
           ocrProvider = 'ocr_space';
@@ -1164,6 +1230,9 @@ serve(async (req) => {
       }
 
       if (!extractedText) {
+        if (!ocrBudgetOk()) {
+          throw new Error(`OCR time budget (${OCR_TIME_BUDGET_MS}ms) exceeded before any provider succeeded. Tried: ${errors.join('; ')}`);
+        }
         throw new Error(`All OCR providers failed. ${errors.join('; ')}`);
       }
     } else if (resolvedContentType.includes('text') || !!validatedFileUrl.match(/\.(txt|doc|docx)$/i)) {

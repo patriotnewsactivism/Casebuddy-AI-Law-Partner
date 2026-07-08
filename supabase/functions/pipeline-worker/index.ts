@@ -36,6 +36,58 @@ async function callDeepSeek(apiKey: string, systemPrompt: string, userPrompt: st
   return JSON.parse(content);
 }
 
+async function callGroq(apiKey: string, systemPrompt: string, userPrompt: string) {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Groq API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+  if (!content) throw new Error('Empty response from Groq');
+  return JSON.parse(content);
+}
+
+/** DeepSeek first (best quality), Groq as a fast/free fallback if DeepSeek is
+ * out of credits, rate-limited, or otherwise erroring — so a single exhausted
+ * key doesn't fail the whole entity_extraction step. */
+async function extractEntities(deepseekKey: string, groqKey: string, systemPrompt: string, userPrompt: string) {
+  const errors: string[] = [];
+  if (deepseekKey) {
+    try {
+      return await callDeepSeek(deepseekKey, systemPrompt, userPrompt);
+    } catch (err) {
+      errors.push(`DeepSeek: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn('DeepSeek entity extraction failed, falling back to Groq:', err);
+    }
+  }
+  if (groqKey) {
+    try {
+      return await callGroq(groqKey, systemPrompt, userPrompt);
+    } catch (err) {
+      errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  throw new Error(`Entity extraction failed on all providers. ${errors.join('; ')}`);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -48,6 +100,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const deepseekKey = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
+    const groqKey = Deno.env.get('GROQ_API_KEY') ?? Deno.env.get('VITE_GROQ_API_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Fetch the job and lock it
@@ -106,11 +159,11 @@ serve(async (req) => {
           });
           
       } else if (job.job_type === 'entity_extraction') {
-        if (!deepseekKey) throw new Error("DEEPSEEK_API_KEY missing");
+        if (!deepseekKey && !groqKey) throw new Error("No entity-extraction provider configured (DEEPSEEK_API_KEY / GROQ_API_KEY missing)");
         
         if (document.ocr_text) {
           const systemPrompt = "You are a legal data extractor. Read the provided document text and extract lists of people, organizations, and key dates mentioned. Return valid JSON: { \"people\": [\"name1\"], \"orgs\": [\"org1\"], \"dates\": [\"date1\"] }.";
-          const entities = await callDeepSeek(deepseekKey, systemPrompt, document.ocr_text.slice(0, 20000));
+          const entities = await extractEntities(deepseekKey, groqKey, systemPrompt, document.ocr_text.slice(0, 20000));
           
           await supabase
             .from('documents')
