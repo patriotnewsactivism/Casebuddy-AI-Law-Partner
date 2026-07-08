@@ -132,24 +132,44 @@ Return ONLY valid JSON with these fields: fullName, contact, matterType, jurisdi
     );
     const data = safeParseJson<Partial<IntakeData>>(text, 'extractIntake');
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+    // Coerce any field that MUST be a plain string — AI JSON output sometimes
+    // returns an object (e.g. {name, role}) here instead of a string, which
+    // crashes React with "Objects are not valid as a React child" if rendered
+    // directly. Never trust the model's typing; always sanitize before use.
+    const str = (v: unknown, fallback = ''): string => {
+      if (typeof v === 'string') return v;
+      if (v == null) return fallback;
+      if (Array.isArray(v)) {
+        return v
+          .map(item => (typeof item === 'string' ? item : item?.name || item?.event || JSON.stringify(item)))
+          .filter(Boolean)
+          .join(', ') || fallback;
+      }
+      if (typeof v === 'object') {
+        const obj = v as Record<string, unknown>;
+        // Common shapes: {name, role}, {name}, {event, date}
+        return String(obj.name || obj.event || obj.title || obj.value || JSON.stringify(obj)) || fallback;
+      }
+      return String(v) || fallback;
+    };
     return {
-      fullName: data.fullName || 'Prospective Client',
-      contact: data.contact || '',
-      matterType: data.matterType || 'General Inquiry',
-      jurisdiction: data.jurisdiction || '',
-      summary: data.summary || '',
-      detailedNarrative: data.detailedNarrative || '',
-      incidentDate: data.incidentDate || '',
-      opposingParties: data.opposingParties || '',
-      deadlines: data.deadlines || '',
-      injuriesOrDamages: data.injuriesOrDamages || '',
-      desiredOutcome: data.desiredOutcome || '',
-      priorCounsel: data.priorCounsel || '',
-      witnesses: data.witnesses || '',
-      evidenceMentioned: data.evidenceMentioned || '',
-      financialImpact: data.financialImpact || '',
-      priorLegalActions: data.priorLegalActions || '',
-      emotionalState: data.emotionalState || '',
+      fullName: str(data.fullName, 'Prospective Client'),
+      contact: str(data.contact),
+      matterType: str(data.matterType, 'General Inquiry'),
+      jurisdiction: str(data.jurisdiction),
+      summary: str(data.summary),
+      detailedNarrative: str(data.detailedNarrative),
+      incidentDate: str(data.incidentDate),
+      opposingParties: str(data.opposingParties),
+      deadlines: str(data.deadlines),
+      injuriesOrDamages: str(data.injuriesOrDamages),
+      desiredOutcome: str(data.desiredOutcome),
+      priorCounsel: str(data.priorCounsel),
+      witnesses: str(data.witnesses),
+      evidenceMentioned: str(data.evidenceMentioned),
+      financialImpact: str(data.financialImpact),
+      priorLegalActions: str(data.priorLegalActions),
+      emotionalState: str(data.emotionalState),
       keyFacts: arr<string>(data.keyFacts),
       clientQuotes: arr<string>(data.clientQuotes),
       openQuestions: arr<string>(data.openQuestions),
