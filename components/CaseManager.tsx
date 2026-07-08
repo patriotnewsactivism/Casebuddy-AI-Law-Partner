@@ -9,6 +9,7 @@ import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
 import { toast } from 'react-toastify';
 import { validateFile } from '../utils/fileValidation';
+import { safeText } from '../utils/safeText';
 import AgentHeader from './AgentHeader';
 import CrossCasePanel from './CrossCasePanel';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
@@ -293,8 +294,8 @@ const CaseManager = () => {
                   onClick={() => setActiveCase(c)}
                   className={`p-4 border-b border-slate-700 cursor-pointer transition-colors ${activeCase?.id === c.id ? 'bg-slate-700/50 border-l-4 border-l-gold-500' : 'hover:bg-slate-700/30'}`}
                 >
-                  <h3 className="font-semibold text-white">{c.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1">{c.status} • {c.client}</p>
+                  <h3 className="font-semibold text-white">{safeText(c.title, 'Untitled Case')}</h3>
+                  <p className="text-xs text-slate-400 mt-1">{safeText(c.status)} • {safeText(c.client, 'Unknown Client')}</p>
                 </div>
               ))}
             </div>
@@ -307,20 +308,20 @@ const CaseManager = () => {
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-slate-400 block">Judge</span>
-                <span className="text-slate-200">{activeCase.judge}</span>
+                <span className="text-slate-200">{safeText(activeCase.judge, 'TBD')}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Opposing Counsel</span>
-                <span className="text-slate-200">{activeCase.opposingCounsel}</span>
+                <span className="text-slate-200">{safeText(activeCase.opposingCounsel, 'Unknown')}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Summary</span>
-                <span className="text-slate-300 leading-relaxed">{activeCase.summary}</span>
+                <span className="text-slate-300 leading-relaxed">{safeText(activeCase.summary)}</span>
               </div>
               {activeCase.caseType && (
                 <div>
                   <span className="text-slate-400 block">Case Type</span>
-                  <span className="text-slate-200">{activeCase.caseType}</span>
+                  <span className="text-slate-200">{safeText(activeCase.caseType)}</span>
                 </div>
               )}
               {activeCase.assignedSpecialistId && (
