@@ -37,7 +37,7 @@ const OPENAI_KEY = (process.env.OPENAI_API_KEY || '').trim();
 // Free-tier models
 const GROQ_MODEL = 'llama-3.3-70b-versatile';        // 100K tokens/day free
 const GROQ_FALLBACK = 'meta-llama/llama-4-scout-17b-16e-instruct'; // smaller, faster
-const GEMINI_MODEL = 'gemini-2.0-flash';              // free tier on AI Studio
+const GEMINI_MODEL = 'gemini-2.5-flash';              // stronger reasoning/instruction-following than 2.0-flash
 const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free'; // free on OpenRouter
 const GITHUB_MODEL = 'gpt-4o';                        // free via GitHub Models
 const GITHUB_FALLBACK = 'gpt-4o-mini';                 // cheaper, faster
