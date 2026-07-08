@@ -344,8 +344,8 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       setMayaTyping(true);
       await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
       const initialGreeting = clientInvite?.client_name
-        ? `Hi ${firstName}! I'm Maya, the intake specialist at CaseBuddy. I've got your contact info, but I'd like to understand what brings you in today — what's going on?`
-        : "Hi! I'm Maya, the intake specialist here at CaseBuddy. I'll be gathering some details about your situation so our attorneys can review it.\n\nTo get started — what's going on? Tell me what brings you in today.";
+        ? `Hi ${firstName}! I'm Maya, the intake specialist at CaseBuddy. I've got your contact info on file, so let's get right into it — what's going on?`
+        : "Hi! I'm Maya, the intake specialist here at CaseBuddy. I'll be gathering some details so our attorneys can review your situation.\n\nBefore we dive in — who am I speaking with?";
       setConversation([{
         role: 'maya',
         content: initialGreeting,
