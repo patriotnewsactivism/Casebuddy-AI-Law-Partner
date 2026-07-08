@@ -545,7 +545,8 @@ const CaseManager = () => {
                           'Bankruptcy / Insolvency': 'bankruptcy',
                           'Civil Litigation': 'civil-litigation',
                           'Estate Planning & Probate': 'estate-planning',
-                          'Tax Law': 'tax-law'
+                          'Tax Law': 'tax-law',
+                          'VA Disability & Veterans Benefits': 'veterans-benefits'
                         };
                         setNewCaseData({
                           ...newCaseData,
@@ -566,6 +567,7 @@ const CaseManager = () => {
                       <option value="Civil Litigation">Civil Litigation</option>
                       <option value="Estate Planning & Probate">Estate Planning & Probate</option>
                       <option value="Tax Law">Tax Law</option>
+                      <option value="VA Disability & Veterans Benefits">VA Disability & Veterans Benefits</option>
                     </select>
                   </div>
                   <div>
