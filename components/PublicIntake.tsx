@@ -79,7 +79,7 @@ BOUNDARIES:
 - Never invent facts, dates, names, or legal conclusions the caller didn't state.`;
 
 // Professional, warm greeting// Professional, warm greeting — like a real receptionist picking up the phone
-const MAYA_GREETING = "Hi, this is Maya over at CaseBuddy — how can I help you today?";
+const MAYA_GREETING = "Hi, this is Maya over at CaseBuddy. Before we get into it — who am I speaking with?";
 
 type Transcript = { speaker: string; text: string }[];
 
