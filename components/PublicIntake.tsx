@@ -9,7 +9,7 @@ import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake, callGeminiProxy } from '../services/intakeService';
 import { submitIntake } from '../services/intakeStore';
 import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
-import { emailIntakeHandoff } from '../services/firmComms';
+import { emailIntakeHandoff, emailClientIntakeConfirmation } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
 import { toast } from 'react-toastify';
 import { deepseekChat } from '../services/deepseek';
@@ -39,8 +39,8 @@ REASON BEFORE EVERY REPLY (silent — never say this out loud to the caller):
 
 YOUR GOAL — come away with ALL of this, in this PRIORITY ORDER (it goes straight into the attorney's file):
 1. Their NAME — ask this FIRST, before anything else, right after your greeting: "Before we get into it — who am I speaking with?" Then use their first name for the rest of the call.
-2. Their CONTACT INFO — ask this SECOND, immediately after their name, still before hearing the story: "And what's the best number to reach you at?" Read it back to confirm.
-3. Only once you have both name and contact info, invite the story: "Okay [name] — so what's going on?"
+2. Their CONTACT INFO — ask this SECOND, immediately after their name, still before hearing the story. You need BOTH a phone number AND an email address (we send a written confirmation to their email, so it's required, not optional): "And what's the best phone number and email to reach you at?" If they only give one, ask for the other before moving on. Read both back to confirm.
+3. Only once you have both name and BOTH pieces of contact info (phone AND email), invite the story: "Okay [name] — so what's going on?"
 4. What HAPPENED — let them tell the full story. Don't interrupt, don't rush. If they pause, wait — silence is fine.
 5. WHEN it happened (rough timeframe is fine)
 6. WHO they're up against (person, company, employer, insurer, landlord, the VA, etc.)
@@ -49,7 +49,7 @@ YOUR GOAL — come away with ALL of this, in this PRIORITY ORDER (it goes straig
 9. SCHEDULING — offer a consultation directly. Don't just say "we'll be in touch." Give them real options: "The attorney has some availability — would Tuesday afternoon or Thursday morning work better?" Lock in a time and confirm it.
 
 PACING — efficient, never rushed:
-- Get name + contact info FIRST, before the story — don't skip ahead to "what's going on" until you have both.
+- Get name + BOTH phone and email FIRST, before the story — don't skip ahead to "what's going on" until you have all three.
 - Let them finish completely. If they're mid-story, stay quiet. A scared or upset person may ramble — that's okay. Capture everything.
 - Never re-ask something they've already told you. Track what you know.
 - Once you have a piece of info, move forward — don't pad or repeat.
@@ -70,8 +70,8 @@ CRITICAL — NO LOOPING:
 - Track the conversation state in your head. Move forward, not in circles.
 
 WRAPPING UP:
-- Before closing, confirm you have: their name, a phone number or email, and a consultation time (or that they declined one).
-- Close warmly: "Okay [name], I've got everything I need. One of our attorneys is going to take a look at this and reach out to you at the number you gave me. You did the right thing calling." If they booked a time, confirm it once more.
+- Before closing, confirm you have: their name, BOTH a phone number and an email address, and a consultation time (or that they declined one).
+- Close warmly: "Okay [name], I've got everything I need. One of our attorneys is going to take a look at this and reach out. I'll also send a quick summary to the email you gave me so you have it in writing. You did the right thing calling." If they booked a time, confirm it once more.
 
 BOUNDARIES:
 - No legal advice. If asked: "Our attorneys will review everything and advise you — I'm just making sure they have all the details."
@@ -96,6 +96,8 @@ const fallbackIntake = (transcript: Transcript): IntakeData => {
   return {
     fullName: 'Prospective Client',
     contact: '',
+    email: '',
+    phone: '',
     matterType: 'General Inquiry',
     jurisdiction: '',
     summary,
@@ -159,7 +161,7 @@ PERSONA — sound like a real person, not a chatbot:
 
 YOUR GOAL — gather all of this through conversation:
 1. Full NAME (ask right after they explain what's going on: "Of course — and who am I speaking with?")
-2. CONTACT INFO (best phone or email to reach them)
+2. CONTACT INFO — get BOTH a phone number AND an email address (not one or the other — we email them a written confirmation, so email is required)
 3. MATTER TYPE (criminal, civil, family, injury, immigration, business, other)
 4. What HAPPENED — let them tell the full story without interrupting
 5. WHEN it happened (approximate date or timeframe is fine)
@@ -176,7 +178,7 @@ FLOW:
 - After they finish, acknowledge briefly, then gather what's still missing — one item at a time.
 - If they give you multiple things at once, absorb it all and only ask about what's still unknown.
 - When you have everything, offer a consultation time directly: "The attorney has some availability — would Tuesday afternoon or Thursday morning work better for a quick consultation?" Confirm a time before wrapping up.
-- Close warmly: "Okay [name], I've got everything I need. One of our attorneys will take a look at this and be in touch at [their contact]. You did the right thing reaching out."
+- Close warmly: "Okay [name], I've got everything I need. One of our attorneys will take a look at this and be in touch. I'll also send a quick written recap to your email. You did the right thing reaching out."
 
 When all key info is collected and the intake is complete, end your final message with exactly: [INTAKE_COMPLETE]
 
@@ -328,6 +330,8 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     }
     // Hand the case off to the routed specialist by email
     void emailIntakeHandoff(intake, finalScore);
+    // Confirm receipt directly with the prospective client — rehashed synopsis + under-review notice
+    void emailClientIntakeConfirmation(intake, finalScore);
     setResult(finalScore);
     // Generate document upload request for this intake
     if (intakeId) {
@@ -471,6 +475,8 @@ Return ONLY valid JSON:
       const built: IntakeData = {
         fullName: ext.fullName || clientInvite?.client_name || 'Prospective Client',
         contact: ext.contactMethod === 'phone' ? (ext.phone || clientInvite?.client_phone || '') : (ext.email || clientInvite?.client_email || ''),
+        email: ext.email || clientInvite?.client_email || '',
+        phone: ext.phone || clientInvite?.client_phone || '',
         matterType: ext.matterType || 'General Practice',
         jurisdiction: ext.jurisdiction || '',
         summary: ext.summary || ext.description?.slice(0, 200) || '',
@@ -495,12 +501,17 @@ Return ONLY valid JSON:
     return form.contactMethod === 'phone' ? form.phone.trim() : form.email.trim();
   };
 
+  const hasBothContacts = (form: IntakeFormData): boolean =>
+    form.phone.trim().length >= 7 && form.email.trim().includes('@');
+
   const handleFormSubmit = async () => {
     setPhase('processing');
     const contact = unifiedContact(formData);
     const intakeData: IntakeData = {
       fullName: formData.name,
       contact,
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
       matterType: formData.matterType,
       jurisdiction: formData.jurisdiction || '',
       summary: formData.description.slice(0, 200),
@@ -752,7 +763,7 @@ Return ONLY valid JSON:
             const canAdvance = () => {
               if (formStep === 1) {
                 const hasName = formData.name.trim().length >= 2;
-                const hasContact = formData.contactMethod === 'phone' ? formData.phone.trim().length >= 7 : formData.email.trim().includes('@');
+                const hasContact = hasBothContacts(formData);
                 return hasName && hasContact;
               }
               if (formStep === 2) return !!(formData.matterType && formData.description.trim().length >= 15);
@@ -796,20 +807,9 @@ Return ONLY valid JSON:
                 <div className="space-y-5">
                   {formStep === 1 && (<>
                     <Lbl label="Full Name"><Inp k="name" placeholder="First and last name" /></Lbl>
-                    <Lbl label="Preferred Contact Method">
-                      <div className="flex gap-3">
-                        {(['phone', 'email'] as ContactMethod[]).map(m => (
-                          <button key={m} type="button" onClick={() => setFormData(p => ({ ...p, contactMethod: m }))} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all ${formData.contactMethod === m ? 'bg-violet-500/20 border-violet-500 text-violet-300' : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}>
-                            {m === 'phone' ? <><Phone size={14} /> Phone</> : <><Mail size={14} /> Email</>}
-                          </button>
-                        ))}
-                      </div>
-                    </Lbl>
-                    {formData.contactMethod === 'phone' ? (
-                      <Lbl label="Phone Number"><Inp k="phone" placeholder="(555) 555-5555" type="tel" /></Lbl>
-                    ) : (
-                      <Lbl label="Email Address"><Inp k="email" placeholder="client@example.com" type="email" /></Lbl>
-                    )}
+                    <Lbl label="Phone Number"><Inp k="phone" placeholder="(555) 555-5555" type="tel" /></Lbl>
+                    <Lbl label="Email Address"><Inp k="email" placeholder="client@example.com" type="email" /></Lbl>
+                    <p className="text-xs text-slate-500 -mt-2">We need both so we can reach you and send a written confirmation of your intake.</p>
                   </>)}
 
                   {formStep === 2 && (<>
