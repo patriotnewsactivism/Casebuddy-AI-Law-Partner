@@ -146,5 +146,18 @@ export function populateCaseFromIntake(caseId: string, intake: IntakeData): void
     if (intake.jurisdiction) data.jurisdiction = intake.jurisdiction;
 
     localStorage.setItem(key, JSON.stringify(data));
+
+    // Durable backup — see caseContext.ts persistCaseDetailsRemote(). Import
+    // is done lazily here (not at module top) to avoid a circular import,
+    // since caseContext.ts itself doesn't depend on this module.
+    import('./caseContext').then(({ saveIntakeTranscript, getIntakeDetails }) => {
+      // Re-save through the same path so the Supabase write-through fires;
+      // pass through any transcript already on this case so we don't
+      // overwrite it with an empty array if this call fires first.
+      const already = getIntakeDetails(caseId);
+      if (already?.intakeTranscript?.length) {
+        saveIntakeTranscript(caseId, already.intakeTranscript);
+      }
+    }).catch(() => {});
   } catch {}
 }
