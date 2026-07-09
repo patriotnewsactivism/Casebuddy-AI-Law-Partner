@@ -336,9 +336,13 @@ const CaseManager = () => {
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-semibold text-white">{safeText(c.title, 'Untitled Case')}</h3>
                     {syncedCaseIds.has(c.id) ? (
-                      <CloudCheck size={14} className="text-emerald-500 shrink-0 mt-0.5" titleAccess="Backed up to cloud" />
+                      <span title="Backed up to cloud" className="shrink-0 mt-0.5">
+                        <CloudCheck size={14} className="text-emerald-500" />
+                      </span>
                     ) : (
-                      <CloudOff size={14} className="text-slate-600 shrink-0 mt-0.5" titleAccess="Not yet backed up to cloud" />
+                      <span title="Not yet backed up to cloud" className="shrink-0 mt-0.5">
+                        <CloudOff size={14} className="text-slate-600" />
+                      </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-400 mt-1">{safeText(c.status)} • {safeText(c.client, 'Unknown Client')}</p>
