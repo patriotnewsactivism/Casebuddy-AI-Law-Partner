@@ -13,7 +13,7 @@ import { safeText } from '../utils/safeText';
 import AgentHeader from './AgentHeader';
 import CrossCasePanel from './CrossCasePanel';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
-import { getIntakeDetails, downloadIntakeTranscript, getLastSyncedAt } from '../services/caseContext';
+import { getIntakeDetails, downloadIntakeTranscript, getLastSyncedAt, getSyncedCaseIds } from '../services/caseContext';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
@@ -31,6 +31,17 @@ function timeAgo(iso: string): string {
 const CaseManager = () => {
   const { cases, activeCase, setActiveCase, addCase, updateCase, deleteCase } = useContext(AppContext);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [syncedCaseIds, setSyncedCaseIds] = useState<Set<string>>(new Set());
+
+  // Firm-wide cloud-backup status for the whole case list (not per-browser) —
+  // re-checks whenever the case list changes (new case added/removed).
+  React.useEffect(() => {
+    let cancelled = false;
+    const ids = cases.map(c => c.id).filter(Boolean);
+    if (!ids.length) { setSyncedCaseIds(new Set()); return; }
+    getSyncedCaseIds(ids).then(set => { if (!cancelled) setSyncedCaseIds(set); });
+    return () => { cancelled = true; };
+  }, [cases]);
 
   React.useEffect(() => {
     if (!activeCase) { setSyncedAt(null); return; }
@@ -322,7 +333,14 @@ const CaseManager = () => {
                   onClick={() => setActiveCase(c)}
                   className={`p-4 border-b border-slate-700 cursor-pointer transition-colors ${activeCase?.id === c.id ? 'bg-slate-700/50 border-l-4 border-l-gold-500' : 'hover:bg-slate-700/30'}`}
                 >
-                  <h3 className="font-semibold text-white">{safeText(c.title, 'Untitled Case')}</h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-white">{safeText(c.title, 'Untitled Case')}</h3>
+                    {syncedCaseIds.has(c.id) ? (
+                      <CloudCheck size={14} className="text-emerald-500 shrink-0 mt-0.5" titleAccess="Backed up to cloud" />
+                    ) : (
+                      <CloudOff size={14} className="text-slate-600 shrink-0 mt-0.5" titleAccess="Not yet backed up to cloud" />
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400 mt-1">{safeText(c.status)} • {safeText(c.client, 'Unknown Client')}</p>
                 </div>
               ))}
