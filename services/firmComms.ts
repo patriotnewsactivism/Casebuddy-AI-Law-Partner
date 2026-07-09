@@ -72,6 +72,62 @@ const intakeReportHtml = (intake: IntakeData, score: IntakeScore): string => {
 };
 
 /**
+ * A short, warm, client-facing recap of what they told Maya — NOT the
+ * internal score/urgency/routing details (those stay confidential to the
+ * firm). Grounded only in fields the client actually gave.
+ */
+const clientSynopsisHtml = (intake: IntakeData): string => {
+  const bits: string[] = [];
+  if (intake.matterType) bits.push(`a <strong>${esc(intake.matterType)}</strong> matter`);
+  if (intake.incidentDate) bits.push(`from around <strong>${esc(intake.incidentDate)}</strong>`);
+  if (intake.opposingParties) bits.push(`involving ${esc(intake.opposingParties)}`);
+  const openLine = bits.length
+    ? `Here's a quick recap of what you shared with Maya: you reached out about ${bits.join(', ')}.`
+    : `Here's a quick recap of what you shared with Maya.`;
+
+  const narrative = intake.detailedNarrative || intake.summary;
+
+  return `
+    <p style="font-size:14px;">${openLine}</p>
+    ${narrative ? `<div style="background:#faf8f2;border:1px solid #e7e0cf;border-radius:8px;padding:14px 16px;margin:16px 0;"><p style="font-size:13px;color:#1a1a1a;white-space:pre-line;margin:0;">${esc(narrative)}</p></div>` : ''}
+    ${intake.desiredOutcome ? `<p style="font-size:13px;color:#444;">You mentioned you're hoping for: <strong>${esc(intake.desiredOutcome)}</strong>.</p>` : ''}
+  `;
+};
+
+/**
+ * On a new intake, confirm receipt directly with the prospective client:
+ * a rehashed synopsis of what they told Maya, plus a plain confirmation that
+ * it's now with the firm for review. Sent to the email address collected
+ * during intake — best-effort, never blocks the intake flow.
+ */
+export const emailClientIntakeConfirmation = async (intake: IntakeData, score: IntakeScore): Promise<boolean> => {
+  const to = (intake.email || '').trim();
+  if (!to || !/.+@.+\..+/.test(to)) return false;
+  try {
+    const firstName = (intake.fullName || '').split(' ')[0] || 'there';
+    const html = `
+      <div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;color:#1a1a1a;line-height:1.6;">
+        <h2 style="color:#333;border-bottom:2px solid #c9a84c;padding-bottom:8px;">We've got your intake, ${esc(firstName)}</h2>
+        <p style="font-size:14px;">Hi ${esc(firstName)}, thanks for taking the time to speak with Maya. Your intake is now with our team for review, and one of our attorneys will follow up with you soon${intake.phone ? ` at ${esc(intake.phone)}` : ''}.</p>
+        ${clientSynopsisHtml(intake)}
+        <p style="font-size:13px;color:#444;">${esc(score.clientMessage || "If anything above doesn't look right, or you'd like to add more detail, just reply to this email.")}</p>
+        <hr style="margin-top:28px;border-color:#eee;" />
+        <p style="font-size:11px;color:#999;">— Maya, Case Intake · CaseBuddy Law. This confirms receipt only and is not legal advice.</p>
+      </div>`;
+    await sendEmail({
+      to: [to],
+      subject: `We've received your intake, ${firstName} — here's a recap`,
+      html,
+      fromAgentId: 'maya',
+      replyTo: agentIdentity('maya').email,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * On a new intake, Maya emails the routed specialist (and the firm line) a
  * complete handoff so the right attorney has the case on the record immediately.
  * Best-effort: returns false if email isn't configured or the send fails.
