@@ -123,21 +123,34 @@ serve(async (req) => {
       // 2. Process based on job_type
       if (job.job_type === 'ocr') {
 
-        // 'case-documents' is a PRIVATE bucket. document.file_url may be a
-        // stale bare storage path (legacy rows) or a stored "public" URL that
-        // isn't actually fetchable against a private bucket. Always mint a
-        // fresh short-lived signed URL from storage_path when we have one —
-        // that's the only reliably fetchable link for ocr-document to fetch().
+        // Documents can live in either of two buckets depending on which app
+        // originally uploaded them: 'case-documents' (private, this app's own
+        // uploads — needs a signed URL) or 'discovery-files' (public, files
+        // cross-synced in from the DiscoveryLens app — plain public URL works).
+        // document.file_url may also be a stale bare storage path from legacy
+        // rows, so always re-resolve from storage_path when we have one rather
+        // than trusting whatever was stored in file_url.
         let ocrFileUrl: string | null = document.file_url || null;
         if (document.storage_path) {
           const { data: signedData, error: signError } = await supabase
             .storage
             .from('case-documents')
             .createSignedUrl(document.storage_path, 600); // 10 minutes, plenty for OCR fetch
-          if (signError) {
-            console.warn(`Failed to sign storage URL for ${document.storage_path}: ${signError.message}`);
-          } else if (signedData?.signedUrl) {
+
+          if (!signError && signedData?.signedUrl) {
             ocrFileUrl = signedData.signedUrl;
+          } else {
+            // Not in case-documents (or bucket/object doesn't exist there) —
+            // try the public discovery-files bucket used by the sibling app.
+            const { data: publicData } = supabase
+              .storage
+              .from('discovery-files')
+              .getPublicUrl(document.storage_path);
+            if (publicData?.publicUrl) {
+              ocrFileUrl = publicData.publicUrl;
+            } else if (signError) {
+              console.warn(`Failed to resolve storage URL for ${document.storage_path}: ${signError.message}`);
+            }
           }
         }
 
