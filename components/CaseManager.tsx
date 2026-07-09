@@ -3,7 +3,7 @@ import React, { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { Case, CaseStatus } from '../types';
-import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2 } from 'lucide-react';
+import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2, Download, MessageSquareText } from 'lucide-react';
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
@@ -13,6 +13,7 @@ import { safeText } from '../utils/safeText';
 import AgentHeader from './AgentHeader';
 import CrossCasePanel from './CrossCasePanel';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
+import { getIntakeDetails, downloadIntakeTranscript } from '../services/caseContext';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
@@ -333,6 +334,27 @@ const CaseManager = () => {
                 </div>
               )}
             </div>
+
+            {/* Maya's intake call transcript — full record, downloadable */}
+            {getIntakeDetails(activeCase.id)?.intakeTranscript?.length ? (
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <div className="flex items-center gap-2 text-slate-400 text-xs uppercase tracking-wider font-semibold mb-2">
+                  <MessageSquareText size={14} /> Intake Call Transcript
+                </div>
+                <p className="text-xs text-slate-500 mb-2">
+                  {getIntakeDetails(activeCase.id)?.intakeTranscript?.length} messages captured with Maya
+                </p>
+                <button
+                  onClick={async () => {
+                    const ok = await downloadIntakeTranscript(activeCase.id, activeCase.title || 'case');
+                    if (ok) handleSuccess('Transcript downloaded'); else toast.error('No transcript found for this case');
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-sm font-medium"
+                >
+                  <Download size={15} /> Download Full Transcript (.txt)
+                </button>
+              </div>
+            ) : null}
             {/* Cross-agent quick actions */}
             <div className="mt-5 pt-4 border-t border-slate-700 space-y-2">
               <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Send to Agent</p>
