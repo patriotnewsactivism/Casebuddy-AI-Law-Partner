@@ -122,11 +122,29 @@ serve(async (req) => {
     try {
       // 2. Process based on job_type
       if (job.job_type === 'ocr') {
-        
-        if (document.file_url) {
+
+        // 'case-documents' is a PRIVATE bucket. document.file_url may be a
+        // stale bare storage path (legacy rows) or a stored "public" URL that
+        // isn't actually fetchable against a private bucket. Always mint a
+        // fresh short-lived signed URL from storage_path when we have one —
+        // that's the only reliably fetchable link for ocr-document to fetch().
+        let ocrFileUrl: string | null = document.file_url || null;
+        if (document.storage_path) {
+          const { data: signedData, error: signError } = await supabase
+            .storage
+            .from('case-documents')
+            .createSignedUrl(document.storage_path, 600); // 10 minutes, plenty for OCR fetch
+          if (signError) {
+            console.warn(`Failed to sign storage URL for ${document.storage_path}: ${signError.message}`);
+          } else if (signedData?.signedUrl) {
+            ocrFileUrl = signedData.signedUrl;
+          }
+        }
+
+        if (ocrFileUrl) {
           // Invoke existing OCR edge function
           const { data: ocrData, error: ocrError } = await supabase.functions.invoke('ocr-document', {
-            body: { documentId: document.id, fileUrl: document.file_url }
+            body: { documentId: document.id, fileUrl: ocrFileUrl }
           });
           
           if (ocrError) throw new Error(`OCR function failed: ${ocrError.message}`);
