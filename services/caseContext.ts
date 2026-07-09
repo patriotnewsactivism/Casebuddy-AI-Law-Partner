@@ -42,6 +42,7 @@ export interface IntakeDetails {
 }
 
 const detailsKey = (caseId: string) => `casebuddy_case_details_${caseId}`;
+const syncedKey = (caseId: string) => `casebuddy_case_details_synced_${caseId}`;
 
 export function getIntakeDetails(caseId: string): IntakeDetails | null {
   try {
@@ -50,6 +51,30 @@ export function getIntakeDetails(caseId: string): IntakeDetails | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * ISO timestamp of the last confirmed successful write-through to the
+ * Supabase `case_details` backup, or null if this browser has never
+ * confirmed a sync for this case (e.g. offline, Supabase not configured,
+ * or the write is still in flight).
+ */
+export function getLastSyncedAt(caseId: string): string | null {
+  try {
+    return localStorage.getItem(syncedKey(caseId));
+  } catch {
+    return null;
+  }
+}
+
+function markSynced(caseId: string): void {
+  try {
+    localStorage.setItem(syncedKey(caseId), new Date().toISOString());
+    // Same-tab components (e.g. CaseManager's status readout) don't get a
+    // native `storage` event since that only fires cross-tab — dispatch our
+    // own so any mounted listener can react immediately.
+    window.dispatchEvent(new CustomEvent('casebuddy:case-details-synced', { detail: { caseId } }));
+  } catch { /* best-effort */ }
 }
 
 /**
@@ -92,6 +117,9 @@ function persistCaseDetailsRemote(caseId: string, details: IntakeDetails): void 
       .then(({ data: existingRemote }: { data: any }) => {
         const merged = existingRemote ? { ...existingRemote, ...row } : row;
         return supabase.from('case_details').upsert(merged, { onConflict: 'case_id' });
+      })
+      .then((res: any) => {
+        if (!res?.error) markSynced(caseId);
       })
       .catch(() => {});
   } catch {
