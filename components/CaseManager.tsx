@@ -3,7 +3,7 @@ import React, { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { Case, CaseStatus } from '../types';
-import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2, Download, MessageSquareText } from 'lucide-react';
+import { FileText, Upload, Eye, AlertTriangle, CheckCircle, Search, BrainCircuit, Plus, X, BookOpen, Library, Gavel, Scale, Clock, Pencil, Trash2, Download, MessageSquareText, CloudCheck, CloudOff } from 'lucide-react';
 import { analyzeDocument, fileToGenerativePart } from '../services/geminiService';
 import { MOCK_CASE_TEMPLATES } from '../constants';
 import { handleError, handleSuccess } from '../utils/errorHandler';
@@ -13,12 +13,39 @@ import { safeText } from '../utils/safeText';
 import AgentHeader from './AgentHeader';
 import CrossCasePanel from './CrossCasePanel';
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from '../agents/personas';
-import { getIntakeDetails, downloadIntakeTranscript } from '../services/caseContext';
+import { getIntakeDetails, downloadIntakeTranscript, getLastSyncedAt } from '../services/caseContext';
 
 const MAYA = OPERATIONAL_AGENTS.find(a => a.id === 'maya')!;
 
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 const CaseManager = () => {
   const { cases, activeCase, setActiveCase, addCase, updateCase, deleteCase } = useContext(AppContext);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!activeCase) { setSyncedAt(null); return; }
+    setSyncedAt(getLastSyncedAt(activeCase.id));
+    const onSynced = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.caseId === activeCase.id) setSyncedAt(getLastSyncedAt(activeCase.id));
+    };
+    window.addEventListener('casebuddy:case-details-synced', onSynced);
+    window.addEventListener('storage', onSynced);
+    return () => {
+      window.removeEventListener('casebuddy:case-details-synced', onSynced);
+      window.removeEventListener('storage', onSynced);
+    };
+  }, [activeCase?.id]);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [inputText, setInputText] = useState('');
@@ -353,6 +380,17 @@ const CaseManager = () => {
                 >
                   <Download size={15} /> Download Full Transcript (.txt)
                 </button>
+                <p className="flex items-center gap-1.5 text-xs mt-2">
+                  {syncedAt ? (
+                    <span className="flex items-center gap-1.5 text-slate-500">
+                      <CloudCheck size={13} className="text-emerald-500" /> Backed up to cloud &middot; {timeAgo(syncedAt)}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-slate-500">
+                      <CloudOff size={13} className="text-slate-500" /> Not yet backed up to cloud
+                    </span>
+                  )}
+                </p>
               </div>
             ) : null}
             {/* Cross-agent quick actions */}
