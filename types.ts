@@ -49,6 +49,8 @@ export interface Case {
 export interface IntakeData {
   fullName: string;
   contact: string;          // phone or email, however they gave it
+  email?: string;           // client's email — always requested; required to send the intake confirmation
+  phone?: string;           // client's phone number — always requested alongside email
   matterType: string;       // e.g. "Personal Injury", "Family Law"
   jurisdiction: string;     // state / court, if known
   summary: string;          // one-line plain-language description (used on cards)
