@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   Phone, PhoneOff, Scale, Mic, Volume2, ShieldCheck, CheckCircle2, Clock,
   HeartHandshake, AlertCircle, Loader2, Copy, Upload, Bot, Send,
-  ChevronRight, CheckCircle, MessageSquare, FileText, Check, ArrowRight, Mail
+  ChevronRight, CheckCircle, MessageSquare, FileText, Check, ArrowRight
 } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake, callGeminiProxy } from '../services/intakeService';
