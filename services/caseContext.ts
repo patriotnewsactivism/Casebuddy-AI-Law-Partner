@@ -127,6 +127,31 @@ function persistCaseDetailsRemote(caseId: string, details: IntakeDetails): void 
   }
 }
 
+/**
+ * Firm-wide (not just this browser) check of which case IDs have a confirmed
+ * cloud backup — queries Supabase `case_details` directly rather than the
+ * local `synced` marker, so the case list badge is accurate no matter which
+ * device/browser originally performed the sync.
+ */
+export async function getSyncedCaseIds(caseIds: string[]): Promise<Set<string>> {
+  const result = new Set<string>();
+  if (!caseIds.length) return result;
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return result;
+    // Supabase's `in` filter has practical URL-length limits — chunk defensively.
+    const CHUNK = 200;
+    for (let i = 0; i < caseIds.length; i += CHUNK) {
+      const chunk = caseIds.slice(i, i + CHUNK);
+      const { data } = await supabase.from('case_details').select('case_id').in('case_id', chunk);
+      (data || []).forEach((row: { case_id: string }) => result.add(row.case_id));
+    }
+  } catch {
+    /* best-effort — badge just won't show for this render */
+  }
+  return result;
+}
+
 /** Store the raw Maya call transcript alongside the extracted intake details. */
 export function saveIntakeTranscript(
   caseId: string,
