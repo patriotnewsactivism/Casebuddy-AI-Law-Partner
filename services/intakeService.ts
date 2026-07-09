@@ -126,7 +126,10 @@ FIELD GUIDANCE:
 - "openQuestions": important things that are still unknown or unclear.
 - "matterType": the legal practice area in plain English.
 
-Return ONLY valid JSON with these fields: fullName, contact, matterType, jurisdiction, summary, detailedNarrative, incidentDate, opposingParties, deadlines, injuriesOrDamages, desiredOutcome, priorCounsel, witnesses, evidenceMentioned, financialImpact, priorLegalActions, emotionalState, keyFacts, clientQuotes, openQuestions, timeline, parties.`,
+- "email": the client's email address, exactly as stated. Maya's call flow requires asking for both a phone number and an email — capture whichever/however many were actually given.
+- "phone": the client's phone number, exactly as stated.
+
+Return ONLY valid JSON with these fields: fullName, contact, email, phone, matterType, jurisdiction, summary, detailedNarrative, incidentDate, opposingParties, deadlines, injuriesOrDamages, desiredOutcome, priorCounsel, witnesses, evidenceMentioned, financialImpact, priorLegalActions, emotionalState, keyFacts, clientQuotes, openQuestions, timeline, parties.`,
       `CONVERSATION:\n${convo}`,
       4000
     );
@@ -155,6 +158,8 @@ Return ONLY valid JSON with these fields: fullName, contact, matterType, jurisdi
     return {
       fullName: str(data.fullName, 'Prospective Client'),
       contact: str(data.contact),
+      email: str(data.email),
+      phone: str(data.phone),
       matterType: str(data.matterType, 'General Inquiry'),
       jurisdiction: str(data.jurisdiction),
       summary: str(data.summary),
