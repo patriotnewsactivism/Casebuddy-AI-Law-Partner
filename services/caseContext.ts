@@ -19,6 +19,8 @@
 
 import type { Case } from '../types';
 import { loadCases } from '../utils/storage';
+import { getSupabase } from './supabaseClient';
+import { getFirmId } from './caseStore';
 
 // ─── intake details (Maya → case handoff) ────────────────────────────────────
 
@@ -50,6 +52,53 @@ export function getIntakeDetails(caseId: string): IntakeDetails | null {
   }
 }
 
+/**
+ * Fire-and-forget durable backup of intake details + transcript to Supabase
+ * `case_details`. localStorage stays the synchronous fast path everything
+ * else reads from — this just makes sure the data survives a cleared cache
+ * or a different device/browser opening the case later.
+ */
+function persistCaseDetailsRemote(caseId: string, details: IntakeDetails): void {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const row = {
+      case_id: caseId,
+      firm_id: getFirmId(),
+      detailed_narrative: details.detailedNarrative || '',
+      key_facts: details.keyFacts || [],
+      timeline: details.timeline || [],
+      parties: details.parties || [],
+      witnesses: details.witnesses || '',
+      evidence_mentioned: details.evidenceMentioned || '',
+      financial_impact: details.financialImpact || '',
+      prior_legal_actions: details.priorLegalActions || '',
+      client_quotes: details.clientQuotes || [],
+      open_questions: details.openQuestions || [],
+      emotional_state: details.emotionalState || '',
+      incident_date: details.incidentDate || '',
+      jurisdiction: details.jurisdiction || '',
+      intake_transcript: details.intakeTranscript || [],
+    };
+    // Best-effort — never blocks or throws into the caller. Any existing
+    // remote row is merged with this call's fields via a follow-up read so a
+    // saveIntakeTranscript() call doesn't clobber narrative fields (and vice
+    // versa) when the two writers fire independently.
+    void supabase
+      .from('case_details')
+      .select('*')
+      .eq('case_id', caseId)
+      .maybeSingle()
+      .then(({ data: existingRemote }: { data: any }) => {
+        const merged = existingRemote ? { ...existingRemote, ...row } : row;
+        return supabase.from('case_details').upsert(merged, { onConflict: 'case_id' });
+      })
+      .catch(() => {});
+  } catch {
+    /* best-effort — localStorage write already succeeded */
+  }
+}
+
 /** Store the raw Maya call transcript alongside the extracted intake details. */
 export function saveIntakeTranscript(
   caseId: string,
@@ -57,9 +106,61 @@ export function saveIntakeTranscript(
 ): void {
   try {
     const existing = getIntakeDetails(caseId) ?? {};
-    existing.intakeTranscript = transcript.slice(0, 400);
+    // 400 turns is a very long call already; keep a generous ceiling so we
+    // never silently drop the end of a genuinely long intake.
+    existing.intakeTranscript = transcript.slice(0, 2000);
     localStorage.setItem(detailsKey(caseId), JSON.stringify(existing));
+    persistCaseDetailsRemote(caseId, existing);
   } catch { /* best-effort */ }
+}
+
+/**
+ * Download the complete intake transcript for a case as a plain-text .txt
+ * file. Reads from localStorage first (instant), falling back to the
+ * Supabase `case_details` backup if this browser never had it locally
+ * (e.g. case was accepted on a different device).
+ */
+export async function downloadIntakeTranscript(caseId: string, caseTitle: string): Promise<boolean> {
+  let details = getIntakeDetails(caseId);
+
+  if (!details?.intakeTranscript?.length) {
+    try {
+      const supabase = getSupabase();
+      if (supabase) {
+        const { data } = await supabase
+          .from('case_details')
+          .select('intake_transcript')
+          .eq('case_id', caseId)
+          .maybeSingle();
+        if (data?.intake_transcript?.length) {
+          details = { intakeTranscript: data.intake_transcript };
+        }
+      }
+    } catch { /* fall through to failure below */ }
+  }
+
+  const transcript = details?.intakeTranscript;
+  if (!transcript?.length) return false;
+
+  const lines = [
+    `CaseBuddy — Full Intake Transcript`,
+    `Case: ${caseTitle}`,
+    `Exported: ${new Date().toLocaleString()}`,
+    '─'.repeat(60),
+    '',
+    ...transcript.map(t => `[${t.speaker === 'agent' ? 'Maya' : 'Client'}] ${t.text}`),
+  ];
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${caseTitle.replace(/[^a-z0-9]+/gi, '_')}_intake_transcript.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
 }
 
 // ─── brief assembly ──────────────────────────────────────────────────────────
