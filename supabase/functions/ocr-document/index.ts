@@ -695,7 +695,18 @@ serve(async (req) => {
     console.log(`Analysis providers: OpenAI/OpenRouter=${hasOpenAI}, Gemini=${hasGemini}, Cohere=${hasCohere}`);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY');
+    // Supabase has two live service-role key formats depending on when a project
+    // rotated to the new API key system: the legacy JWT (SERVICE_ROLE_KEY, starts
+    // with "eyJ...") and the new secret-key format (SUPABASE_SERVICE_ROLE_KEY,
+    // starts with "sb_secret_..."). Different internal callers (pipeline-worker,
+    // manual invocations, etc.) may still be holding either format, so accept
+    // a bearer token that matches ANY currently-valid service-role secret rather
+    // than only the first one that happens to be set.
+    const validServiceRoleKeys = [
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+      Deno.env.get('SERVICE_ROLE_KEY'),
+    ].filter((k): k is string => !!k);
+    const serviceRoleKey = validServiceRoleKeys[0];
     const authHeader = req.headers.get('Authorization') || '';
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
 
@@ -703,10 +714,10 @@ serve(async (req) => {
     let supabase: SupabaseClient;
     let isServiceRole = false;
 
-    if (serviceRoleKey && bearerToken === serviceRoleKey) {
+    if (validServiceRoleKeys.includes(bearerToken)) {
       console.log('Service role authentication detected');
       isServiceRole = true;
-      supabase = createClient(supabaseUrl, serviceRoleKey);
+      supabase = createClient(supabaseUrl, serviceRoleKey!);
       user = { id: 'service-role' };
     } else {
       const authResult = await verifyAuth(req);
