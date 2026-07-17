@@ -25,19 +25,45 @@ const json = (body: object, status = 200) =>
 
 /* ── Gemini ─────────────────────────────────────────────────────────────────── */
 
-const gemini = async (apiKey: string, prompt: string): Promise<string> => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+const mistral = async (prompt: string): Promise<string> => {
+  const apiKey = process.env.MISTRAL_API_KEY || '';
+  if (!apiKey) throw new Error('Mistral API key not configured.');
+  const url = 'https://api.mistral.ai/v1/chat/completions';
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.6 },
+      model: 'mistral-small-2506',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.6,
     }),
   });
   const data = await resp.json() as any;
-  if (!resp.ok) throw new Error(data?.error?.message || `Gemini ${resp.status}`);
-  return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  if (!resp.ok) throw new Error(data?.error?.message || `Mistral ${resp.status}`);
+  return (data.choices?.[0]?.message?.content || '').trim();
+};
+
+const gemini = async (apiKey: string, prompt: string): Promise<string> => {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.6 },
+      }),
+    });
+    const data = await resp.json() as any;
+    if (!resp.ok) throw new Error(data?.error?.message || `Gemini ${resp.status}`);
+    return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  } catch (err) {
+    console.warn('Gemini failed, falling back to Mistral:', err);
+    return await mistral(prompt);
+  }
 };
 
 /* ── Supabase REST ──────────────────────────────────────────────────────────── */
