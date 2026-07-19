@@ -14,10 +14,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-image:
-    linear-gradient(rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.72)),
+    linear-gradient(rgba(2, 6, 23, 0.45), rgba(2, 6, 23, 0.6)),
     url('/images/legal-background.jpg');
   background-size: cover;
-  background-position: center top;
+  background-position: center 20%;
   background-repeat: no-repeat;
   background-attachment: scroll;
 }
