@@ -216,7 +216,7 @@ const LandingPage = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-transparent text-white overflow-x-hidden">
 
       {/* ── Navigation ───────────────────────────────────────────────────── */}
       <nav className="glass-dark sticky top-0 z-50 border-b border-white/5">
