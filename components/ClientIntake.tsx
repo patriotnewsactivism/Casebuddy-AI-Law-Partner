@@ -62,6 +62,8 @@ const ClientIntake: React.FC = () => {
   const [generatingLetter, setGeneratingLetter] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const set = (k: keyof IntakeForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -113,33 +115,60 @@ Include: scope of representation, fee agreement, billing procedures, client obli
     }
   };
 
-  const handleSubmit = async () => {
-    // ── Primary: save to Supabase cloud ─────────────────────────────────
-    try {
-      const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
-      const sb = getSupabase();
-      if (sb && isSupabaseConfigured) {
-        await sb.from('intake_cases').insert([{
-          full_name: `${form.firstName} ${form.lastName}`.trim() || 'Prospective Client',
-          contact: form.email || form.phone || '',
-          matter_type: form.caseType || 'General Inquiry',
-          jurisdiction: form.jurisdiction || '',
-          summary: form.incidentDescription || '',
-          status: 'new',
-          disposition: 'review',
-          urgency: 'medium',
-          intake: form,
-        }]);
-      }
-    } catch (err) {
-      console.warn('[ClientIntake] Supabase save failed, using local backup:', err);
+  const saveToCloud = async () => {
+    const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
+    const sb = getSupabase();
+    if (!sb || !isSupabaseConfigured) {
+      throw new Error('Cloud database is not configured for this deployment.');
     }
-    // ── Emergency backup only ─────────────────────────────────────────────
-    const intakes = JSON.parse(localStorage.getItem('casebuddy_intakes_backup') || '[]');
-    intakes.push({ ...form, id: Date.now().toString(), submittedAt: new Date().toISOString() });
-    localStorage.setItem('casebuddy_intakes_backup', JSON.stringify(intakes));
+    const { error } = await sb.from('intake_cases').insert([{
+      full_name: `${form.firstName} ${form.lastName}`.trim() || 'Prospective Client',
+      contact: form.email || form.phone || '',
+      matter_type: form.caseType || 'General Inquiry',
+      jurisdiction: form.jurisdiction || '',
+      summary: form.incidentDescription || '',
+      status: 'new',
+      disposition: 'review',
+      urgency: 'medium',
+      intake: form,
+    }]);
+    if (error) throw error;
+  };
+
+  const handleSubmit = async () => {
+    setSubmitError('');
+    setSubmitting(true);
+    // Always keep a local emergency copy first, regardless of cloud outcome.
+    try {
+      const intakes = JSON.parse(localStorage.getItem('casebuddy_intakes_backup') || '[]');
+      intakes.push({ ...form, id: Date.now().toString(), submittedAt: new Date().toISOString() });
+      localStorage.setItem('casebuddy_intakes_backup', JSON.stringify(intakes));
+    } catch {
+      // localStorage can fail (private browsing, quota) -- not fatal, cloud save is what matters.
+    }
+    // Cloud save is REQUIRED. Retry once before giving up -- an intake that only
+    // lives in the client's own browser is invisible to the firm and must never be
+    // silently reported as a success.
+    try {
+      await saveToCloud();
+    } catch (firstErr) {
+      console.warn('[ClientIntake] Supabase save failed, retrying once:', firstErr);
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        await saveToCloud();
+      } catch (secondErr) {
+        console.error('[ClientIntake] Supabase save failed twice, cloud save NOT confirmed:', secondErr);
+        setSubmitting(false);
+        setSubmitError(
+          "We could not confirm your intake reached our system. Your answers are saved on this device, but please call our office directly or try submitting again -- do not close this page."
+        );
+        return;
+      }
+    }
+    setSubmitting(false);
     setSubmitted(true);
   };
+
 
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div>
@@ -386,12 +415,17 @@ Include: scope of representation, fee agreement, billing procedures, client obli
               Next <ChevronRight size={16} />
             </button>
           ) : (
-            <button onClick={handleSubmit}
-              className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-white font-bold px-6 py-2 rounded-xl">
-              <CheckCircle size={16} /> Submit Intake
+            <button onClick={handleSubmit} disabled={submitting}
+              className="flex items-center gap-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-white font-bold px-6 py-2 rounded-xl">
+              <CheckCircle size={16} /> {submitting ? 'Submitting...' : 'Submit Intake'}
             </button>
           )}
         </div>
+        {submitError && (
+          <div className="mt-4 bg-red-500/10 border border-red-500/40 rounded-lg px-4 py-3 text-red-300 text-sm">
+            {submitError}
+          </div>
+        )}
       </div>
     </div>
   );
