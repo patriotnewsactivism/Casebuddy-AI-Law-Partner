@@ -601,6 +601,25 @@ async function extractPdfEmbeddedText(fileBlob: Blob): Promise<string> {
   }
 }
 
+// Tier 0's regex-based PDF text-object scan only looks at raw, uncompressed
+// bytes for literal "BT ... ET" blocks. The vast majority of real-world PDFs
+// (especially scanned/court-produced documents) use FlateDecode-compressed
+// content streams, so the actual text is never visible as plain ASCII in the
+// raw file at all -- but the regex can still accidentally match stray
+// "(...)Tj"-shaped byte sequences inside binary/compressed data elsewhere in
+// the file, "succeeding" with a pile of garbage that happens to be >100
+// characters long. A length check alone can't tell real extracted prose from
+// that garbage -- this must always fall through to real OCR instead.
+const isLegibleExtractedText = (text: string): boolean => {
+  const trimmed = text.trim();
+  if (trimmed.length < 60) return false;
+  const printable = trimmed.match(/[ -~\n\t]/g)?.length || 0;
+  if (printable / trimmed.length < 0.85) return false;
+  const words = trimmed.match(/[A-Za-z]{3,}/g) || [];
+  const letterChars = words.join('').length;
+  return words.length >= 8 && letterChars / trimmed.length > 0.35;
+};
+
 // ===== Phase Normalization =====
 function normalizePhase(phase: string | undefined, content: string): TimelinePhase {
   const normalized = (phase || '').trim().toLowerCase();
@@ -1140,13 +1159,15 @@ serve(async (req) => {
         try {
           console.log('Attempting PDF embedded text extraction (Tier 0)...');
           const pdfText = await extractPdfEmbeddedText(fileBlob);
-          // Only accept if we got substantial text (not just metadata/headers)
-          if (pdfText.length > 100) {
+          // Only accept if it's both long enough AND actually legible prose --
+          // a length check alone lets regex-matched binary garbage through
+          // (see isLegibleExtractedText for why). Always OCR otherwise.
+          if (pdfText.length > 100 && isLegibleExtractedText(pdfText)) {
             extractedText = pdfText;
             ocrProvider = 'pdf_text_extract';
             console.log(`PDF text extraction: ${extractedText.length} chars (no OCR needed)`);
           } else {
-            console.log(`PDF text extraction: only ${pdfText.length} chars — likely scanned, proceeding to OCR`);
+            console.log(`PDF text extraction: ${pdfText.length} chars but not legible (or too short) — likely scanned/compressed, proceeding to OCR`);
           }
         } catch (pdfError) {
           console.log(`PDF text extraction skipped: ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`);
