@@ -1,6 +1,6 @@
-# CLAUDE.md
+# QWEN.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Qwen Code when working in this repository.
 
 > **Note:** `QWEN.md`, `AGENTS.md`, and `CLAUDE.md` are kept in sync and
 > describe the same verified architecture. Update all three together when the
@@ -90,20 +90,14 @@ netlify/           # Netlify config (secondary deploy target)
 
 ### Critical: Dependencies ARE Bundled by Vite (NO importmap)
 
-`index.html` contains **no importmap**. All runtime dependencies (`react`,
-`react-dom`, `react-router-dom`, `@google/genai`, `@supabase/supabase-js`,
-`framer-motion`, `lucide-react`, `recharts`, `react-toastify`, `pdfjs-dist`,
-`@ffmpeg/ffmpeg`) are real npm packages installed via `npm install` and
-bundled by Vite. Manual chunk-splitting is configured in `vite.config.ts`
-(`rollupOptions.output.manualChunks`).
-
+Unlike what `AGENTS.md`/`CLAUDE.md` claim, `index.html` contains **no
+importmap**. All runtime dependencies (`react`, `react-dom`, `react-router-dom`,
+`@google/genai`, `@supabase/supabase-js`, `framer-motion`, `lucide-react`,
+`recharts`, `react-toastify`, `pdfjs-dist`, `@ffmpeg/ffmpeg`) are real npm
+packages installed via `npm install` and bundled by Vite. Manual chunk-splitting
+is configured in `vite.config.ts` (`rollupOptions.output.manualChunks`).
 **DO NOT** add an importmap or expect CDN loading. New runtime deps go in
 `package.json` `dependencies`.
-
-> Earlier versions of this doc claimed a CDN importmap architecture. That is
-> **outdated** — the project moved to bundled npm dependencies. Tailwind CSS
-> is also locally installed (`tailwind.config.js` + `postcss.config.js`),
-> not loaded from `cdn.tailwindcss.com`.
 
 ### Routing (BrowserRouter)
 
@@ -130,13 +124,13 @@ local-only / demo usage); otherwise redirects unauthenticated users to `/login`.
 - **localStorage** (`utils/storage.ts`) uses `casebuddy_*` keys
   (`casebuddy_cases`, `casebuddy_active_case_id`, `casebuddy_preferences`,
   `casebuddy_trial_sessions`…). The `lexsim_*` keys are **legacy fallbacks
-  for migration only**. `AppContext` persists explicitly via
-  `saveCases`/`saveActiveCaseId`.
+  for migration only** — `AGENTS.md`/`CLAUDE.md` are wrong on this point.
 - **Cloud sync** (`services/caseStore.ts`): when Supabase is configured, cases
   sync to Postgres with realtime subscriptions (`subscribeCases`) so other
   devices see updates. `loadCasesWithSync` merges cloud + local on startup.
-  The cloud sync layer (`upsertCaseToCloud`/`deleteCaseFromCloud`) is invoked
-  in `addCase`/`updateCase`/`deleteCase`.
+- `AppContext` persists explicitly (calls `saveCases`/`saveActiveCaseId`); the
+  cloud sync layer (`upsertCaseToCloud`/`deleteCaseFromCloud`) is invoked in
+  `addCase`/`updateCase`/`deleteCase`.
 - The autonomous engine (`backgroundEngine`, `caseMonitor`, `orchestrator`)
   starts on mount; memory consolidation runs every 6h.
 
@@ -217,7 +211,7 @@ component in `components/`.
 
 1. **Dev port is 5000**, not 3000.
 2. **localStorage keys are `casebuddy_*`** — `lexsim_*` is legacy migration
-   fallback only.
+   fallback only. (`AGENTS.md`/`CLAUDE.md` still say `lexsim_*` — wrong.)
 3. **`MOCK_CASES` is intentionally empty** — use `MOCK_CASE_TEMPLATES`.
 4. **`deepseekChat` no longer calls DeepSeek** — it's a multi-provider router.
    Don't "fix" callers to use a different import; the name is kept for compat.
@@ -228,5 +222,7 @@ component in `components/`.
    excluded from `tsconfig.json`, not wired to the frontend. Ignore it.
 7. **Live audio** (ArgumentPractice) uses PCM 16kHz mono — standard browser
    formats (WebM/MP3) will NOT work with the Gemini Live API.
-8. **No importmap** — deps are bundled by Vite, Tailwind is locally installed.
-   (Earlier docs claimed a CDN importmap; that is outdated.)
+8. **Instruction files are synced** — `QWEN.md`, `AGENTS.md`, and
+   `CLAUDE.md` describe the same architecture; update all three together when
+   it changes. (An earlier version of these docs claimed a CDN importmap,
+   DeepSeek as primary model, and Supabase as vestigial — all outdated.)
