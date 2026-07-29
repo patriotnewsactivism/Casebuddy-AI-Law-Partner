@@ -513,7 +513,7 @@ const ClientPortal: React.FC = () => {
                 >
                   <span className="font-semibold">{c.client}</span>
                   <span className="text-slate-500 font-mono text-[10px] bg-slate-900 px-1.5 py-0.5 rounded">
-                    {c.id.substring(0, 8)}
+                    {c.id?.substring(0, 8) ?? '—'}
                   </span>
                 </button>
               ))}
@@ -565,7 +565,7 @@ const ClientPortal: React.FC = () => {
               </span>
             </div>
             <p className="text-slate-400 text-sm mt-0.5">
-              Client: <span className="text-slate-200 font-medium">{selectedCase.client}</span> &bull; Case ID: <span className="font-mono text-xs">{selectedCase.id.substring(0, 8)}</span>
+              Client: <span className="text-slate-200 font-medium">{selectedCase.client}</span> &bull; Case ID: <span className="font-mono text-xs">{selectedCase.id?.substring(0, 8) ?? '—'}</span>
             </p>
           </div>
         </div>

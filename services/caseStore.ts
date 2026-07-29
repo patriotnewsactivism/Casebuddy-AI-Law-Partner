@@ -189,7 +189,12 @@ export const fetchCasesFromCloud = async (): Promise<Case[] | null> => {
     .order('updated_at', { ascending: false });
 
   if (error) return null;
-  return (data ?? []).map((row: any) => row.data as Case);
+  // A row with a null/malformed `data` blob would yield a Case with no id and
+  // crash downstream consumers (e.g. c.id.substring in ClientPortal). Filter
+  // at the boundary so one bad row can't poison the whole case list.
+  return (data ?? [])
+    .map((row: any) => row.data as Case | undefined)
+    .filter((c): c is Case => !!c && typeof c.id === 'string');
 };
 
 // ─── upsert single case ───────────────────────────────────────────────────────
