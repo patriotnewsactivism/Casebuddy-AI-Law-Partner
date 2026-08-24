@@ -32,6 +32,9 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
+    // Critical boundary: Vite must NOT automatically expose every VITE_* value.
+    // Public browser configuration is allow-listed explicitly in `define` below.
+    envPrefix: ['PUBLIC_'],
     server: {
       port: 5000,
     },
@@ -108,11 +111,37 @@ export default defineConfig(({ mode }) => {
       },
     ],
     define: {
-      // These values are intentionally public browser configuration.
+      // Explicit allow-list of public browser configuration.
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || ''),
       'import.meta.env.VITE_FIRM_ID': JSON.stringify(env.VITE_FIRM_ID || ''),
       'import.meta.env.VITE_AZURE_VISION_ENDPOINT': JSON.stringify(env.VITE_AZURE_VISION_ENDPOINT || env.AZURE_VISION_ENDPOINT || ''),
+      'import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY': JSON.stringify(env.VITE_STRIPE_PUBLISHABLE_KEY || ''),
+
+      // Legacy direct-provider references fail closed instead of inheriting Vercel env.
+      'import.meta.env.VITE_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_GEMINI_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_GROQ_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_DEEPGRAM_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_DEEPGRAM_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_ELEVENLABS_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_OPENAI_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_DEEPSEEK_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_COHERE_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_MISTRAL_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_OPENROUTER_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_AZURE_VISION_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_COURTLISTENER_API_KEY': JSON.stringify(''),
+      'import.meta.env.VITE_GITHUB_TOKEN': JSON.stringify(''),
+      'process.env.API_KEY': JSON.stringify(''),
+      'process.env.GEMINI_API_KEY': JSON.stringify(''),
+      'process.env.GROQ_API_KEY': JSON.stringify(''),
+      'process.env.DEEPGRAM_API_KEY': JSON.stringify(''),
+      'process.env.ELEVENLABS_API_KEY': JSON.stringify(''),
+      'process.env.OPENAI_API_KEY': JSON.stringify(''),
+      'process.env.DEEPSEEK_API_KEY': JSON.stringify(''),
+      'process.env.GITHUB_TOKEN': JSON.stringify(''),
     },
     resolve: {
       alias: {
