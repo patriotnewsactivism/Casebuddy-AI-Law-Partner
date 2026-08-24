@@ -19,15 +19,16 @@ export default defineConfig(({ mode }) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ ttl_seconds: 60 }),
+      signal: AbortSignal.timeout(5_000),
     });
 
     if (!response.ok) throw new Error('Voice credential service unavailable');
     const payload = await response.json() as { access_token?: string; expires_in?: number };
     if (!payload.access_token) throw new Error('Voice credential service returned no token');
     return {
-      deepgramToken: payload.access_token,
+      deepgramKey: payload.access_token,
+      tokenType: 'bearer' as const,
       expiresIn: Number(payload.expires_in) || 60,
-      elevenlabsAvailable: Boolean((env.ELEVENLABS_API_KEY || '').trim()),
     };
   };
 
@@ -67,6 +68,7 @@ export default defineConfig(({ mode }) => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(geminiBody),
+                    signal: AbortSignal.timeout(30_000),
                   });
                   const data = await response.json();
                   res.writeHead(response.ok ? 200 : response.status, { 'Content-Type': 'application/json' });
