@@ -78,7 +78,7 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const grant = await grantDeepgramToken();
     return json(req, {
-      deepgramToken: grant.accessToken,
+      deepgramKey: grant.accessToken,
       tokenType: 'bearer',
       expiresIn: grant.expiresIn,
     });
