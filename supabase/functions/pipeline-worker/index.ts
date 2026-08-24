@@ -2,6 +2,8 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
+const PROVIDER_TIMEOUT_MS = 60_000;
+
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
@@ -30,6 +32,7 @@ async function callDeepSeek(apiKey: string, systemPrompt: string, userPrompt: st
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -59,6 +62,7 @@ async function callGroq(apiKey: string, systemPrompt: string, userPrompt: string
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
 
   if (!response.ok) {
