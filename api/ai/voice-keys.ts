@@ -44,10 +44,13 @@ export default async function handler(req: Request): Promise<Response> {
     return json(req, { error: 'Unauthorized. Sign in first.' }, 401);
   }
 
-  const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-  const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+  // VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are public configuration, not
+  // secrets. Reusing them here avoids requiring duplicate Vercel aliases solely
+  // to verify a JWT while keeping service-role/provider credentials server-only.
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[voice-token] Supabase server configuration missing');
+    console.error('[voice-token] Supabase public configuration missing');
     return json(req, { error: 'Authentication service unavailable.' }, 503);
   }
 
