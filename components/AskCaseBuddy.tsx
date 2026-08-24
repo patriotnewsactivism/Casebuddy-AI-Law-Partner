@@ -1,18 +1,40 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, BrainCircuit, FileSearch, Gavel, Loader2, Mic, RotateCcw, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  BrainCircuit,
+  CheckCircle2,
+  FileSearch,
+  Gavel,
+  Loader2,
+  Mic,
+  Play,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppContext } from '../App';
 import { buildCaseBrief } from '../services/caseContext';
 import { deepseekChat } from '../services/deepseek';
 import { recordAction } from '../services/agentMemory';
 import { CaseBuddyRoute, routeCaseBuddyRequest } from '../services/casebuddyRouter';
+import { SuggestedWorkflow, suggestCaseBuddyWorkflow } from '../services/casebuddyWorkflowPlanner';
+import { orchestrator, subscribeWorkflows } from '../services/agentOrchestrator';
+import { createWorkflow } from '../services/workflows';
 import AIDisclaimer from './AIDisclaimer';
+
+interface WorkflowSuggestionState extends SuggestedWorkflow {
+  workflowId?: string;
+}
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   timestamp: number;
   route?: Pick<CaseBuddyRoute, 'kind' | 'id' | 'agentId' | 'name' | 'title' | 'emoji' | 'workspaceRoute' | 'reason'>;
+  workflowSuggestion?: WorkflowSuggestionState;
 }
 
 const STORAGE_KEY = 'casebuddy_universal_chat_v1';
@@ -100,19 +122,28 @@ const AskCaseBuddy: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<CaseBuddyRoute>(() => routeCaseBuddyRequest('general legal question'));
+  const [workflowStatuses, setWorkflowStatuses] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-60)));
     } catch {
-      // Local persistence is best-effort; matter data remains in its canonical stores.
+      // Conversation persistence is best-effort. Canonical matter records live elsewhere.
     }
   }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [messages, loading, workflowStatuses]);
+
+  useEffect(() => subscribeWorkflows(workflows => {
+    const next: Record<string, string> = {};
+    workflows.forEach(workflow => {
+      next[workflow.id] = workflow.status;
+    });
+    setWorkflowStatuses(next);
+  }), []);
 
   const matterLabel = activeCase?.title ?? 'No active matter selected';
 
@@ -126,6 +157,7 @@ const AskCaseBuddy: React.FC = () => {
     if (!text || loading) return;
 
     const route = routeCaseBuddyRequest(text);
+    const workflowSuggestion = suggestCaseBuddyWorkflow(text, route);
     setCurrentRoute(route);
     setInput('');
 
@@ -155,6 +187,7 @@ const AskCaseBuddy: React.FC = () => {
 ROUTING CONTEXT:
 You were selected automatically by CaseBuddy because: ${route.reason}.
 Respond to the user's actual request rather than discussing routing.
+${workflowSuggestion ? `\nCaseBuddy can also offer the user an internal multi-agent workflow after your answer: ${workflowSuggestion.label}. Do not claim that workflow has run unless the user explicitly starts it.` : ''}
 ${caseContext ? `\nACTIVE MATTER CONTEXT:\n${caseContext}` : '\nNo active matter is selected. Ask for missing matter-specific facts only when they are necessary to answer safely and accurately.'}`;
 
       const reply = await deepseekChat({
@@ -183,6 +216,7 @@ ${caseContext ? `\nACTIVE MATTER CONTEXT:\n${caseContext}` : '\nNo active matter
           text: reply,
           timestamp: Date.now(),
           route: routeSnapshot,
+          workflowSuggestion: workflowSuggestion ?? undefined,
         },
       ]);
 
@@ -208,11 +242,60 @@ ${caseContext ? `\nACTIVE MATTER CONTEXT:\n${caseContext}` : '\nNo active matter
             workspaceRoute: route.workspaceRoute,
             reason: route.reason,
           },
+          workflowSuggestion: workflowSuggestion ?? undefined,
         },
       ]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const runSuggestedWorkflow = (messageTimestamp: number) => {
+    if (!activeCase) {
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: 'Select the matter you want this team to work on first. CaseBuddy will not run a case workflow against an unspecified matter.',
+          timestamp: Date.now(),
+        },
+      ]);
+      return;
+    }
+
+    const sourceMessage = messages.find(message => message.timestamp === messageTimestamp);
+    const suggestion = sourceMessage?.workflowSuggestion;
+    if (!suggestion || suggestion.workflowId) return;
+
+    const precedingUserMessage = [...messages]
+      .filter(message => message.timestamp < messageTimestamp && message.role === 'user')
+      .pop();
+
+    const workflow = createWorkflow(suggestion.templateKey, activeCase.id, {
+      askCaseBuddyRequest: precedingUserMessage?.text ?? '',
+      source: 'ask-casebuddy',
+    });
+    if (!workflow) return;
+
+    setMessages(prev => prev.map(message =>
+      message.timestamp === messageTimestamp && message.workflowSuggestion
+        ? {
+            ...message,
+            workflowSuggestion: {
+              ...message.workflowSuggestion,
+              workflowId: workflow.id,
+            },
+          }
+        : message,
+    ));
+
+    orchestrator.executeWorkflowAsync(workflow, activeCase);
+
+    recordAction('maya', activeCase.id, {
+      type: 'workflow-step',
+      description: `User launched internal workflow from Ask CaseBuddy: ${workflow.name}`,
+      result: `Workflow ${workflow.id} started for ${activeCase.title}`,
+    }).catch(() => undefined);
   };
 
   const reset = () => {
@@ -289,32 +372,88 @@ ${caseContext ? `\nACTIVE MATTER CONTEXT:\n${caseContext}` : '\nNo active matter
           </div>
         )}
 
-        {messages.map((message, index) => (
-          <div key={`${message.timestamp}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[92%] lg:max-w-[78%] ${message.role === 'assistant' ? 'space-y-2' : ''}`}>
-              {message.role === 'assistant' && message.route && (
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 px-1">
-                  <span className="text-slate-300">{message.route.emoji} {message.route.name}</span>
-                  <span>·</span>
-                  <span>{message.route.reason}</span>
-                  <Link
-                    to={message.route.workspaceRoute}
-                    className="inline-flex items-center gap-1 text-gold-400 hover:text-gold-300"
-                  >
-                    Open workspace <ArrowRight size={11} />
-                  </Link>
+        {messages.map((message, index) => {
+          const workflowId = message.workflowSuggestion?.workflowId;
+          const workflowStatus = workflowId ? workflowStatuses[workflowId] : undefined;
+          const workflowDone = workflowStatus === 'completed';
+          const workflowFailed = workflowStatus === 'failed';
+
+          return (
+            <div key={`${message.timestamp}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[92%] lg:max-w-[78%] ${message.role === 'assistant' ? 'space-y-2' : ''}`}>
+                {message.role === 'assistant' && message.route && (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 px-1">
+                    <span className="text-slate-300">{message.route.emoji} {message.route.name}</span>
+                    <span>·</span>
+                    <span>{message.route.reason}</span>
+                    <Link
+                      to={message.route.workspaceRoute}
+                      className="inline-flex items-center gap-1 text-gold-400 hover:text-gold-300"
+                    >
+                      Open workspace <ArrowRight size={11} />
+                    </Link>
+                  </div>
+                )}
+
+                <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                  message.role === 'user'
+                    ? 'bg-gold-500 text-slate-950 rounded-tr-sm'
+                    : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-sm'
+                }`}>
+                  {message.text}
                 </div>
-              )}
-              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                message.role === 'user'
-                  ? 'bg-gold-500 text-slate-950 rounded-tr-sm'
-                  : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-sm'
-              }`}>
-                {message.text}
+
+                {message.role === 'assistant' && message.workflowSuggestion && (
+                  <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3.5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+                        <Users size={17} className="text-violet-300" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-white">{message.workflowSuggestion.label}</div>
+                        <p className="text-xs text-slate-400 mt-1">{message.workflowSuggestion.description}</p>
+                        <p className="text-[11px] text-slate-600 mt-1.5">{message.workflowSuggestion.reason}</p>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {!workflowId && (
+                            <button
+                              type="button"
+                              onClick={() => runSuggestedWorkflow(message.timestamp)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500 text-white text-xs font-semibold hover:bg-violet-400 transition-colors"
+                            >
+                              <Play size={12} /> Run internal team
+                            </button>
+                          )}
+
+                          {workflowId && !workflowDone && !workflowFailed && (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-violet-300">
+                              <Loader2 size={12} className="animate-spin" />
+                              {workflowStatus === 'running' ? 'Team working…' : 'Queued…'}
+                            </span>
+                          )}
+
+                          {workflowDone && (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-emerald-300">
+                              <CheckCircle2 size={13} /> Internal team completed
+                            </span>
+                          )}
+
+                          {workflowFailed && (
+                            <span className="text-xs text-red-300">Internal workflow needs review.</span>
+                          )}
+
+                          <span className="text-[10px] text-slate-600">
+                            Internal analysis/drafting only · no filing, sending, service, purchase, or deletion authorized
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {loading && (
           <div className="flex justify-start">
