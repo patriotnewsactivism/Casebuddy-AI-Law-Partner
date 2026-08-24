@@ -1,38 +1,57 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const PROVIDER_TIMEOUT_MS = 60_000;
+
+const json = (body: object, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+  },
+});
+
+const env = (name: string): string => (Deno.env.get(name) ?? '').trim();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STORAGE_BUCKETS = ['case-documents', 'discovery-files'] as const;
+
+async function loadWorkerSecret(supabase: SupabaseClient): Promise<string> {
+  const { data, error } = await supabase.rpc('get_pipeline_internal_secret', {
+    p_name: 'pipeline_worker_secret',
+  });
+  const secret = typeof data === 'string' ? data.trim() : '';
+  if (error || secret.length < 32) throw new Error('Pipeline internal authentication unavailable');
+  return secret;
+}
 
 async function callDeepSeek(apiKey: string, systemPrompt: string, userPrompt: string) {
   const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: 'deepseek-chat',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+    console.error('[pipeline-worker] DeepSeek request failed', { status: response.status });
+    throw new Error('DeepSeek provider failed');
   }
 
   const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-  if (!content) throw new Error('Empty response from DeepSeek');
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('DeepSeek returned no content');
   return JSON.parse(content);
 }
 
@@ -41,69 +60,111 @@ async function callGroq(apiKey: string, systemPrompt: string, userPrompt: string
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Groq API error: ${response.status} - ${errorText}`);
+    console.error('[pipeline-worker] Groq request failed', { status: response.status });
+    throw new Error('Groq provider failed');
   }
 
   const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-  if (!content) throw new Error('Empty response from Groq');
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Groq returned no content');
   return JSON.parse(content);
 }
 
-/** DeepSeek first (best quality), Groq as a fast/free fallback if DeepSeek is
- * out of credits, rate-limited, or otherwise erroring — so a single exhausted
- * key doesn't fail the whole entity_extraction step. */
-async function extractEntities(deepseekKey: string, groqKey: string, systemPrompt: string, userPrompt: string) {
-  const errors: string[] = [];
+async function extractEntities(
+  deepseekKey: string,
+  groqKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+) {
   if (deepseekKey) {
     try {
       return await callDeepSeek(deepseekKey, systemPrompt, userPrompt);
-    } catch (err) {
-      errors.push(`DeepSeek: ${err instanceof Error ? err.message : String(err)}`);
-      console.warn('DeepSeek entity extraction failed, falling back to Groq:', err);
+    } catch {
+      console.warn('[pipeline-worker] primary entity provider failed; trying fallback');
     }
   }
-  if (groqKey) {
-    try {
-      return await callGroq(groqKey, systemPrompt, userPrompt);
-    } catch (err) {
-      errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
+  if (groqKey) return callGroq(groqKey, systemPrompt, userPrompt);
+  throw new Error('No entity extraction provider available');
+}
+
+async function resolvePrivateFileUrl(
+  supabase: SupabaseClient,
+  storagePath: string | null | undefined,
+  existingUrl: string | null | undefined,
+): Promise<string> {
+  if (storagePath) {
+    for (const bucket of STORAGE_BUCKETS) {
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 600);
+      if (!error && data?.signedUrl) return data.signedUrl;
     }
+    throw new Error('Document storage object could not be signed');
   }
-  throw new Error(`Entity extraction failed on all providers. ${errors.join('; ')}`);
+
+  const candidate = String(existingUrl || '').trim();
+  if (!candidate) throw new Error('Document has no resolvable file location');
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('Document file location is invalid');
+  }
+  if (parsed.protocol !== 'https:') throw new Error('Document file location must use HTTPS');
+
+  if (parsed.pathname.includes('/storage/v1/object/public/')) {
+    throw new Error('Public storage URLs are not accepted by the pipeline');
+  }
+
+  return candidate;
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: { Allow: 'POST, OPTIONS' } });
+  }
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  const supabaseUrl = env('SUPABASE_URL');
+  const supabaseKey = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[pipeline-worker] required server configuration missing');
+    return json({ error: 'Pipeline service unavailable' }, 503);
   }
 
+  let jobId = '';
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
   try {
-    const { jobId } = await req.json();
-    if (!jobId) throw new Error("Missing jobId");
+    const workerSecret = await loadWorkerSecret(supabase);
+    const callerSecret = (req.headers.get('x-pipeline-secret') ?? '').trim();
+    if (!callerSecret || callerSecret !== workerSecret) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const deepseekKey = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
-    const groqKey = Deno.env.get('GROQ_API_KEY') ?? Deno.env.get('VITE_GROQ_API_KEY') ?? '';
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const body = await req.json() as { jobId?: unknown };
+    jobId = typeof body.jobId === 'string' ? body.jobId.trim() : '';
+    if (!UUID_RE.test(jobId)) return json({ error: 'Invalid job identifier' }, 400);
 
-    // 1. Fetch the job and lock it
+    const deepseekKey = env('DEEPSEEK_API_KEY');
+    const groqKey = env('GROQ_API_KEY');
+
     const { data: job, error: jobError } = await supabase
       .from('pipeline_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
@@ -112,142 +173,104 @@ serve(async (req) => {
       .select('*, documents(*)')
       .single();
 
-    if (jobError || !job) {
-      return new Response(JSON.stringify({ error: "Job not found or already processing" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
-    }
+    if (jobError || !job) return json({ error: 'Job unavailable' }, 409);
 
     const document = job.documents;
-    if (!document) throw new Error("Job has no associated document");
+    if (!document || document.id !== job.document_id) {
+      throw new Error('Pipeline job document association is invalid');
+    }
 
     try {
-      // 2. Process based on job_type
       if (job.job_type === 'ocr') {
+        const ocrFileUrl = await resolvePrivateFileUrl(
+          supabase,
+          document.storage_path,
+          document.file_url,
+        );
 
-        // Documents can live in either of two buckets depending on which app
-        // originally uploaded them: 'case-documents' (private, this app's own
-        // uploads — needs a signed URL) or 'discovery-files' (public, files
-        // cross-synced in from the DiscoveryLens app — plain public URL works).
-        // document.file_url may also be a stale bare storage path from legacy
-        // rows, so always re-resolve from storage_path when we have one rather
-        // than trusting whatever was stored in file_url.
-        let ocrFileUrl: string | null = document.file_url || null;
-        if (document.storage_path) {
-          const { data: signedData, error: signError } = await supabase
-            .storage
-            .from('case-documents')
-            .createSignedUrl(document.storage_path, 600); // 10 minutes, plenty for OCR fetch
+        const { data: ocrData, error: ocrError } = await supabase.functions.invoke('ocr-document', {
+          body: { documentId: document.id, fileUrl: ocrFileUrl },
+        });
+        if (ocrError) throw new Error('OCR function failed');
 
-          if (!signError && signedData?.signedUrl) {
-            ocrFileUrl = signedData.signedUrl;
-          } else {
-            // Not in case-documents (or bucket/object doesn't exist there) —
-            // try the public discovery-files bucket used by the sibling app.
-            const { data: publicData } = supabase
-              .storage
-              .from('discovery-files')
-              .getPublicUrl(document.storage_path);
-            if (publicData?.publicUrl) {
-              ocrFileUrl = publicData.publicUrl;
-            } else if (signError) {
-              console.warn(`Failed to resolve storage URL for ${document.storage_path}: ${signError.message}`);
-            }
-          }
-        }
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({
+            ocr_text: ocrData?.text?.slice(0, 100000) || null,
+            summary: ocrData?.summary || null,
+            key_facts: ocrData?.keyFacts || null,
+            favorable_findings: ocrData?.favorableFindings || null,
+            adverse_findings: ocrData?.adverseFindings || null,
+            action_items: ocrData?.actionItems || null,
+            status: 'analyzed',
+            ai_analyzed: true,
+          })
+          .eq('id', document.id);
+        if (updateError) throw new Error('Could not persist OCR results');
 
-        if (ocrFileUrl) {
-          // Invoke existing OCR edge function
-          const { data: ocrData, error: ocrError } = await supabase.functions.invoke('ocr-document', {
-            body: { documentId: document.id, fileUrl: ocrFileUrl }
-          });
-          
-          if (ocrError) throw new Error(`OCR function failed: ${ocrError.message}`);
-          
-          await supabase
-            .from('documents')
-            .update({ 
-              ocr_text: ocrData?.text?.slice(0, 100000) || null,
-              summary: ocrData?.summary || null,
-              key_facts: ocrData?.keyFacts || null,
-              favorable_findings: ocrData?.favorableFindings || null,
-              adverse_findings: ocrData?.adverseFindings || null,
-              action_items: ocrData?.actionItems || null,
-              status: 'analyzed',
-              ai_analyzed: true
-            })
-            .eq('id', document.id);
-        } else {
-           await supabase.from('documents').update({ status: 'analyzed' }).eq('id', document.id);
-        }
-
-        // Queue next step: entity extraction
-        await supabase
-          .from('pipeline_jobs')
-          .insert({
-            case_id: job.case_id,
-            document_id: document.id,
-            job_type: 'entity_extraction',
-            status: 'pending'
-          });
-          
+        const { error: queueError } = await supabase.from('pipeline_jobs').insert({
+          case_id: job.case_id,
+          document_id: document.id,
+          job_type: 'entity_extraction',
+          status: 'pending',
+        });
+        if (queueError) throw new Error('Could not queue entity extraction');
       } else if (job.job_type === 'entity_extraction') {
-        if (!deepseekKey && !groqKey) throw new Error("No entity-extraction provider configured (DEEPSEEK_API_KEY / GROQ_API_KEY missing)");
-        
+        if (!deepseekKey && !groqKey) throw new Error('No entity extraction provider configured');
+
         if (document.ocr_text) {
-          const systemPrompt = "You are a legal data extractor. Read the provided document text and extract lists of people, organizations, and key dates mentioned. Return valid JSON: { \"people\": [\"name1\"], \"orgs\": [\"org1\"], \"dates\": [\"date1\"] }.";
-          const entities = await extractEntities(deepseekKey, groqKey, systemPrompt, document.ocr_text.slice(0, 20000));
-          
-          await supabase
+          const systemPrompt = 'You are a legal data extractor. Read the provided document text and extract lists of people, organizations, and key dates mentioned. Return valid JSON: { "people": ["name1"], "orgs": ["org1"], "dates": ["date1"] }.';
+          const entities = await extractEntities(
+            deepseekKey,
+            groqKey,
+            systemPrompt,
+            document.ocr_text.slice(0, 20000),
+          );
+
+          const { error: entityUpdateError } = await supabase
             .from('documents')
-            .update({ 
-              entities: entities
-            })
+            .update({ entities })
             .eq('id', document.id);
+          if (entityUpdateError) throw new Error('Could not persist extracted entities');
         }
-        
-        // Queue next step: chronology
-        await supabase
-          .from('pipeline_jobs')
-          .insert({
-            case_id: job.case_id,
-            document_id: document.id,
-            job_type: 'chronology',
-            status: 'pending'
-          });
-          
+
+        const { error: queueError } = await supabase.from('pipeline_jobs').insert({
+          case_id: job.case_id,
+          document_id: document.id,
+          job_type: 'chronology',
+          status: 'pending',
+        });
+        if (queueError) throw new Error('Could not queue chronology step');
       } else if (job.job_type === 'chronology') {
-         // DeepSeek call to organize events for the case timeline based on this document.
-         // In a full implementation, we would insert rows into a `case_events` table here.
-         // For now, we will mark the document as fully processed.
+        // Chronology is intentionally bounded until the dedicated synthesizer
+        // is reviewed; this step can still complete safely.
+      } else {
+        throw new Error('Unsupported pipeline job type');
       }
 
-      // 3. Mark job as completed
-      await supabase
+      const { error: completeError } = await supabase
         .from('pipeline_jobs')
         .update({ status: 'completed', completed_at: new Date().toISOString() })
         .eq('id', jobId);
+      if (completeError) throw new Error('Could not mark pipeline job complete');
 
-      return new Response(JSON.stringify({ success: true, jobId }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-
+      return json({ success: true, jobId });
     } catch (processError) {
-      // Handle processing error
+      const safeMessage = processError instanceof Error
+        ? processError.message.slice(0, 500)
+        : 'Unknown pipeline processing error';
+      const attempts = Number(job.attempts || 0) + 1;
       await supabase
         .from('pipeline_jobs')
-        .update({ 
-          status: 'failed', 
-          error_log: processError instanceof Error ? processError.message : String(processError),
-          attempts: job.attempts + 1
-        })
+        .update({ status: 'failed', error_log: safeMessage, attempts })
         .eq('id', jobId);
-        
       throw processError;
     }
-
   } catch (error) {
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
+    console.error('[pipeline-worker] request failed', {
+      jobId: jobId || undefined,
+      message: error instanceof Error ? error.message : 'unknown error',
     });
+    return json({ error: 'Pipeline worker failed' }, 500);
   }
 });

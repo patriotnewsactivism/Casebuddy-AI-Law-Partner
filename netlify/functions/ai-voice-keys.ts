@@ -1,37 +1,77 @@
-import { Handler } from "@netlify/functions";
+import type { Handler } from '@netlify/functions';
 
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || 'https://casebuddy.live',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Cache-Control': 'no-store',
 };
 
-export const handler: Handler = async (event) => {
-  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
-  if (event.httpMethod !== "POST") return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+async function grantDeepgramToken() {
+  const apiKey = (process.env.DEEPGRAM_API_KEY || '').trim();
+  if (!apiKey) throw new Error('Voice service not configured');
 
-  const authHeader = event.headers["authorization"] || event.headers["Authorization"] || "";
-  if (!authHeader.startsWith("Bearer ")) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Unauthorized." }) };
+  const response = await fetch('https://api.deepgram.com/v1/auth/grant', {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ttl_seconds: 60 }),
+    signal: AbortSignal.timeout(5_000),
+  });
 
-  const token = authHeader.slice(7);
-  const supabaseUrl = process.env.SUPABASE_URL || "";
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  if (!response.ok) throw new Error('Voice credential service unavailable');
+  const payload = await response.json() as { access_token?: string; expires_in?: number };
+  if (!payload.access_token) throw new Error('Voice credential service returned no token');
 
-  if (!supabaseUrl) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "Supabase not configured." }) };
+  return {
+    deepgramKey: payload.access_token,
+    tokenType: 'bearer',
+    expiresIn: Number(payload.expires_in) || 60,
+  };
+}
 
-  try {
-    const userResp = await fetch(supabaseUrl + "/auth/v1/user", {
-      headers: { Authorization: "Bearer " + token, apikey: anonKey },
-    });
-    if (!userResp.ok) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Invalid session." }) };
-  } catch {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Auth check failed." }) };
+export const handler: Handler = async event => {
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const deepgramKey = (process.env.DEEPGRAM_API_KEY || "").trim();
-  const geminiKey   = (process.env.GEMINI_API_KEY   || "").trim();
+  const authHeader = event.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
+  }
 
-  if (!deepgramKey || !geminiKey) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: "Voice API keys not configured." }) };
+  const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+  const anonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!supabaseUrl || !anonKey) {
+    return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: 'Authentication service unavailable' }) };
+  }
 
-  return { statusCode: 200, headers: CORS, body: JSON.stringify({ deepgramKey, geminiKey }) };
+  try {
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: authHeader,
+        apikey: anonKey,
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!userResponse.ok) {
+      return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session' }) };
+    }
+  } catch {
+    return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: 'Authentication service unavailable' }) };
+  }
+
+  try {
+    const token = await grantDeepgramToken();
+    return { statusCode: 200, headers: CORS, body: JSON.stringify(token) };
+  } catch {
+    return {
+      statusCode: 503,
+      headers: CORS,
+      body: JSON.stringify({ error: 'Voice credential service unavailable' }),
+    };
+  }
 };

@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSession } from '../services/authService';
-import { setRuntimeKeys } from '../services/runtimeKeys';
 import { getElevenLabsVoiceId } from '../agents/voiceProfiles';
 
 // Live voice pipeline:
-//   Deepgram Flux (ears) -> Gemini 2.5 Flash (brain) -> ElevenLabs (mouth, preferred)
-//                                                     -> Deepgram Aura-2 (mouth, fallback)
+//   Deepgram Voice Agent (ears + managed LLM + Aura-2 mouth)
 // Single WebSocket at wss://agent.deepgram.com/v1/agent/converse.
-// When an ElevenLabs key is available and useElevenLabs:true, the speak provider
-// is switched to ElevenLabs inside the Settings message. Deepgram synthesises the
-// response with ElevenLabs and streams PCM back to the client at the same sample rate.
 //
-// API keys are fetched at runtime from /api/ai/voice-keys (behind auth)
-// or /api/ai/voice-keys-public (no auth, for public intake page)
-// so they never appear in the JS bundle.
+// Browser code never receives permanent provider credentials. Immediately before
+// opening the WebSocket it requests a short-lived Deepgram bearer token from a
+// same-origin server endpoint. The token is used only for the connection
+// handshake and is not cached in window/localStorage/runtime key stores.
 
 const AGENT_WS_URL = 'wss://agent.deepgram.com/v1/agent/converse';
 const INPUT_RATE = 16000;
@@ -23,10 +19,6 @@ const OUTPUT_RATE = 24000;
 // Nova-3's turn detection cuts people off when they pause mid-thought. Flux lets
 // us tune end-of-turn detection so a stressed, long-winded caller can gather
 // their thoughts (or fully tell their story) without the agent jumping in.
-//   eot_threshold    — higher = more certain the caller is done before we respond
-//                      (fewer false "your turn" interruptions). Range 0.5–0.9.
-//   eot_timeout_ms   — max silence we'll wait through before taking the turn.
-//                      Raised well above the default so natural pauses are fine.
 const LISTEN_MODEL = 'flux-general-en';
 const EOT_THRESHOLD = 0.8;
 const EOT_TIMEOUT_MS = 8000;
@@ -54,30 +46,20 @@ export interface VoiceTurn {
 }
 
 export interface UseDeepgramVoiceAgentOptions {
-  /** Aura-2 voice model id, e.g. "aura-2-thalia-en". Used as fallback when ElevenLabs unavailable. */
+  /** Aura-2 voice model id, e.g. "aura-2-thalia-en". */
   voiceModel: string;
-  /** Agent id (e.g. "maya", "lex"). Used to look up the ElevenLabs voice ID from VOICE_PROFILES. */
+  /** Agent id retained for UI/profile compatibility. */
   agentId?: string;
-  /** Gemini system prompt (persona). */
+  /** System prompt (persona). */
   systemInstruction: string;
   /** First line the agent speaks on connect. */
   greeting: string;
   caseContext?: string;
-  /**
-   * Set to true to use the public (no-auth) key endpoint.
-   * Use this for pages accessible without login (e.g. PublicIntake).
-   */
+  /** Use the public short-lived-token endpoint for unauthenticated intake. */
   publicEndpoint?: boolean;
-  /**
-   * Playback speed multiplier for Aura-2 TTS. 1.0 = normal, 1.15 = slightly faster.
-   * Deepgram supports 0.5–1.5. Only applies when falling back to Aura-2.
-   */
+  /** Playback speed multiplier. Reserved for provider-specific tuning. */
   speakingRate?: number;
-  /**
-   * Set to true to use ElevenLabs TTS when a key is available.
-   * Requires agentId so the correct ElevenLabs voice can be selected from VOICE_PROFILES.
-   * Falls back to Deepgram Aura-2 if no ElevenLabs key is present.
-   */
+  /** Retained for API compatibility. Permanent ElevenLabs keys are no longer sent to browsers. */
   useElevenLabs?: boolean;
 }
 
@@ -95,78 +77,42 @@ export interface UseDeepgramVoiceAgentResult {
   stop: () => void;
 }
 
-/**
- * Fetch API keys from the server at runtime (never baked into the bundle).
- * Falls back to env vars for local development only.
- */
-const fetchVoiceKeys = async (
-  publicEndpoint = false
-): Promise<{ deepgramKey: string; geminiKey: string; elevenlabsKey?: string; groqKey?: string; openaiKey?: string }> => {
-  // Public intake path — no auth required
-  if (publicEndpoint) {
-    try {
-      const resp = await fetch('/api/ai/voice-keys-public', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.deepgramKey) return {
-          deepgramKey: data.deepgramKey,
-          geminiKey: data.geminiKey || '',
-          elevenlabsKey: data.elevenlabsKey || undefined,
-          groqKey: data.groqKey || undefined,
-          openaiKey: data.openaiKey || undefined
-        };
-      }
-    } catch {
-      // Fall through to env var fallback below
-    }
-  } else {
-    // Authenticated path — verify Supabase session first
-    try {
-      const session = await getSession();
-      if (session?.access_token) {
-        const resp = await fetch('/api/ai/voice-keys', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.deepgramKey && data.geminiKey) return {
-            deepgramKey: data.deepgramKey,
-            geminiKey: data.geminiKey,
-            elevenlabsKey: data.elevenlabsKey || undefined,
-            groqKey: data.groqKey || undefined,
-            openaiKey: data.openaiKey || undefined
-          };
-        }
-      }
-    } catch {
-      // Fall through to env var fallback
-    }
+interface VoiceCredential {
+  token: string;
+  tokenType: 'bearer';
+}
+
+/** Fetch a short-lived voice token. There is intentionally no VITE_* fallback. */
+const fetchVoiceCredential = async (publicEndpoint = false): Promise<VoiceCredential> => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (!publicEndpoint) {
+    const session = await getSession();
+    if (!session?.access_token) throw new Error('Sign in is required for voice access.');
+    headers.Authorization = `Bearer ${session.access_token}`;
   }
 
-  // Local dev fallback — reads from import.meta.env (only available in dev builds)
-  const deepgramKey = (import.meta.env.VITE_DEEPGRAM_API_KEY || (window as any).__DEEPGRAM_API_KEY || '').trim();
-  const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || (window as any).__GEMINI_API_KEY || '').trim();
-  const elevenlabsKey = (import.meta.env.VITE_ELEVENLABS_API_KEY || (window as any).__ELEVENLABS_API_KEY || '').trim();
-  const groqKey = (import.meta.env.VITE_GROQ_API_KEY || (window as any).__GROQ_API_KEY || '').trim();
-  const openaiKey = (import.meta.env.VITE_OPENAI_API_KEY || (window as any).__OPENAI_API_KEY || '').trim();
-  return { deepgramKey, geminiKey, elevenlabsKey: elevenlabsKey || undefined, groqKey: groqKey || undefined, openaiKey: openaiKey || undefined };
+  const response = await fetch(
+    publicEndpoint ? '/api/ai/voice-keys-public' : '/api/ai/voice-keys',
+    { method: 'POST', headers }
+  );
+  if (!response.ok) throw new Error('Could not retrieve voice credentials.');
+
+  const data = await response.json() as { deepgramKey?: string; tokenType?: string };
+  const token = String(data.deepgramKey || '').trim();
+  if (!token || data.tokenType !== 'bearer') {
+    throw new Error('Voice credential response was invalid.');
+  }
+
+  return { token, tokenType: 'bearer' };
 };
 
 /**
- * Check if ElevenLabs should be preferred for TTS based on key availability
- * and the useElevenLabs option flag.
- * Note: Deepgram Voice Agent uses Aura-2 internally for live calls.
- * This is for non-live scenarios or UI display purposes.
+ * ElevenLabs BYO credentials are intentionally unavailable in the browser.
+ * Re-enable this only through a server-side proxy or a provider-scoped ephemeral
+ * credential flow that never exposes the account API key.
  */
-export function shouldUseElevenLabs(useElevenLabs: boolean = false, elevenlabsAvailable: boolean = false): boolean {
-  return useElevenLabs && elevenlabsAvailable;
+export function shouldUseElevenLabs(_useElevenLabs: boolean = false, _elevenlabsAvailable: boolean = false): boolean {
+  return false;
 }
 
 export function useDeepgramVoiceAgent(
@@ -179,7 +125,7 @@ export function useDeepgramVoiceAgent(
   const [transcript, setTranscript] = useState<VoiceTurn[]>([]);
   const [inputLevel, setInputLevel] = useState(0);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
-  const [elevenLabsAvailable, setElevenLabsAvailable] = useState(false);
+  const [elevenLabsAvailable] = useState(false);
   const [outputSampleRate, setOutputSampleRate] = useState(OUTPUT_RATE);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -198,11 +144,6 @@ export function useDeepgramVoiceAgent(
   const optsRef = useRef(options);
   optsRef.current = options;
 
-  // Stop the agent's voice gracefully. Instead of hard-stopping every buffer
-  // (which clips her mid-word and sounds jarring), ramp the gain down fast, then
-  // stop the now-silent sources. The gain is restored to full for the next turn
-  // in playAudioChunk, so a brief false barge-in (a cough, an "mm-hmm") never
-  // leaves her permanently muted.
   const clearPlayback = useCallback(() => {
     const outputCtx = outputCtxRef.current;
     const outGain = outGainRef.current;
@@ -265,7 +206,6 @@ export function useDeepgramVoiceAgent(
     const int16 = new Int16Array(buffer);
     if (int16.length === 0) return;
 
-    // Check if this is the first chunk of a new utterance (no sources queued)
     const isFirstChunk = sourcesRef.current.size === 0;
     const outputRate = outputRateRef.current;
 
@@ -273,9 +213,6 @@ export function useDeepgramVoiceAgent(
     const channel = audioBuffer.getChannelData(0);
 
     if (isFirstChunk) {
-      // Only fade-in the very first chunk of a new utterance (6ms)
-      // to prevent the initial pop/click. Mid-stream chunks play raw
-      // so the voice stays smooth and continuous — no pulsing.
       const FADE_IN = Math.min(Math.floor(outputRate * 0.006), Math.floor(int16.length / 4));
       for (let i = 0; i < int16.length; i++) {
         let sample = int16[i] / 32768;
@@ -283,12 +220,9 @@ export function useDeepgramVoiceAgent(
         channel[i] = sample;
       }
     } else {
-      // Mid-stream chunks: straight PCM, no processing — keeps voice smooth
       for (let i = 0; i < int16.length; i++) channel[i] = int16[i] / 32768;
     }
 
-    // Start of a fresh agent turn — restore full volume in case a prior barge-in
-    // faded it out, so she's never left muted by an earlier false interruption.
     if (sourcesRef.current.size === 0) {
       try {
         outGain.gain.cancelScheduledValues(outputCtx.currentTime);
@@ -298,11 +232,6 @@ export function useDeepgramVoiceAgent(
 
     setAgentSpeaking(true);
     setActiveSpeaker('agent');
-    // Look-ahead buffer on the first chunk of an utterance so playback doesn't
-    // begin right on the audio-context edge. On a freshly-resumed context — the
-    // greeting — 30ms was too tight and the attack of her first word got clipped.
-    // A larger cushion lets the audio pipeline spin up so the opening syllable is
-    // never dropped; it only delays the very first chunk of each turn.
     const now = outputCtx.currentTime + (isFirstChunk ? 0.15 : 0);
     nextStartRef.current = Math.max(nextStartRef.current, now);
     const src = outputCtx.createBufferSource();
@@ -311,8 +240,6 @@ export function useDeepgramVoiceAgent(
     src.addEventListener('ended', () => {
       sourcesRef.current.delete(src);
       if (sourcesRef.current.size === 0) {
-        // Wait 350ms before declaring silence — prevents choppy gaps
-        // between TTS chunks from prematurely ending the speaking state.
         setTimeout(() => { if (sourcesRef.current.size === 0) setAgentSpeaking(false); }, 350);
       }
     });
@@ -323,15 +250,9 @@ export function useDeepgramVoiceAgent(
 
   const handleServerMessage = useCallback((data: any) => {
     const type = data.type;
-    // Log EVERY server message for debugging
-    console.log('[VoiceAgent] Server →', type, JSON.stringify(data));
-    if (type === 'Welcome' || type === 'SettingsApplied') {
-      // These are handshake messages — logged above, no action needed
-      return;
-    }
+    console.log('[VoiceAgent] Server →', type);
+    if (type === 'Welcome' || type === 'SettingsApplied') return;
     if (type === 'UserStartedSpeaking') {
-      // Debounce barge-in by 150ms — prevents ambient noise / false VAD
-      // triggers from killing the agent's audio mid-sentence.
       clearTimeout(bargeInTimer.current);
       bargeInTimer.current = setTimeout(() => {
         clearPlayback();
@@ -360,11 +281,11 @@ export function useDeepgramVoiceAgent(
       return;
     }
     if (type === 'Warning') {
-      console.warn('[VoiceAgent] Warning:', JSON.stringify(data));
+      console.warn('[VoiceAgent] Warning:', data.code || data.description || 'warning');
       return;
     }
     if (type === 'Error') {
-      console.error('[VoiceAgent] Error event:', JSON.stringify(data));
+      console.error('[VoiceAgent] Error event:', data.code || data.description || 'error');
       setError(data.description || data.message || 'Voice agent error.');
       setStatus('error');
     }
@@ -376,47 +297,16 @@ export function useDeepgramVoiceAgent(
     setTranscript([]);
 
     const opts = optsRef.current;
-
-    // Fetch keys from server (never baked into bundle)
-    let dgKey: string;
-    let geminiKey: string;
-    let elevKey: string | undefined;
-    let groqKey = '';
-    let openaiKey = '';
+    let voiceToken: string;
     try {
-      const keys = await fetchVoiceKeys(opts.publicEndpoint ?? false);
-      dgKey = keys.deepgramKey.trim();
-      geminiKey = keys.geminiKey.trim();
-      elevKey = keys.elevenlabsKey?.trim();
-      groqKey = keys.groqKey?.trim() || '';
-      openaiKey = keys.openaiKey?.trim() || '';
-      // Cache keys for use by intakeService and other client-side services
-      setRuntimeKeys({ deepgramKey: dgKey, geminiKey, elevenlabsKey: elevKey });
-      // Track ElevenLabs availability for UI display
-      setElevenLabsAvailable(!!elevKey);
-      // Set output sample rate based on available provider:
-      // ElevenLabs outputs 16kHz PCM, Deepgram Aura-2 outputs 24kHz
-      if (elevKey && opts.useElevenLabs) {
-        outputRateRef.current = 16000;
-        setOutputSampleRate(16000);
-      } else {
-        outputRateRef.current = OUTPUT_RATE;
-        setOutputSampleRate(OUTPUT_RATE);
-      }
-    } catch {
-      setError('Could not retrieve voice credentials. Please try again.');
+      const credential = await fetchVoiceCredential(opts.publicEndpoint ?? false);
+      voiceToken = credential.token;
+      outputRateRef.current = OUTPUT_RATE;
+      setOutputSampleRate(OUTPUT_RATE);
+    } catch (credentialError) {
+      setError(credentialError instanceof Error ? credentialError.message : 'Could not retrieve voice credentials.');
       setStatus('error');
       return;
-    }
-
-    if (!dgKey) {
-      setError('Voice service is not available right now. Please try again shortly.');
-      setStatus('error');
-      return;
-    }
-    if (!groqKey) {
-      // Deepgram-managed OpenAI (gpt-4o-mini) will be used — no key needed
-      console.warn('[VoiceAgent] No Groq key — using Deepgram-managed OpenAI for think provider');
     }
 
     try {
@@ -440,7 +330,8 @@ export function useDeepgramVoiceAgent(
         throw new Error('Microphone access denied. Allow mic access (and use HTTPS) to talk with the team.');
       }
 
-      const ws = new WebSocket(AGENT_WS_URL, ['token', dgKey.trim()]);
+      // Temporary Deepgram JWTs authenticate with the Bearer scheme.
+      const ws = new WebSocket(AGENT_WS_URL, ['bearer', voiceToken]);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
@@ -448,102 +339,36 @@ export function useDeepgramVoiceAgent(
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
 
-      // Speaking rate: natural human pace — 1.0 sounds the most realistic
-      const speakRate = opts.speakingRate ?? 1.0;
-
       ws.onopen = () => {
-        // ── Resolve speak (TTS) provider ──────────────────────────────
-        // ElevenLabs when key + opted in + voice mapped; else Deepgram native.
-        const elVoiceId = opts.agentId ? getElevenLabsVoiceId(opts.agentId) : undefined;
-        const useEl = !!(elevKey && opts.useElevenLabs && elVoiceId);
-        const outRate = outputRateRef.current;
-
-        // Build speak block — MUST always be present per Deepgram spec.
-        const speakBlock: Record<string, any> = useEl
-          ? {
-              provider: {
-                type: 'eleven_labs',
-                model_id: 'eleven_turbo_v2_5',
-                language_code: 'en',
-              },
-              endpoint: {
-                url: `https://api.elevenlabs.io/v1/text-to-speech/${elVoiceId}/stream`,
-                headers: {
-                  'xi-api-key': elevKey,
-                  'Content-Type': 'application/json',
-                },
-              },
-            }
-          : {
-              provider: {
-                type: 'deepgram',
-                model: opts.voiceModel,
-              },
-            };
-
-        // ── Resolve think (LLM) provider ──────────────────────────────
-        // Priority: OpenAI BYO → Groq BYO → Gemini BYO → Deepgram-managed OpenAI
-        // Deepgram-managed = no endpoint/key needed, billed through your Deepgram account.
-        let thinkBlock: Record<string, any>;
-        if (openaiKey) {
-          thinkBlock = {
-            provider: { type: 'open_ai', model: 'gpt-4o', temperature: 0.7 },
-            endpoint: {
-              url: 'https://api.openai.com/v1/chat/completions',
-              headers: { Authorization: `Bearer ${openaiKey}` },
-            },
-            prompt,
-          };
-        } else if (groqKey) {
-          thinkBlock = {
-            provider: { type: 'open_ai', model: 'llama-3.3-70b-versatile', temperature: 0.7 },
-            endpoint: {
-              url: 'https://api.groq.com/openai/v1/chat/completions',
-              headers: { Authorization: `Bearer ${groqKey}` },
-            },
-            prompt,
-          };
-        } else if (geminiKey) {
-          thinkBlock = {
-            provider: {
-              type: 'google',
-              credentials: { api_key: geminiKey },
-              model: 'gemini-2.0-flash',
-              temperature: 0.7,
-            },
-            prompt,
-          };
-        } else {
-          // Deepgram-managed OpenAI — no endpoint or API key needed.
-          // Billed through your Deepgram account automatically.
-          thinkBlock = {
-            provider: { type: 'open_ai', model: 'gpt-4o' },
-            prompt,
-          };
-        }
-
-        // ── Build the Settings message ────────────────────────────────
+        // Keep all permanent provider credentials server-side. Deepgram-managed
+        // OpenAI and Aura-2 avoid placing OpenAI/Groq/Gemini/ElevenLabs secrets
+        // in the browser or the Voice Agent Settings payload.
         const settings = {
           type: 'Settings',
           audio: {
             input: { encoding: 'linear16', sample_rate: INPUT_RATE },
-            output: { encoding: 'linear16', sample_rate: outRate, container: 'none' },
+            output: { encoding: 'linear16', sample_rate: OUTPUT_RATE, container: 'none' },
           },
           agent: {
             listen: {
               provider: {
                 type: 'deepgram',
-                model: 'nova-3',
-                endpointing: 1500, // Wait 1.5s of silence before declaring turn over
+                model: LISTEN_MODEL,
+                eot_threshold: EOT_THRESHOLD,
+                eot_timeout_ms: EOT_TIMEOUT_MS,
               },
             },
-            think: thinkBlock,
-            speak: speakBlock,
+            think: {
+              provider: { type: 'open_ai', model: 'gpt-4o-mini', temperature: 0.7 },
+              prompt,
+            },
+            speak: {
+              provider: { type: 'deepgram', model: opts.voiceModel },
+            },
             greeting: opts.greeting,
           },
         };
 
-        console.log('[VoiceAgent] Settings payload:', JSON.stringify(settings, null, 2));
         ws.send(JSON.stringify(settings));
         setStatus('live');
 

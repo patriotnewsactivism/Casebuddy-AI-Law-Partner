@@ -1,73 +1,61 @@
-// ElevenLabs TTS streaming service
-// Streams 16kHz PCM audio chunks for compatibility with existing audio pipeline
+// ElevenLabs TTS service. Permanent provider credentials stay in Supabase;
+// the browser only receives generated PCM audio.
 
-import { getElevenLabsKey } from './runtimeKeys';
+import { getSupabase } from './supabaseClient';
 import { handleError } from '../utils/errorHandler';
 
-const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
-
-// Default voice ID: Jessica — warm, mature, professional female (best for intake)
 export const ELEVENLABS_VOICE_ID = '9BWtsw7tY7h4bXPiq3aY';
 
-// Voice profiles mapping agent IDs to voice IDs
 export const voiceProfiles: Record<string, string> = {
-  maya: '9BWtsw7tY7h4bXPiq3aY',       // Aria — warm, natural American female
-  lex: '9BWtsw7tY7h4bXPiq3aY',        // Aria
-  doc: '9BWtsw7tY7h4bXPiq3aY',        // Aria
-  rex: '9BWtsw7tY7h4bXPiq3aY',        // Aria
-  sol: '9BWtsw7tY7h4bXPiq3aY',        // Aria
-  sierra: '9BWtsw7tY7h4bXPiq3aY',     // Aria
-  jules: '9BWtsw7tY7h4bXPiq3aY',      // Aria
-  max: '9BWtsw7tY7h4bXPiq3aY',        // Aria
+  maya: '9BWtsw7tY7h4bXPiq3aY',
+  lex: '9BWtsw7tY7h4bXPiq3aY',
+  doc: '9BWtsw7tY7h4bXPiq3aY',
+  rex: '9BWtsw7tY7h4bXPiq3aY',
+  sol: '9BWtsw7tY7h4bXPiq3aY',
+  sierra: '9BWtsw7tY7h4bXPiq3aY',
+  jules: '9BWtsw7tY7h4bXPiq3aY',
+  max: '9BWtsw7tY7h4bXPiq3aY',
 };
 
 /**
- * Stream TTS audio from ElevenLabs.
- * Returns an async generator of Uint8Array PCM chunks (16kHz).
+ * Generate ElevenLabs PCM audio through the authenticated Supabase proxy.
+ * The async-generator contract is preserved for existing callers.
  */
 export async function* streamElevenLabsTTS(
   text: string,
   voiceId: string = ELEVENLABS_VOICE_ID,
 ): AsyncGenerator<Uint8Array> {
-  const key = getElevenLabsKey();
-  if (!key) {
-    const error = new Error('ElevenLabs API key not found. Set VITE_ELEVENLABS_API_KEY or fetch key at runtime.');
-    handleError(error, 'ElevenLabs API key not configured');
-    throw error;
-  }
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('TTS requires a signed-in CaseBuddy session.');
 
-  const url = `${ELEVENLABS_TTS_URL}/${voiceId}/stream?output_format=pcm_16000`;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('Sign in is required for TTS.');
+
+  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const anonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+  if (!supabaseUrl || !anonKey) throw new Error('TTS service is not configured.');
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(`${supabaseUrl}/functions/v1/tts-generate`, {
       method: 'POST',
       headers: {
-        'xi-api-key': key,
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, voiceId, outputFormat: 'pcm_24000' }),
     });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    handleError(err, 'Failed to connect to ElevenLabs API');
+    handleError(err, 'Failed to connect to the TTS service');
     throw err;
   }
 
-  if (!response.ok) {
-    let errBody = '';
-    try {
-      errBody = await response.text();
-    } catch {
-      errBody = 'Unable to read error response';
-    }
-    const error = new Error(`ElevenLabs TTS error ${response.status}: ${errBody}`);
-    handleError(error, `ElevenLabs API error (${response.status})`);
+  if (!response.ok || !response.body) {
+    const error = new Error(`TTS service unavailable (${response.status}).`);
+    handleError(error, 'TTS generation failed');
     throw error;
-  }
-
-  if (!response.body) {
-    throw new Error('No response body from ElevenLabs');
   }
 
   const reader = response.body.getReader();

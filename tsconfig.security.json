@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node", "vite/client"]
+  },
+  "files": [
+    "vite.config.ts",
+    "hooks/useDeepgramVoiceAgent.ts",
+    "services/deepseek.ts",
+    "services/runtimeKeys.ts",
+    "api/ai/_shared/deepgramToken.ts",
+    "api/ai/voice-keys.ts",
+    "api/ai/voice-keys-public.ts"
+  ]
+}

@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "check:client-secrets": "node scripts/check-client-secrets.mjs",
+    "typecheck": "tsc --noEmit",
+    "typecheck:security": "tsc --noEmit -p tsconfig.security.json",
+    "build": "npm run typecheck:security && vite build && npm run check:client-secrets",
+    "verify:security": "npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

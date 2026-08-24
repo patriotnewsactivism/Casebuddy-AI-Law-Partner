@@ -1,327 +1,241 @@
 /**
- * Multi-Provider AI Chat Proxy
- * 
- * Accepts OpenAI-compatible chat completion requests and routes through
- * free-tier providers with automatic fallback.
- * 
- * Fallback chain: Groq (fast, 100K tokens/day free) → Gemini (existing) → OpenRouter (27 free models)
+ * Multi-provider AI chat proxy.
  *
- * POST /api/ai/chat
- * Body: { messages, model?, temperature?, max_tokens?, json_mode?, system? }
+ * Provider credentials are server-only. The browser submits messages and the
+ * server walks the configured provider chain until one succeeds.
  */
 
 export const config = { runtime: 'edge' };
 
-const CORS = {
-  'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+const PROVIDER_TIMEOUT_MS = 45_000;
 
-const json = (body: object, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-
-// ── Provider configs ──────────────────────────────────────────────────────
-
-const GROQ_KEY = (process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '').trim();
-const GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
-const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || '').trim();
-const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || process.env.VITE_GITHUB_TOKEN || '').trim();
+const GROQ_KEY = (process.env.GROQ_API_KEY || '').trim();
+const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || '').trim();
+const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const COHERE_KEY = (process.env.COHERE_API_KEY || '').trim();
-// Paid OpenAI credit — LAST RESORT ONLY. Every free provider must fail first.
 const OPENAI_KEY = (process.env.OPENAI_API_KEY || '').trim();
 
-// Free-tier models
-const GROQ_MODEL = 'llama-3.3-70b-versatile';        // 100K tokens/day free
-const GROQ_FALLBACK = 'meta-llama/llama-4-scout-17b-16e-instruct'; // smaller, faster
-const GEMINI_MODEL = 'gemini-2.5-flash';              // stronger reasoning/instruction-following than 2.0-flash
-const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free'; // free on OpenRouter
-const GITHUB_MODEL = 'gpt-4o';                        // free via GitHub Models
-const GITHUB_FALLBACK = 'gpt-4o-mini';                 // cheaper, faster
-// Cohere models — excellent for document analysis (256K context)
-const COHERE_DOC_MODEL = 'command-a-plus-05-2026';    // best reasoning/analysis
-const COHERE_VISION_MODEL = 'command-a-vision-07-2025'; // image + doc vision
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free';
+const GITHUB_MODEL = 'gpt-4o';
+const COHERE_MODEL = 'command-a-plus-05-2026';
+const OPENAI_MODEL = 'gpt-4o-mini';
 
-// ── Groq (OpenAI-compatible) ──────────────────────────────────────────────
-
-async function callGroq(body: any): Promise<Response> {
-  if (!GROQ_KEY) throw new Error('Groq not configured');
-  
-  const groqBody = {
-    model: body.model || GROQ_MODEL,
-    messages: [
-      ...(body.system ? [{ role: 'system', content: body.system }] : []),
-      ...(body.messages || []),
-    ],
-    temperature: body.temperature ?? 0.3,
-    max_tokens: body.max_tokens ?? 2048,
+function corsHeaders(req: Request): Record<string, string> {
+  const configured = (process.env.ALLOWED_ORIGIN || 'https://casebuddy.live')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = configured.includes(origin) ? origin : configured[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Cache-Control': 'no-store',
+    Vary: 'Origin',
   };
+}
 
-  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GROQ_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(groqBody),
+const json = (req: Request, body: object, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 
-  if (!resp.ok) {
-    const err = await resp.text().catch(() => 'Unknown error');
-    throw new Error(`Groq ${resp.status}: ${err.slice(0, 300)}`);
-  }
-
-  return resp;
-}
-
-// ── Gemini (Google AI Studio) ─────────────────────────────────────────────
-
-async function callGemini(body: any): Promise<Response> {
-  if (!GEMINI_KEY) throw new Error('Gemini not configured');
-
-  const model = body.model || GEMINI_MODEL;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
-
-  const contents = (body.messages || []).map((m: any) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-
-  const geminiBody: any = { contents };
-  if (body.system) {
-    geminiBody.systemInstruction = { parts: [{ text: body.system }] };
-  }
-  geminiBody.generationConfig = {
-    temperature: body.temperature ?? 0.7,
-    maxOutputTokens: body.max_tokens ?? 2048,
-    ...(body.json_mode ? { responseMimeType: 'application/json' } : {}),
-  };
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(geminiBody),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(`Gemini ${resp.status}: ${err?.error?.message || 'Unknown error'}`);
-  }
-
-  return resp;
-}
-
-// ── OpenRouter (free models) ──────────────────────────────────────────────
-
-async function callOpenRouter(body: any): Promise<Response> {
-  if (!OPENROUTER_KEY) throw new Error('OpenRouter not configured');
-
-  const orBody = {
-    model: body.model || OPENROUTER_MODEL,
-    messages: [
-      ...(body.system ? [{ role: 'system', content: body.system }] : []),
-      ...(body.messages || []),
-    ],
-    temperature: body.temperature ?? 0.3,
-    max_tokens: body.max_tokens ?? 2048,
-  };
-
-  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://casebuddy.live',
-      'X-Title': 'CaseBuddy AI Law Partner',
-    },
-    body: JSON.stringify(orBody),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text().catch(() => 'Unknown error');
-    throw new Error(`OpenRouter ${resp.status}: ${err.slice(0, 300)}`);
-  }
-
-  return resp;
-}
-
-// ── GitHub Models (free GPT-4o via GitHub Marketplace) ────────────────────
-
-async function callGitHubModels(body: any): Promise<Response> {
-  if (!GITHUB_TOKEN) throw new Error('GitHub token not configured');
-
-  const ghBody = {
-    model: body.model || GITHUB_MODEL,
-    messages: [
-      ...(body.system ? [{ role: 'system', content: body.system }] : []),
-      ...(body.messages || []),
-    ],
-    temperature: body.temperature ?? 0.3,
-    max_tokens: body.max_tokens ?? 2048,
-  };
-
-  const resp = await fetch('https://models.inference.ai.azure.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GITHUB_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(ghBody),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text().catch(() => 'Unknown error');
-    throw new Error(`GitHub Models ${resp.status}: ${err.slice(0, 300)}`);
-  }
-
-  return resp;
-}
-
-// ── Parsing helpers ───────────────────────────────────────────────────────
-
-function parseGroqResponse(data: any): string {
-  return data?.choices?.[0]?.message?.content || '';
-}
-
-function parseGeminiResponse(data: any): string {
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-function parseOpenRouterResponse(data: any): string {
-  return data?.choices?.[0]?.message?.content || '';
-}
-
-// ── Main handler ──────────────────────────────────────────────────────────
-
-
-// ── Cohere (v2 Chat API, OpenAI-compatible messages) ────────────────────────
-
-async function callCohere(body: any): Promise<Response> {
-  if (!COHERE_KEY) throw new Error('Cohere not configured');
-  const messages = [
+function messagesFor(body: any) {
+  return [
     ...(body.system ? [{ role: 'system', content: body.system }] : []),
-    ...(body.messages || []),
+    ...(Array.isArray(body.messages) ? body.messages : []),
   ];
-  const resp = await fetch('https://api.cohere.com/v2/chat', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${COHERE_KEY}`,
-      'Content-Type': 'application/json',
-      'X-Client-Name': 'casebuddy-ai',
-    },
-    body: JSON.stringify({
-      model: COHERE_DOC_MODEL,
-      messages,
-      max_tokens: body.max_tokens ?? 4096,
-    }),
-  });
-  return resp;
 }
 
-function parseCohereResponse(data: any): string {
-  const parts = data?.message?.content || [];
-  return parts.filter((p: any) => p.type === 'text').map((p: any) => p.text || '').join('').trim();
-}
-
-// ── OpenAI (paid — strictly last resort to conserve the small credit) ──────
-// Uses gpt-4o-mini: the cheapest capable model (~$0.15/M input tokens), so
-// even fallback traffic barely dents the balance.
-
-async function callOpenAI(body: any): Promise<Response> {
-  if (!OPENAI_KEY) throw new Error('OpenAI not configured');
-
-  const oaBody = {
-    model: 'gpt-4o-mini',
-    messages: [
-      ...(body.system ? [{ role: 'system', content: body.system }] : []),
-      ...(body.messages || []),
-    ],
+function openAiCompatibleBody(body: any, model: string) {
+  return {
+    model,
+    messages: messagesFor(body),
     temperature: body.temperature ?? 0.3,
     max_tokens: body.max_tokens ?? 2048,
     ...(body.json_mode ? { response_format: { type: 'json_object' } } : {}),
   };
+}
 
-  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+async function checkedFetch(url: string, init: RequestInit, provider: string): Promise<Response> {
+  const response = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`${provider} ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+  }
+  return response;
+}
+
+async function callCohere(body: any): Promise<Response> {
+  if (!COHERE_KEY) throw new Error('Cohere not configured');
+  return checkedFetch('https://api.cohere.com/v2/chat', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${OPENAI_KEY}`,
+      Authorization: `Bearer ${COHERE_KEY}`,
+      'Content-Type': 'application/json',
+      'X-Client-Name': 'casebuddy-ai',
+    },
+    body: JSON.stringify({
+      model: COHERE_MODEL,
+      messages: messagesFor(body),
+      temperature: body.temperature ?? 0.3,
+      max_tokens: body.max_tokens ?? 4096,
+      ...(body.json_mode ? { response_format: { type: 'json_object' } } : {}),
+    }),
+  }, 'Cohere');
+}
+
+async function callGemini(body: any): Promise<Response> {
+  if (!GEMINI_KEY) throw new Error('Gemini not configured');
+
+  const contents = (body.messages || []).map((message: any) => ({
+    role: message.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: message.content }],
+  }));
+  const payload: any = {
+    contents,
+    generationConfig: {
+      temperature: body.temperature ?? 0.3,
+      maxOutputTokens: body.max_tokens ?? 2048,
+      ...(body.json_mode ? { responseMimeType: 'application/json' } : {}),
+    },
+  };
+  if (body.system) payload.systemInstruction = { parts: [{ text: body.system }] };
+
+  return checkedFetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Gemini',
+  );
+}
+
+async function callGitHubModels(body: any): Promise<Response> {
+  if (!GITHUB_TOKEN) throw new Error('GitHub Models not configured');
+  return checkedFetch('https://models.inference.ai.azure.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(oaBody),
-  });
+    body: JSON.stringify(openAiCompatibleBody(body, GITHUB_MODEL)),
+  }, 'GitHub Models');
+}
 
-  if (!resp.ok) {
-    const err = await resp.text().catch(() => 'Unknown error');
-    throw new Error(`OpenAI ${resp.status}: ${err.slice(0, 300)}`);
-  }
+async function callGroq(body: any): Promise<Response> {
+  if (!GROQ_KEY) throw new Error('Groq not configured');
+  return checkedFetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${GROQ_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(openAiCompatibleBody(body, GROQ_MODEL)),
+  }, 'Groq');
+}
 
-  return resp;
+async function callOpenRouter(body: any): Promise<Response> {
+  if (!OPENROUTER_KEY) throw new Error('OpenRouter not configured');
+  return checkedFetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://casebuddy.live',
+      'X-Title': 'CaseBuddy AI Law Partner',
+    },
+    body: JSON.stringify(openAiCompatibleBody(body, OPENROUTER_MODEL)),
+  }, 'OpenRouter');
+}
+
+async function callOpenAI(body: any): Promise<Response> {
+  if (!OPENAI_KEY) throw new Error('OpenAI not configured');
+  return checkedFetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(openAiCompatibleBody(body, OPENAI_MODEL)),
+  }, 'OpenAI');
+}
+
+function parseOpenAI(data: any): string {
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+function parseGemini(data: any): string {
+  return data?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || '').join('') || '';
+}
+
+function parseCohere(data: any): string {
+  const parts = data?.message?.content || [];
+  return parts
+    .filter((part: any) => part?.type === 'text')
+    .map((part: any) => part?.text || '')
+    .join('')
+    .trim();
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) });
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405);
 
   let body: any;
-  try { body = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
-  if (!body.messages?.length) return json({ error: 'Missing messages' }, 400);
+  try {
+    body = await req.json();
+  } catch {
+    return json(req, { error: 'Invalid JSON' }, 400);
+  }
 
-  // Provider chain: Cohere → Gemini → GitHub (gpt-4o) → Groq → OpenRouter → OpenAI
-  // Cohere leads: 256K context window, excellent for long legal documents.
-  // OpenAI is LAST on purpose — it's the only paid key (small credit), so it
-  // only fires when every free provider has failed.
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return json(req, { error: 'Missing messages' }, 400);
+  }
+
   const providers = [
-    { name: 'cohere', fn: callCohere, parse: parseCohereResponse, key: COHERE_KEY },
-    { name: 'gemini', fn: callGemini, parse: parseGeminiResponse, key: GEMINI_KEY },
-    { name: 'github', fn: callGitHubModels, parse: parseOpenRouterResponse, key: GITHUB_TOKEN },
-    { name: 'groq', fn: callGroq, parse: parseGroqResponse, key: GROQ_KEY },
-    { name: 'openrouter', fn: callOpenRouter, parse: parseOpenRouterResponse, key: OPENROUTER_KEY },
-    { name: 'openai', fn: callOpenAI, parse: parseOpenRouterResponse, key: OPENAI_KEY },
+    { name: 'cohere', key: COHERE_KEY, model: COHERE_MODEL, call: callCohere, parse: parseCohere },
+    { name: 'gemini', key: GEMINI_KEY, model: GEMINI_MODEL, call: callGemini, parse: parseGemini },
+    { name: 'github', key: GITHUB_TOKEN, model: GITHUB_MODEL, call: callGitHubModels, parse: parseOpenAI },
+    { name: 'groq', key: GROQ_KEY, model: GROQ_MODEL, call: callGroq, parse: parseOpenAI },
+    { name: 'openrouter', key: OPENROUTER_KEY, model: OPENROUTER_MODEL, call: callOpenRouter, parse: parseOpenAI },
+    { name: 'openai', key: OPENAI_KEY, model: OPENAI_MODEL, call: callOpenAI, parse: parseOpenAI },
   ];
 
   for (const provider of providers) {
     if (!provider.key) continue;
     try {
-      const t0 = Date.now();
-      const resp = await provider.fn(body);
-      const data = await resp.json();
-      const text = provider.parse(data);
-
+      const startedAt = Date.now();
+      const response = await provider.call(body);
+      const data = await response.json();
+      const text = provider.parse(data).trim();
       if (!text) {
         console.warn(`[chat] ${provider.name} returned empty response`);
         continue;
       }
 
-      return json({
+      return json(req, {
         text,
-        choices: [{
-          message: { role: 'assistant', content: text },
-          finish_reason: 'stop',
-          index: 0,
-        }],
+        choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop', index: 0 }],
         provider: provider.name,
-        model: body.model || (provider.name === 'groq' ? GROQ_MODEL : provider.name === 'gemini' ? GEMINI_MODEL : OPENROUTER_MODEL),
-        latency_ms: Date.now() - t0,
+        model: provider.model,
+        latency_ms: Date.now() - startedAt,
       });
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      console.warn(`[chat] ${provider.name} failed: ${msg.slice(0, 200)}`);
-      
-      // If credit exhaustion (429), try next provider
-      if (msg.includes('429') || msg.includes('quota') || msg.includes('exhausted') || msg.includes('credits')) {
-        continue;
-      }
-      // For Groq rate limits, try next
-      if (msg.includes('rate_limit') || msg.includes('Rate limit')) {
-        continue;
-      }
-      // For other errors, also try next provider
-      continue;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[chat] ${provider.name} failed: ${message.slice(0, 200)}`);
     }
   }
 
-  return json({ error: 'All AI providers exhausted. Try again later or configure additional API keys.' }, 503);
+  return json(req, { error: 'All AI providers are unavailable. Please try again later.' }, 503);
 }

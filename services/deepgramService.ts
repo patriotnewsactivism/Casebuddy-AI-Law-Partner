@@ -1,46 +1,49 @@
-import { getElevenLabsKey } from './runtimeKeys';
+import { getSupabase } from './supabaseClient';
 import { streamElevenLabsTTS } from './elevenlabsService';
 
-// Deepgram Aura-2 TTS + STT service
-// TTS: REST streaming → PCM audio chunks
-// STT: WebSocket live transcription
+// Deepgram Aura-2 TTS + STT service. Permanent provider credentials never enter
+// the browser; authenticated clients receive a short-lived Deepgram JWT.
 
 export const DEEPGRAM_TTS_URL = 'https://api.deepgram.com/v1/speak';
 export const DEEPGRAM_STT_WS_URL = 'wss://api.deepgram.com/v1/listen';
 
-const getDeepgramKey = () =>
-  import.meta.env.VITE_DEEPGRAM_API_KEY ||
-  (window as any).__DEEPGRAM_API_KEY ||
-  '';
+async function getDeepgramToken(): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Voice service requires a signed-in CaseBuddy session.');
+
+  const { data, error } = await supabase.functions.invoke('deepgram-token', { body: {} });
+  const token = String(data?.deepgramToken || '').trim();
+  if (error || !token || data?.tokenType !== 'bearer') {
+    throw new Error('Could not retrieve a temporary voice credential.');
+  }
+  return token;
+}
 
 /**
- * Stream TTS audio from Deepgram Aura-2.
+ * Stream TTS audio from Deepgram Aura-2 using a short-lived bearer token.
  * Returns an async generator of Uint8Array PCM chunks (linear16, 24kHz).
  */
 export async function* streamTTS(
   text: string,
-  voiceModel: string, // e.g. "aura-2-thalia-en"
+  voiceModel: string,
 ): AsyncGenerator<Uint8Array> {
-  const key = getDeepgramKey();
-  if (!key) throw new Error('Deepgram API key not found (VITE_DEEPGRAM_API_KEY).');
-
-  const url = `${DEEPGRAM_TTS_URL}?model=${voiceModel}&encoding=linear16&sample_rate=24000&container=none&speed=1.15`;
+  const token = await getDeepgramToken();
+  const url = `${DEEPGRAM_TTS_URL}?model=${encodeURIComponent(voiceModel)}&encoding=linear16&sample_rate=24000&container=none&speed=1.15`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Token ${key}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ text }),
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Deepgram TTS error ${response.status}: ${err}`);
+  if (!response.ok || !response.body) {
+    throw new Error(`Deepgram TTS unavailable (${response.status}).`);
   }
 
-  const reader = response.body!.getReader();
+  const reader = response.body.getReader();
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -49,57 +52,27 @@ export async function* streamTTS(
 }
 
 /**
- * Stream TTS audio with ElevenLabs as primary, Deepgram Aura-2 as fallback.
- * Returns an async generator of PCM chunks.
+ * Stream TTS with server-proxied ElevenLabs as primary when a voice id is
+ * supplied, then fall back to Deepgram temporary-token TTS.
  */
 export async function* streamTTSWithFallback(
   text: string,
   elevenlabsVoiceId?: string,
   fallbackAuraVoice: string = 'aura-2-thalia-en',
 ): AsyncGenerator<Uint8Array> {
-  const elevenlabsKey = getElevenLabsKey();
-
-  if (elevenlabsVoiceId && elevenlabsKey) {
+  if (elevenlabsVoiceId) {
     try {
-      const elevenlabsChunks = streamElevenLabsTTS(text, elevenlabsVoiceId);
-      for await (const chunk of elevenlabsChunks) {
+      for await (const chunk of streamElevenLabsTTS(text, elevenlabsVoiceId)) {
         yield chunk;
       }
       return;
     } catch (err) {
-      console.warn('ElevenLabs TTS failed, falling back to Deepgram:', err);
+      console.warn('Server-proxied ElevenLabs TTS failed; falling back to Deepgram.', err);
     }
   }
 
-  const deepgramKey = getDeepgramKey();
-  if (!deepgramKey) {
-    const keyErr = elevenlabsVoiceId
-      ? new Error('Both ElevenLabs and Deepgram API keys not found.')
-      : new Error('Deepgram API key not found (VITE_DEEPGRAM_API_KEY).');
-    throw keyErr;
-  }
-
-  const url = `${DEEPGRAM_TTS_URL}?model=${fallbackAuraVoice}&encoding=linear16&sample_rate=24000&container=none&speed=1.15`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${deepgramKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ text }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Deepgram TTS error ${response.status}: ${err}`);
-  }
-
-  const reader = response.body!.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) yield value;
+  for await (const chunk of streamTTS(text, fallbackAuraVoice)) {
+    yield chunk;
   }
 }
 
@@ -115,7 +88,6 @@ export function createPCMPlayer(onSpeakingChange: (speaking: boolean) => void) {
   const playChunk = async (chunk: Uint8Array) => {
     if (ctx.state === 'suspended') await ctx.resume();
 
-    // Convert raw linear16 bytes → float32
     const samples = chunk.length / 2;
     const float32 = new Float32Array(samples);
     const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
@@ -157,18 +129,15 @@ export interface DeepgramTranscriptEvent {
 }
 
 /**
- * Open a Deepgram live STT WebSocket.
- * Returns controls to send audio and close the connection.
+ * Open a Deepgram live STT WebSocket. Token retrieval happens asynchronously
+ * inside this function so legacy callers can keep the synchronous control API.
  */
 export function openSTTSocket(
   onTranscript: (event: DeepgramTranscriptEvent) => void,
   onError: (err: string) => void,
 ): { sendAudio: (data: ArrayBuffer) => void; close: () => void } {
-  const key = getDeepgramKey();
-  if (!key) {
-    onError('Deepgram API key not found (VITE_DEEPGRAM_API_KEY).');
-    return { sendAudio: () => {}, close: () => {} };
-  }
+  let ws: WebSocket | null = null;
+  let closed = false;
 
   const params = new URLSearchParams({
     model: 'nova-3',
@@ -180,27 +149,31 @@ export function openSTTSocket(
     endpointing: '400',
   });
 
-  const ws = new WebSocket(`${DEEPGRAM_STT_WS_URL}?${params}`, ['token', key]);
+  void getDeepgramToken()
+    .then(token => {
+      if (closed) return;
+      ws = new WebSocket(`${DEEPGRAM_STT_WS_URL}?${params}`, ['bearer', token]);
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      const transcript = data?.channel?.alternatives?.[0]?.transcript ?? '';
-      if (!transcript) return;
-      const isFinal = data?.is_final === true;
-      onTranscript({ type: isFinal ? 'final' : 'interim', text: transcript });
-    } catch { /* ignore parse errors */ }
-  };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const transcript = data?.channel?.alternatives?.[0]?.transcript ?? '';
+          if (!transcript) return;
+          onTranscript({ type: data?.is_final === true ? 'final' : 'interim', text: transcript });
+        } catch { /* ignore malformed provider events */ }
+      };
 
-  ws.onerror = () => onError('Deepgram STT connection error.');
-  ws.onclose = () => {};
+      ws.onerror = () => onError('Deepgram STT connection error.');
+    })
+    .catch(() => onError('Could not retrieve a temporary Deepgram token.'));
 
   return {
     sendAudio: (data: ArrayBuffer) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      if (ws?.readyState === WebSocket.OPEN) ws.send(data);
     },
     close: () => {
-      if (ws.readyState === WebSocket.OPEN) ws.close();
+      closed = true;
+      if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) ws.close();
     },
   };
 }
