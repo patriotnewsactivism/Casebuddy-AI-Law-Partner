@@ -7,7 +7,7 @@
     "dev": "vite",
     "check:client-secrets": "node scripts/check-client-secrets.mjs",
     "typecheck": "tsc --noEmit",
-    "build": "npm run check:client-secrets && vite build",
+    "build": "vite build && npm run check:client-secrets",
     "verify:security": "npm run typecheck && npm run build",
     "preview": "vite preview"
   },
