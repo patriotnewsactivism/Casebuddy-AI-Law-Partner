@@ -16,6 +16,15 @@ const env = (name: string): string => (Deno.env.get(name) ?? '').trim();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STORAGE_BUCKETS = ['case-documents', 'discovery-files'] as const;
 
+async function loadWorkerSecret(supabase: SupabaseClient): Promise<string> {
+  const { data, error } = await supabase.rpc('get_pipeline_internal_secret', {
+    p_name: 'pipeline_worker_secret',
+  });
+  const secret = typeof data === 'string' ? data.trim() : '';
+  if (error || secret.length < 32) throw new Error('Pipeline internal authentication unavailable');
+  return secret;
+}
+
 async function callDeepSeek(apiKey: string, systemPrompt: string, userPrompt: string) {
   const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
@@ -117,7 +126,6 @@ async function resolvePrivateFileUrl(
   }
   if (parsed.protocol !== 'https:') throw new Error('Document file location must use HTTPS');
 
-  // Never allow a legacy Supabase public-object URL to bypass private storage.
   if (parsed.pathname.includes('/storage/v1/object/public/')) {
     throw new Error('Public storage URLs are not accepted by the pipeline');
   }
@@ -133,15 +141,9 @@ serve(async (req) => {
 
   const supabaseUrl = env('SUPABASE_URL');
   const supabaseKey = env('SUPABASE_SERVICE_ROLE_KEY');
-  const workerSecret = env('PIPELINE_WORKER_SECRET');
-  if (!supabaseUrl || !supabaseKey || !workerSecret) {
+  if (!supabaseUrl || !supabaseKey) {
     console.error('[pipeline-worker] required server configuration missing');
     return json({ error: 'Pipeline service unavailable' }, 503);
-  }
-
-  const callerSecret = (req.headers.get('x-pipeline-secret') ?? '').trim();
-  if (!callerSecret || callerSecret !== workerSecret) {
-    return json({ error: 'Unauthorized' }, 401);
   }
 
   let jobId = '';
@@ -150,6 +152,12 @@ serve(async (req) => {
   });
 
   try {
+    const workerSecret = await loadWorkerSecret(supabase);
+    const callerSecret = (req.headers.get('x-pipeline-secret') ?? '').trim();
+    if (!callerSecret || callerSecret !== workerSecret) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+
     const body = await req.json() as { jobId?: unknown };
     jobId = typeof body.jobId === 'string' ? body.jobId.trim() : '';
     if (!UUID_RE.test(jobId)) return json({ error: 'Invalid job identifier' }, 400);
@@ -157,8 +165,6 @@ serve(async (req) => {
     const deepseekKey = env('DEEPSEEK_API_KEY');
     const groqKey = env('GROQ_API_KEY');
 
-    // Atomically claim only an existing pending job. Callers cannot choose a
-    // document or case independently of the server-side job record.
     const { data: job, error: jobError } = await supabase
       .from('pipeline_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
@@ -236,8 +242,8 @@ serve(async (req) => {
         });
         if (queueError) throw new Error('Could not queue chronology step');
       } else if (job.job_type === 'chronology') {
-        // Chronology work is intentionally bounded here until its dedicated
-        // implementation is reviewed. The job can still complete safely.
+        // Chronology is intentionally bounded until the dedicated synthesizer
+        // is reviewed; this step can still complete safely.
       } else {
         throw new Error('Unsupported pipeline job type');
       }
