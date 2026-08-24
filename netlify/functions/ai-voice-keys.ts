@@ -18,6 +18,7 @@ async function grantDeepgramToken() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ ttl_seconds: 60 }),
+    signal: AbortSignal.timeout(5_000),
   });
 
   if (!response.ok) throw new Error('Voice credential service unavailable');
@@ -25,9 +26,9 @@ async function grantDeepgramToken() {
   if (!payload.access_token) throw new Error('Voice credential service returned no token');
 
   return {
-    deepgramToken: payload.access_token,
+    deepgramKey: payload.access_token,
+    tokenType: 'bearer',
     expiresIn: Number(payload.expires_in) || 60,
-    elevenlabsAvailable: Boolean((process.env.ELEVENLABS_API_KEY || '').trim()),
   };
 }
 
@@ -54,6 +55,7 @@ export const handler: Handler = async event => {
         Authorization: authHeader,
         apikey: anonKey,
       },
+      signal: AbortSignal.timeout(5_000),
     });
     if (!userResponse.ok) {
       return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session' }) };
