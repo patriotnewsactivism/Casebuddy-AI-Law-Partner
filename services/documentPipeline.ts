@@ -1,15 +1,19 @@
 /**
- * Document Pipeline — upload, OCR, and analysis via Supabase Storage + Edge Functions
- * 
+ * Document Pipeline — upload, OCR, and analysis via Supabase Storage + workers.
+ *
+ * Security invariant: `case-documents` is private. Canonical code stores the
+ * storage path, not a public object URL. Short-lived signed URLs are created
+ * only when a browser or processing endpoint actually needs to read a file.
+ *
  * Handles:
- * - File upload to Supabase Storage (case-documents bucket)
- * - OCR processing via edge function (Gemini → Tesseract → OCR.space)
- * - Document record management in Supabase
- * - Bulk upload with progress tracking
- * - Bates numbering
+ * - private file upload to Supabase Storage
+ * - document record management in Supabase
+ * - queued OCR/analysis via the canonical pipeline worker
+ * - bulk upload progress
+ * - Bates display metadata
  */
 
-import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { getSupabase } from './supabaseClient';
 import { edgeFn, OcrResult } from './edgeFunctionClient';
 import { deriveCaseRowId } from './caseStore';
 
@@ -39,12 +43,14 @@ export interface DocumentRecord {
   status: string;
   created_at: string;
   updated_at: string;
+  content_hash?: string | null;
+  entities?: unknown[] | null;
 }
 
 export interface UploadProgress {
   fileName: string;
   status: 'pending' | 'uploading' | 'processing' | 'analyzing' | 'complete' | 'error';
-  progress: number; // 0-100
+  progress: number;
   error?: string;
   documentId?: string;
   ocrResult?: OcrResult;
@@ -67,11 +73,11 @@ function sanitizeFileName(name: string): string {
 async function computeContentHash(file: File): Promise<string | null> {
   try {
     if (typeof crypto === 'undefined' || !crypto.subtle) return null;
-    if (file.size > 200 * 1024 * 1024) return null; // skip >200MB
+    if (file.size > 200 * 1024 * 1024) return null;
     const buf = await file.arrayBuffer();
     const digest = await crypto.subtle.digest('SHA-256', buf);
     return Array.from(new Uint8Array(digest))
-      .map(b => b.toString(16).padStart(2, '0'))
+      .map(byte => byte.toString(16).padStart(2, '0'))
       .join('');
   } catch {
     return null;
@@ -82,10 +88,35 @@ function formatBatesNumber(prefix: string, number: number, padLength = 6): strin
   return `${prefix}-${String(number).padStart(padLength, '0')}`;
 }
 
+/**
+ * Resolve a private case document to a short-lived URL.
+ *
+ * Do not persist the returned URL. It is an access token with an expiry.
+ */
+export async function getDocumentSignedUrl(
+  document: Pick<DocumentRecord, 'storage_path'>,
+  expiresInSeconds = 10 * 60,
+): Promise<string | null> {
+  if (!document.storage_path) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.storage
+    .from('case-documents')
+    .createSignedUrl(document.storage_path, expiresInSeconds);
+
+  if (error) {
+    console.warn('[documentPipeline] could not create signed URL', { message: error.message });
+    return null;
+  }
+
+  return data?.signedUrl ?? null;
+}
+
 // ─── Core Functions ──────────────────────────────────────────────────
 
 /**
- * Upload a single file to Supabase Storage and create a document record.
+ * Upload a single file to private Supabase Storage and create a document row.
  */
 export async function uploadDocument(
   file: File,
@@ -94,12 +125,11 @@ export async function uploadDocument(
     batesPrefix?: string;
     batesNumber?: number;
     autoAnalyze?: boolean;
-  }
+  },
 ): Promise<{ document: DocumentRecord; ocrResult?: OcrResult }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase not configured');
 
-  // Get current user
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
@@ -107,26 +137,16 @@ export async function uploadDocument(
   const storagePath = `${user.id}/${caseId}/${Date.now()}-${safeName}`;
   const contentHash = await computeContentHash(file);
 
-  // 1. Upload to Supabase Storage
   const { error: uploadError } = await supabase.storage
     .from('case-documents')
-    .upload(storagePath, file, { upsert: true });
+    .upload(storagePath, file, { upsert: false });
 
   if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-  // 2. Get public URL
-  const { data: publicUrlData } = supabase.storage
-    .from('case-documents')
-    .getPublicUrl(storagePath);
-
-  const fileUrl = publicUrlData?.publicUrl || null;
-
-  // 3. Build Bates number if requested
   const batesFormatted = options?.batesPrefix && options?.batesNumber != null
     ? formatBatesNumber(options.batesPrefix, options.batesNumber)
     : null;
 
-  // 4. Insert document record
   const { data: doc, error: dbError } = await supabase
     .from('documents')
     .insert({
@@ -136,56 +156,54 @@ export async function uploadDocument(
       file_type: file.type,
       file_size: file.size,
       storage_path: storagePath,
-      file_url: fileUrl,
-      status: 'queued',
+      // Private storage objects do not have durable browser-readable URLs.
+      file_url: null,
+      status: options?.autoAnalyze === false ? 'uploaded' : 'queued',
       bates_prefix: options?.batesPrefix || null,
       bates_formatted: batesFormatted,
       content_hash: contentHash,
-      // Provenance for cross-app sync (law-partner ⇄ companion ⇄ discoverylens)
       source_app: 'law-partner',
     })
     .select('*')
     .single();
 
-  if (dbError) throw new Error(`DB insert failed: ${dbError.message}`);
-
-  // 5. Rely on the Database Webhook to trigger OCR + Analysis
-  // Since we inserted the document into `documents` with status `queued`, 
-  // the `trigger_queue_ocr` Postgres trigger will insert an `ocr` job
-  // into the `pipeline_jobs` table. The frontend UI can listen via Realtime.
-  
-  let ocrResult: OcrResult | undefined;
-  
-  if (fileUrl && (options?.autoAnalyze !== false)) {
-    // We no longer block on edgeFn.ocrDocument. The UI will return instantly.
+  if (dbError) {
+    // Avoid orphaning a private object when the metadata insert fails.
+    await supabase.storage.from('case-documents').remove([storagePath]).catch(() => undefined);
+    throw new Error(`DB insert failed: ${dbError.message}`);
   }
 
-  return { document: doc as DocumentRecord, ocrResult };
+  // A queued row is picked up by the canonical database trigger / pipeline
+  // worker. The browser returns immediately instead of holding a long OCR call.
+  return { document: doc as DocumentRecord };
 }
 
 /**
  * Bulk upload multiple files with progress tracking.
+ *
+ * Bates numbering in this compatibility path is still sequential within this
+ * browser batch. Cross-client atomic reservation is a schema-level migration
+ * and must be reconciled against the canonical production Supabase project
+ * before replacing this path.
  */
 export async function bulkUploadDocuments(
   files: File[],
-  options: BulkUploadOptions
+  options: BulkUploadOptions,
 ): Promise<UploadProgress[]> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase not configured');
 
-  const progress: UploadProgress[] = files.map(f => ({
-    fileName: f.name,
+  const progress: UploadProgress[] = files.map(file => ({
+    fileName: file.name,
     status: 'pending' as const,
     progress: 0,
   }));
 
-  const updateProgress = () => options.onProgress?.(progress);
+  const updateProgress = () => options.onProgress?.([...progress]);
   updateProgress();
 
-  // Get next Bates number if prefix provided
   let nextBates = options.batesStartNumber || 1;
   if (options.batesPrefix && !options.batesStartNumber) {
-    // Query highest existing Bates number for this prefix
     const { data: maxBates } = await supabase
       .from('documents')
       .select('bates_formatted')
@@ -196,45 +214,47 @@ export async function bulkUploadDocuments(
 
     if (maxBates?.[0]?.bates_formatted) {
       const match = maxBates[0].bates_formatted.match(/(\d+)$/);
-      if (match) nextBates = parseInt(match[1]) + 1;
+      if (match) nextBates = Number.parseInt(match[1], 10) + 1;
     }
   }
 
-  // Process files sequentially (to avoid overwhelming edge functions)
-  for (let i = 0; i < files.length; i++) {
+  for (let i = 0; i < files.length; i += 1) {
     progress[i].status = 'uploading';
-    progress[i].progress = 10;
+    progress[i].progress = 15;
     updateProgress();
 
     try {
-      progress[i].status = 'uploading';
-      progress[i].progress = 30;
-      updateProgress();
-
-      const { document, ocrResult } = await uploadDocument(files[i], options.caseId, {
+      const { document } = await uploadDocument(files[i], options.caseId, {
         batesPrefix: options.batesPrefix,
         batesNumber: options.batesPrefix ? nextBates++ : undefined,
         autoAnalyze: options.autoAnalyze !== false,
       });
 
-      progress[i].status = 'complete';
-      progress[i].progress = 100;
+      progress[i].status = options.autoAnalyze === false ? 'complete' : 'processing';
+      progress[i].progress = options.autoAnalyze === false ? 100 : 70;
       progress[i].documentId = document.id;
-      progress[i].ocrResult = ocrResult;
-    } catch (err) {
+    } catch (error) {
       progress[i].status = 'error';
-      progress[i].error = err instanceof Error ? err.message : 'Upload failed';
+      progress[i].error = error instanceof Error ? error.message : 'Upload failed';
     }
 
     updateProgress();
   }
 
+  // Upload completion means the files and metadata were accepted. Analysis is
+  // asynchronous; consumers can update the status through Realtime/polling.
+  progress.forEach(item => {
+    if (item.status === 'processing') {
+      item.status = 'complete';
+      item.progress = 100;
+    }
+  });
+  updateProgress();
+
   return progress;
 }
 
-/**
- * Fetch all documents for a case.
- */
+/** Fetch all documents for a case. */
 export async function getCaseDocuments(caseId: string): Promise<DocumentRecord[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -250,31 +270,34 @@ export async function getCaseDocuments(caseId: string): Promise<DocumentRecord[]
     return [];
   }
 
-  return data as DocumentRecord[];
+  return (data ?? []) as DocumentRecord[];
 }
 
 /**
  * Re-analyze a document that was previously uploaded.
+ *
+ * The signed URL exists only for the processing request and is never written
+ * back to the database.
  */
 export async function reanalyzeDocument(documentId: string): Promise<OcrResult | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data: doc } = await supabase
+  const { data: doc, error } = await supabase
     .from('documents')
-    .select('id, file_url')
+    .select('id, storage_path')
     .eq('id', documentId)
     .single();
 
-  if (!doc?.file_url) return null;
+  if (error || !doc?.storage_path) return null;
+
+  const fileUrl = await getDocumentSignedUrl({ storage_path: doc.storage_path }, 15 * 60);
+  if (!fileUrl) throw new Error('Could not authorize temporary access to the document');
 
   await supabase.from('documents').update({ status: 'processing' }).eq('id', documentId);
 
   try {
-    const result = await edgeFn.ocrDocument({
-      documentId,
-      fileUrl: doc.file_url,
-    });
+    const result = await edgeFn.ocrDocument({ documentId, fileUrl });
 
     await supabase.from('documents').update({
       status: 'analyzed',
@@ -290,20 +313,17 @@ export async function reanalyzeDocument(documentId: string): Promise<OcrResult |
     }).eq('id', documentId);
 
     return result;
-  } catch (err) {
+  } catch (error) {
     await supabase.from('documents').update({ status: 'error' }).eq('id', documentId);
-    throw err;
+    throw error;
   }
 }
 
-/**
- * Delete a document and its storage file.
- */
+/** Delete a document and its private storage object. */
 export async function deleteDocument(documentId: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
 
-  // Get storage path first
   const { data: doc } = await supabase
     .from('documents')
     .select('storage_path')
@@ -317,13 +337,11 @@ export async function deleteDocument(documentId: string): Promise<void> {
   await supabase.from('documents').delete().eq('id', documentId);
 }
 
-/**
- * Run cross-document analysis on selected documents.
- */
+/** Run cross-document analysis on selected documents. */
 export async function analyzeCrossDocuments(
   caseId: string,
   documentIds: string[],
-  analysisType: 'contradictions' | 'timeline' | 'patterns' | 'comprehensive' = 'comprehensive'
+  analysisType: 'contradictions' | 'timeline' | 'patterns' | 'comprehensive' = 'comprehensive',
 ) {
   return edgeFn.crossDocumentAnalysis({ caseId, documentIds, analysisType });
 }
