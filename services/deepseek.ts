@@ -46,7 +46,12 @@ function publicIntakeTokenFromPath(): string | null {
   }
 }
 
-async function buildAuthHeaders(): Promise<Record<string, string>> {
+/**
+ * Authorization headers shared by all browser → CaseBuddy AI proxy calls.
+ * Only a short-lived Supabase access token or a scoped public-intake token is
+ * sent. Permanent provider credentials never enter the browser.
+ */
+export async function buildAIProxyHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   try {
@@ -85,12 +90,11 @@ async function callServerProxy(params: DeepSeekParams): Promise<string> {
 
   const response = await fetch('/api/ai/chat', {
     method: 'POST',
-    headers: await buildAuthHeaders(),
+    headers: await buildAIProxyHeaders(),
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    // Do not echo provider/upstream response bodies into browser-visible errors.
     throw new Error(`AI service unavailable (${response.status})`);
   }
 
