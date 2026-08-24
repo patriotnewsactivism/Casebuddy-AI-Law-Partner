@@ -2,6 +2,8 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
+const WORKER_DISPATCH_TIMEOUT_MS = 60_000;
+
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
@@ -57,6 +59,7 @@ serve(async (req) => {
           'x-pipeline-secret': workerSecret,
         },
         body: JSON.stringify({ jobId: job.id }),
+        signal: AbortSignal.timeout(WORKER_DISPATCH_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`worker returned ${response.status}`);
       return job.id;
