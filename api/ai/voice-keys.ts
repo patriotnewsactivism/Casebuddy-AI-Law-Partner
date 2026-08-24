@@ -1,70 +1,80 @@
 /**
- * Vercel Edge Function — Voice key exchange.
+ * Authenticated voice credential broker.
  *
- * Returns the Deepgram + Gemini + ElevenLabs API keys at RUNTIME (not baked into the JS
- * bundle). The client must be authenticated — we verify the Supabase JWT.
- *
- * POST /api/ai/voice-keys
- * Headers: { Authorization: Bearer <supabase_access_token> }
- * Response: { deepgramKey, geminiKey, elevenlabsKey }
+ * Validates the caller's Supabase session, then returns only a short-lived
+ * Deepgram bearer token. Permanent AI/provider credentials remain server-side.
  */
+
+import { grantDeepgramToken } from './_shared/deepgramToken';
 
 export const config = { runtime: 'edge' };
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+function corsHeaders(req: Request): Record<string, string> {
+  const configured = (process.env.ALLOWED_ORIGIN || 'https://casebuddy.live')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = configured.includes(origin) ? origin : configured[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Cache-Control': 'no-store',
+    Vary: 'Origin',
+  };
+}
 
-const json = (body: object, status = 200) =>
+const json = (req: Request, body: object, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders(req) });
+  }
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405);
 
-  // Verify the caller is authenticated via Supabase JWT
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
-    return json({ error: 'Unauthorized. Sign in first.' }, 401);
+    return json(req, { error: 'Unauthorized. Sign in first.' }, 401);
   }
 
-  const token = authHeader.slice(7);
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) return json({ error: 'Supabase not configured.' }, 503);
+  const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+  const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[voice-token] Supabase server configuration missing');
+    return json(req, { error: 'Authentication service unavailable.' }, 503);
+  }
 
-  // Validate the JWT with Supabase
+  const sessionToken = authHeader.slice(7).trim();
   try {
     const userResp = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+        Authorization: `Bearer ${sessionToken}`,
+        apikey: supabaseAnonKey,
       },
     });
-    if (!userResp.ok) return json({ error: 'Invalid or expired session. Please sign in again.' }, 401);
+    if (!userResp.ok) {
+      return json(req, { error: 'Invalid or expired session. Please sign in again.' }, 401);
+    }
   } catch {
-    return json({ error: 'Could not verify authentication.' }, 500);
+    return json(req, { error: 'Could not verify authentication.' }, 503);
   }
 
-  // Return the keys — these never appear in the JS bundle
-  const deepgramKey = (process.env.DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_API_KEY || process.env.VITE_DEEPGRAM_KEY || '').trim();
-  const geminiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY || '').trim();
-  const elevenlabsKey = (
-    process.env.ELEVENLABS_API_KEY ||
-    process.env.VITE_ELEVENLABS_API_KEY ||
-    ''
-  ).trim();
-  const groqKey = (process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '').trim();
-  const openaiKey = (process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || '').trim();
-  const githubToken = (process.env.GITHUB_TOKEN || '').trim();
-
-  if (!deepgramKey && !geminiKey && !elevenlabsKey) {
-    return json({ error: 'No AI API keys configured on server.' }, 503);
+  try {
+    const grant = await grantDeepgramToken();
+    return json(req, {
+      deepgramKey: grant.accessToken,
+      tokenType: 'bearer',
+      expiresIn: grant.expiresIn,
+    });
+  } catch (error) {
+    console.error('[voice-token] grant failed', {
+      message: error instanceof Error ? error.message : 'unknown error',
+    });
+    return json(req, { error: 'Voice service is temporarily unavailable.' }, 503);
   }
-
-  return json({ deepgramKey, geminiKey, elevenlabsKey, groqKey, openaiKey, githubToken });
 }
