@@ -4,6 +4,8 @@
 // payload to CaseBuddy's same-origin server proxy. No provider credential is
 // present in the browser request, response, or bundle.
 
+import { buildAIProxyHeaders } from './deepseek';
+
 const GEMINI_HOST = 'generativelanguage.googleapis.com';
 const MODEL_RE = /\/v1beta\/models\/([^/:]+):generateContent$/;
 
@@ -48,7 +50,7 @@ export function installLegacyGeminiProxyBridge(): void {
 
     return originalFetch('/api/ai/gemini', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await buildAIProxyHeaders(),
       body: JSON.stringify({
         model: decodeURIComponent(modelMatch[1]),
         contents: body.contents,
