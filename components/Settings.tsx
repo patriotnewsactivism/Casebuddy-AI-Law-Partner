@@ -1,14 +1,53 @@
-
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { AppContext } from '../App';
-import { Settings as SettingsIcon, Key, Database, Download, Upload, AlertCircle, Check, User, Moon, Sun, Volume2, Palette, Shield, Info, Trash2, CheckCircle, Building2, Eye, Cloud, CloudOff, Copy, Lock, LogOut, Loader2, ExternalLink } from 'lucide-react';
-import { exportAllData, importAllData, clearAllData, getStorageInfo, savePreferences, loadPreferences } from '../utils/storage';
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle,
+  Cloud,
+  CloudOff,
+  Copy,
+  Database,
+  Download,
+  Eye,
+  Info,
+  Loader2,
+  Lock,
+  LogOut,
+  Moon,
+  Palette,
+  Scale,
+  Settings as SettingsIcon,
+  Shield,
+  Sun,
+  Trash2,
+  Upload,
+  User,
+  Users,
+} from 'lucide-react';
+import {
+  clearAllData,
+  exportAllData,
+  getStorageInfo,
+  importAllData,
+  loadPreferences,
+  savePreferences,
+} from '../utils/storage';
 import { getFirmId, setFirmId, syncLabel } from '../services/caseStore';
-import { updatePassword, signOut as signOutUser } from '../services/authService';
-import { getThemePresets, applyPreset, resetToDefault, getThemeConfig, computeDerivedColors, saveThemeConfig, type ThemePreset, type ThemeConfig } from '../services/themeEngine';
+import { signOut as signOutUser, updatePassword } from '../services/authService';
+import {
+  applyPreset,
+  computeDerivedColors,
+  getThemeConfig,
+  getThemePresets,
+  resetToDefault,
+  saveThemeConfig,
+  type ThemeConfig,
+} from '../services/themeEngine';
 
 const FIRM_BRANDING_KEY = 'casebuddy_firm_branding';
 const FIRM_LOGO_KEY = 'casebuddy_firm_logo';
+const DEFAULT_TAGLINE = 'Legal Work, Unified';
 
 interface FirmBranding {
   firmName: string;
@@ -19,9 +58,15 @@ interface FirmBranding {
 const loadFirmBranding = (): FirmBranding => {
   try {
     const raw = localStorage.getItem(FIRM_BRANDING_KEY);
-    return raw ? JSON.parse(raw) : { firmName: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false };
+    if (!raw) return { firmName: 'CaseBuddy', tagline: DEFAULT_TAGLINE, whiteLabel: false };
+    const parsed = JSON.parse(raw) as Partial<FirmBranding>;
+    return {
+      firmName: parsed.firmName || 'CaseBuddy',
+      tagline: parsed.tagline || DEFAULT_TAGLINE,
+      whiteLabel: Boolean(parsed.whiteLabel),
+    };
   } catch {
-    return { firmName: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false };
+    return { firmName: 'CaseBuddy', tagline: DEFAULT_TAGLINE, whiteLabel: false };
   }
 };
 
@@ -37,188 +82,173 @@ const loadFirmLogo = (): string | null => {
   }
 };
 
-// ── Agent Activity Logs panel ────────────────────────────────────────────────
 const AgentLogsPanel: React.FC = () => {
-  const [logs, setLogs] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const loadLogs = async () => {
     setLoading(true);
     try {
       const { getSupabase, isSupabaseConfigured } = await import('../services/supabaseClient');
-      if (!isSupabaseConfigured) { setLoading(false); return; }
+      if (!isSupabaseConfigured) return;
       const sb = getSupabase();
-      if (!sb) { setLoading(false); return; }
+      if (!sb) return;
       const { data } = await sb
         .from('agent_cron_logs')
         .select('*')
         .order('ran_at', { ascending: false })
         .limit(10);
       setLogs(data || []);
-    } catch { /* table may not exist yet */ }
-    setLoading(false);
+    } catch {
+      // The activity table may not exist in every environment.
+    } finally {
+      setLoading(false);
+    }
   };
 
-  React.useEffect(() => { loadLogs(); }, []);
-
-  if (logs.length === 0 && !loading) return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-      <div className="flex items-center gap-3 mb-3">
-        <Cloud className="text-gold-500" size={20} />
-        <h2 className="text-lg font-semibold text-white">Agent Activity Logs</h2>
-      </div>
-      <p className="text-sm text-slate-400">No background agent runs yet. Logs appear here once the cron infrastructure is active.</p>
-    </div>
-  );
+  useEffect(() => {
+    void loadLogs();
+  }, []);
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-      <div className="flex items-center justify-between mb-4">
+    <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="flex items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
           <Cloud className="text-gold-500" size={20} />
-          <h2 className="text-lg font-semibold text-white">Agent Activity Logs</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Automation Activity</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Recent background CaseBuddy workflow runs.</p>
+          </div>
         </div>
-        <button onClick={loadLogs} disabled={loading}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors">
+        <button
+          onClick={() => void loadLogs()}
+          disabled={loading}
+          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors disabled:opacity-50"
+        >
           <Loader2 size={12} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
-      <div className="space-y-2">
-        {logs.map((log: any) => (
-          <div key={log.id} className="bg-slate-900 rounded-lg p-3 text-xs">
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold text-gold-400">{log.job}</span>
-              <span className="text-slate-500">{new Date(log.ran_at).toLocaleString()}</span>
+
+      {logs.length === 0 ? (
+        <div className="rounded-lg bg-slate-900/55 border border-slate-700 p-4 text-sm text-slate-400">
+          {loading ? 'Loading activity…' : 'No background workflow runs are available yet.'}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {logs.map((log: any) => (
+            <div key={log.id} className="bg-slate-900 rounded-lg p-3 text-xs border border-slate-800">
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <span className="font-semibold text-gold-400">{log.job}</span>
+                <span className="text-slate-500">{new Date(log.ran_at).toLocaleString()}</span>
+              </div>
+              <div className="flex flex-wrap gap-3 text-slate-400 mb-1">
+                <span>{log.cases_loaded ?? 0} cases</span>
+                <span>{log.deadlines_checked ?? 0} deadlines</span>
+                <span>{log.alerts_sent ?? 0} alerts</span>
+              </div>
+              {log.error && <p className="text-red-400 mt-1">{log.error}</p>}
             </div>
-            <div className="flex gap-3 text-slate-400 mb-1">
-              <span>📁 {log.cases_loaded ?? 0} cases</span>
-              <span>⏰ {log.deadlines_checked ?? 0} deadlines</span>
-              <span>📨 {log.alerts_sent ?? 0} alerts</span>
-            </div>
-            {log.log && <pre className="text-slate-500 whitespace-pre-wrap text-xs leading-relaxed">{log.log.slice(0, 300)}</pre>}
-            {log.error && <p className="text-red-400 mt-1">❌ {log.error}</p>}
-          </div>
-        ))}
-      </div>
-    </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 };
 
-
 const Settings = () => {
   const { cases, theme, setTheme, operatingMode, setOperatingMode, syncStatus, user } = useContext(AppContext);
+
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   const [storageInfo, setStorageInfo] = useState({ used: 0, available: 0, percentage: 0 });
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  // Account & Security state
-  const [passwordForm, setPasswordForm] = useState({ new: '', confirm: '', busy: false, error: null as string | null, success: false });
-  const newPassword = passwordForm.new;
-  const confirmPassword = passwordForm.confirm;
-  const passwordBusy = passwordForm.busy;
-  const passwordError = passwordForm.error;
-  const passwordSuccess = passwordForm.success;
-  const setNewPassword     = (v: string)  => setPasswordForm(f => ({ ...f, new: v }));
-  const setConfirmPassword = (v: string)  => setPasswordForm(f => ({ ...f, confirm: v }));
-  const setPasswordBusy    = (v: boolean) => setPasswordForm(f => ({ ...f, busy: v }));
-  const setPasswordError   = (v: string | null) => setPasswordForm(f => ({ ...f, error: v, success: false }));
-  const setPasswordSuccess = (v: boolean) => setPasswordForm(f => ({ ...f, success: v, error: null }));
+  const [passwordForm, setPasswordForm] = useState({
+    new: '',
+    confirm: '',
+    busy: false,
+    error: null as string | null,
+    success: false,
+  });
   const [signingOut, setSigningOut] = useState(false);
 
-  // Firm Branding state
-  const [firmBranding, setFirmBranding] = useState({ name: 'CaseBuddy', tagline: 'AI-Powered Legal Platform', whiteLabel: false, logo: null as string | null });
-  const firmName = firmBranding.name;
-  const tagline  = firmBranding.tagline;
-  const whiteLabel = firmBranding.whiteLabel;
-  const firmLogo = firmBranding.logo;
-  const setFirmName    = (v: string)       => setFirmBranding(f => ({ ...f, name: v }));
-  const setTagline     = (v: string)       => setFirmBranding(f => ({ ...f, tagline: v }));
-  const setWhiteLabel  = (v: boolean)      => setFirmBranding(f => ({ ...f, whiteLabel: v }));
-  const setFirmLogo    = (v: string|null)  => setFirmBranding(f => ({ ...f, logo: v }));
+  const [firmBranding, setFirmBranding] = useState({
+    name: 'CaseBuddy',
+    tagline: DEFAULT_TAGLINE,
+    whiteLabel: false,
+    logo: null as string | null,
+  });
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [firmId, setFirmIdState] = useState(() => getFirmId());
   const [firmIdInput, setFirmIdInput] = useState(() => getFirmId());
   const [firmIdCopied, setFirmIdCopied] = useState(false);
 
-  // Theme engine state
   const themePresets = getThemePresets();
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [customPrimary, setCustomPrimary] = useState('#D4AF37');
   const [customAccent, setCustomAccent] = useState('#F59E0B');
   const [customSaved, setCustomSaved] = useState(false);
 
-  const currentApiKey = process.env.API_KEY || '';
-  const isApiKeyConfigured = currentApiKey && currentApiKey !== '';
+  const firmName = firmBranding.name;
+  const tagline = firmBranding.tagline;
+  const whiteLabel = firmBranding.whiteLabel;
+  const firmLogo = firmBranding.logo;
 
   useEffect(() => {
     const prefs = loadPreferences();
     setDisplayName(prefs.displayName);
     setTitle(prefs.title);
     setAutoSaveEnabled(prefs.autoSave);
-    updateStorageInfo();
+    setStorageInfo(getStorageInfo());
 
-    // Load firm branding
     const branding = loadFirmBranding();
-    setFirmName(branding.firmName);
-    setTagline(branding.tagline);
-    setWhiteLabel(branding.whiteLabel);
-    setFirmLogo(loadFirmLogo());
+    setFirmBranding({
+      name: branding.firmName,
+      tagline: branding.tagline,
+      whiteLabel: branding.whiteLabel,
+      logo: loadFirmLogo(),
+    });
 
-    // Load theme config
     const currentConfig = getThemeConfig();
     if (currentConfig) {
       setCustomPrimary(currentConfig.primaryColor);
       setCustomAccent(currentConfig.accentColor);
-      const matchingPreset = getThemePresets().find(p => p.colors.primary === currentConfig.primaryColor);
+      const matchingPreset = getThemePresets().find((preset) => preset.colors.primary === currentConfig.primaryColor);
       if (matchingPreset) setActivePresetId(matchingPreset.id);
     }
   }, []);
 
   useEffect(() => {
-    updateStorageInfo();
+    setStorageInfo(getStorageInfo());
   }, [cases]);
 
-  const updateStorageInfo = () => {
-    setStorageInfo(getStorageInfo());
+  const flash = (message: string) => {
+    setSaveMessage(message);
+    window.setTimeout(() => setSaveMessage(null), 3000);
   };
 
   const handleSavePreferences = () => {
-    savePreferences({
-      displayName,
-      title,
-      autoSave: autoSaveEnabled,
-      theme
-    });
-    setSaveMessage('Preferences saved successfully!');
-    setTimeout(() => setSaveMessage(null), 3000);
+    savePreferences({ displayName, title, autoSave: autoSaveEnabled, theme });
+    flash('Preferences saved.');
   };
 
-  const handleThemeChange = (newTheme: 'dark' | 'light') => {
-    setTheme(newTheme);
-    savePreferences({ theme: newTheme });
-  };
-
-  const handleAutoSaveToggle = () => {
-    const newValue = !autoSaveEnabled;
-    setAutoSaveEnabled(newValue);
-    savePreferences({ autoSave: newValue });
+  const handleThemeChange = (nextTheme: 'dark' | 'light') => {
+    setTheme(nextTheme);
+    savePreferences({ theme: nextTheme });
   };
 
   const exportData = () => {
     const data = exportAllData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `casebuddy-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `casebuddy-backup-${new Date().toISOString().split('T')[0]}.json`;
+    anchor.click();
     URL.revokeObjectURL(url);
-
-    setSaveMessage('Data exported successfully!');
-    setTimeout(() => setSaveMessage(null), 3000);
+    flash('Data exported.');
   };
 
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,52 +256,42 @@ const Settings = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = (loadEvent) => {
       try {
-        const data = JSON.parse(e.target?.result as string);
-        if (importAllData(data)) {
-          setSaveMessage('Data imported successfully! Refreshing page...');
-          setTimeout(() => window.location.reload(), 1500);
-        } else {
-          alert('Failed to import data. Please try again.');
+        const data = JSON.parse(loadEvent.target?.result as string);
+        if (!importAllData(data)) {
+          window.alert('Could not import this backup.');
+          return;
         }
-      } catch (error) {
-        alert('Failed to import data. Invalid file format.');
+        flash('Data imported. Refreshing…');
+        window.setTimeout(() => window.location.reload(), 1200);
+      } catch {
+        window.alert('The selected backup is not valid JSON.');
       }
     };
     reader.readAsText(file);
-    event.target.value = ''; // Reset input
+    event.target.value = '';
   };
 
   const handleClearAllData = () => {
-    if (window.confirm('Are you sure you want to delete ALL data? This cannot be undone!')) {
-      if (window.confirm('This will delete all cases, sessions, and settings. Continue?')) {
-        if (clearAllData()) {
-          setSaveMessage('All data cleared. Refreshing...');
-          setTimeout(() => window.location.reload(), 1500);
-        }
-      }
-    }
-  };
-
-  const handleSaveFirmBranding = () => {
-    saveFirmBranding({ firmName, tagline, whiteLabel });
-    setSaveMessage('Firm branding saved successfully!');
-    setTimeout(() => setSaveMessage(null), 3000);
+    if (!window.confirm('Delete all locally stored CaseBuddy data on this device? This cannot be undone.')) return;
+    if (!clearAllData()) return;
+    flash('Local data cleared. Refreshing…');
+    window.setTimeout(() => window.location.reload(), 1200);
   };
 
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file.');
+      window.alert('Please select an image file.');
       return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
+    reader.onload = (loadEvent) => {
+      const dataUrl = loadEvent.target?.result as string;
       localStorage.setItem(FIRM_LOGO_KEY, dataUrl);
-      setFirmLogo(dataUrl);
+      setFirmBranding((current) => ({ ...current, logo: dataUrl }));
     };
     reader.readAsDataURL(file);
     event.target.value = '';
@@ -279,35 +299,39 @@ const Settings = () => {
 
   const handleRemoveLogo = () => {
     localStorage.removeItem(FIRM_LOGO_KEY);
-    setFirmLogo(null);
+    setFirmBranding((current) => ({ ...current, logo: null }));
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError(null);
-    setPasswordSuccess(false);
+  const handleSaveFirmBranding = () => {
+    saveFirmBranding({ firmName, tagline, whiteLabel });
+    savePreferences({ displayName, title });
+    flash('Branding saved.');
+  };
+
+  const handleChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const newPassword = passwordForm.new;
+    const confirmPassword = passwordForm.confirm;
 
     if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters.');
+      setPasswordForm((current) => ({ ...current, error: 'Password must be at least 8 characters.', success: false }));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match.');
+      setPasswordForm((current) => ({ ...current, error: 'Passwords do not match.', success: false }));
       return;
     }
 
-    setPasswordBusy(true);
+    setPasswordForm((current) => ({ ...current, busy: true, error: null, success: false }));
     try {
       const result = await updatePassword(newPassword);
       if (!result.success) {
-        setPasswordError(result.error ?? 'Could not update your password.');
-      } else {
-        setPasswordSuccess(true);
-        setNewPassword('');
-        setConfirmPassword('');
+        setPasswordForm((current) => ({ ...current, busy: false, error: result.error ?? 'Could not update your password.' }));
+        return;
       }
+      setPasswordForm({ new: '', confirm: '', busy: false, error: null, success: true });
     } finally {
-      setPasswordBusy(false);
+      setPasswordForm((current) => ({ ...current, busy: false }));
     }
   };
 
@@ -317,376 +341,310 @@ const Settings = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex items-start justify-between">
+    <div className="space-y-6 max-w-5xl">
+      <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
+          <p className="text-xs uppercase tracking-[0.22em] text-gold-500 font-bold mb-2">CaseBuddy workspace</p>
           <h1 className="text-3xl font-bold text-white font-serif">Settings</h1>
-          <p className="text-slate-400 mt-2">Configure your CaseBuddy preferences and API settings</p>
+          <p className="text-slate-400 mt-2 max-w-2xl">
+            Configure how the same CaseBuddy platform is presented for your work, your team, and your cases.
+          </p>
         </div>
         {saveMessage && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-700 rounded-lg">
+          <div className="flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-700 rounded-lg shrink-0">
             <CheckCircle className="text-green-500" size={18} />
-            <span className="text-green-400 text-sm">{saveMessage}</span>
+            <span className="text-green-300 text-sm">{saveMessage}</span>
           </div>
         )}
-      </div>
+      </header>
 
-      {/* Operating Mode */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
+      <section className="rounded-2xl border border-gold-500/20 bg-gradient-to-br from-gold-500/[0.06] via-slate-800 to-slate-800 p-6">
+        <div className="flex items-center gap-3 mb-2">
           <SettingsIcon className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Operating Mode</h2>
+          <h2 className="text-xl font-semibold text-white">Workspace Focus</h2>
         </div>
-        
-        <div className="grid sm:grid-cols-2 gap-4">
+        <p className="text-sm text-slate-400 mb-5">
+          These choices adjust navigation emphasis only. They are not separate CaseBuddy products, accounts, or platforms.
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-4">
           <button
             onClick={() => setOperatingMode('companion')}
-            className={`flex flex-col items-start p-4 border rounded-xl transition-colors text-left ${
-              operatingMode === 'companion' 
-                ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_15px_rgba(202,138,4,0.15)]' 
+            className={`flex flex-col items-start p-5 border rounded-xl transition-all text-left ${
+              operatingMode === 'companion'
+                ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_18px_rgba(202,138,4,0.14)]'
                 : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
             }`}
           >
-            <div className="flex items-center justify-between w-full mb-2">
-              <span className={`font-bold ${operatingMode === 'companion' ? 'text-gold-400' : 'text-slate-300'}`}>
-                CaseBuddy CaseCompanion
+            <div className="flex items-center justify-between w-full mb-3">
+              <span className="inline-flex items-center gap-2">
+                <User size={18} className={operatingMode === 'companion' ? 'text-gold-400' : 'text-slate-400'} />
+                <span className={`font-bold ${operatingMode === 'companion' ? 'text-gold-400' : 'text-slate-200'}`}>
+                  Individual Case Workspace
+                </span>
               </span>
               {operatingMode === 'companion' && <CheckCircle size={18} className="text-gold-500" />}
             </div>
-            <span className="text-xs text-slate-400">For individual litigants. Focuses on pure case organization and litigation management.</span>
+            <span className="text-sm text-slate-400 leading-relaxed">
+              A streamlined CaseBuddy layout for self-represented litigants, defendants, and individuals managing their own legal matters.
+            </span>
           </button>
 
           <button
             onClick={() => setOperatingMode('partner')}
-            className={`flex flex-col items-start p-4 border rounded-xl transition-colors text-left ${
-              operatingMode === 'partner' 
-                ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_15px_rgba(202,138,4,0.15)]' 
+            className={`flex flex-col items-start p-5 border rounded-xl transition-all text-left ${
+              operatingMode === 'partner'
+                ? 'bg-violet-500/10 border-violet-500 shadow-[0_0_18px_rgba(139,92,246,0.12)]'
                 : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
             }`}
           >
-            <div className="flex items-center justify-between w-full mb-2">
-              <span className={`font-bold ${operatingMode === 'partner' ? 'text-gold-400' : 'text-slate-300'}`}>
-                CaseBuddy AI Law Partner
+            <div className="flex items-center justify-between w-full mb-3">
+              <span className="inline-flex items-center gap-2">
+                <Users size={18} className={operatingMode === 'partner' ? 'text-violet-400' : 'text-slate-400'} />
+                <span className={`font-bold ${operatingMode === 'partner' ? 'text-violet-300' : 'text-slate-200'}`}>
+                  Practice & Firm Workspace
+                </span>
               </span>
-              {operatingMode === 'partner' && <CheckCircle size={18} className="text-gold-500" />}
+              {operatingMode === 'partner' && <CheckCircle size={18} className="text-violet-400" />}
             </div>
-            <span className="text-xs text-slate-400">For law firms and power users. Unlocks the full AI legal staff and automation suite.</span>
+            <span className="text-sm text-slate-400 leading-relaxed">
+              An expanded CaseBuddy layout for solo practitioners, legal teams, and larger firms that need intake, collaboration, automation, and office workflows.
+            </span>
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Account & Security */}
       {user && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
+        <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-5">
             <Lock className="text-gold-500" size={24} />
-            <h2 className="text-xl font-semibold text-white">Account & Security</h2>
-          </div>
-
-          <div className="space-y-5">
-            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-              <div>
-                <p className="text-slate-300 font-medium text-sm">Signed in as</p>
-                <p className="text-xs text-slate-400 mt-0.5">{user.email}</p>
-              </div>
-              <button
-                onClick={handleSignOut}
-                disabled={signingOut}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-900/20 hover:bg-red-900/30 disabled:opacity-60 border border-red-700 rounded-lg text-red-400 transition-colors"
-              >
-                {signingOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
-                Sign out
-              </button>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Account & Security</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Manage your signed-in CaseBuddy account.</p>
             </div>
-
-            <form onSubmit={handleChangePassword} className="space-y-3">
-              <p className="text-sm font-medium text-white">Change password</p>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  placeholder="New password"
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
-                />
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
-                />
-              </div>
-
-              {passwordError && (
-                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-950/40 border border-red-500/30 rounded-lg text-sm text-red-200">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                  <span>{passwordError}</span>
-                </div>
-              )}
-              {passwordSuccess && (
-                <div className="flex items-start gap-2 px-3 py-2.5 bg-green-950/40 border border-green-500/30 rounded-lg text-sm text-green-200">
-                  <CheckCircle size={15} className="shrink-0 mt-0.5" />
-                  <span>Password updated.</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={passwordBusy}
-                className="flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-60 text-slate-950 font-bold py-2 px-4 rounded-lg transition-colors text-sm"
-              >
-                {passwordBusy && <Loader2 size={14} className="animate-spin" />}
-                Update password
-              </button>
-            </form>
           </div>
-        </div>
+
+          <div className="flex items-center justify-between gap-4 p-3 bg-slate-900/50 rounded-lg mb-5">
+            <div className="min-w-0">
+              <p className="text-slate-300 font-medium text-sm">Signed in as</p>
+              <p className="text-xs text-slate-400 mt-0.5 truncate">{user.email}</p>
+            </div>
+            <button
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-900/20 hover:bg-red-900/30 disabled:opacity-60 border border-red-700 rounded-lg text-red-400 transition-colors shrink-0"
+            >
+              {signingOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
+              Sign out
+            </button>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="space-y-3">
+            <p className="text-sm font-medium text-white">Change password</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <input
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={passwordForm.new}
+                onChange={(event) => setPasswordForm((current) => ({ ...current, new: event.target.value }))}
+                placeholder="New password"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+              <input
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={passwordForm.confirm}
+                onChange={(event) => setPasswordForm((current) => ({ ...current, confirm: event.target.value }))}
+                placeholder="Confirm new password"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+            </div>
+            {passwordForm.error && (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-950/40 border border-red-500/30 rounded-lg text-sm text-red-200">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" /> {passwordForm.error}
+              </div>
+            )}
+            {passwordForm.success && (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-green-950/40 border border-green-500/30 rounded-lg text-sm text-green-200">
+                <CheckCircle size={15} className="shrink-0 mt-0.5" /> Password updated.
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={passwordForm.busy}
+              className="flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-60 text-slate-950 font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+            >
+              {passwordForm.busy && <Loader2 size={14} className="animate-spin" />}
+              Update password
+            </button>
+          </form>
+        </section>
       )}
 
-      {/* API Configuration */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Key className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">API Configuration</h2>
-        </div>
-
-        <div className="space-y-4">
-          {/* API Key Status */}
-          <div className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg">
-            {isApiKeyConfigured ? (
-              <>
-                <Check className="text-green-500" size={20} />
-                <div>
-                  <p className="text-green-400 font-medium">API Key Configured</p>
-                  <p className="text-xs text-slate-400 mt-1">Gemini API is ready to use</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <AlertCircle className="text-yellow-500" size={20} />
-                <div>
-                  <p className="text-yellow-400 font-medium">API Key Not Configured</p>
-                  <p className="text-xs text-slate-400 mt-1">Add GEMINI_API_KEY to .env.local and restart the server</p>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Info className="text-blue-400 flex-shrink-0 mt-0.5" size={20} />
-              <div className="text-sm text-blue-300">
-                <p className="font-semibold mb-2">How to configure your API key:</p>
-                <ol className="list-decimal list-inside space-y-1 text-blue-200">
-                  <li>Get your API key from <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">Google AI Studio</a></li>
-                  <li>Open <code className="bg-slate-900/50 px-2 py-0.5 rounded">.env.local</code> in your project root</li>
-                  <li>Add: <code className="bg-slate-900/50 px-2 py-0.5 rounded">GEMINI_API_KEY=your_key_here</code></li>
-                  <li>Restart the development server</li>
-                </ol>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Cloud Sync */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Cloud className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Cloud Sync</h2>
-        </div>
-
-        <div className="space-y-4">
-          {/* Sync status */}
-          <div className={`flex items-center gap-3 p-3 rounded-lg ${
-            syncStatus === 'synced' ? 'bg-green-900/20 border border-green-700' :
-            syncStatus === 'error' ? 'bg-amber-900/20 border border-amber-700' :
-            'bg-slate-900/50 border border-slate-700'
-          }`}>
-            {syncStatus === 'synced' ? <Cloud size={18} className="text-green-400" /> : <CloudOff size={18} className="text-slate-500" />}
-            <div>
-              <p className={`font-medium text-sm ${syncStatus === 'synced' ? 'text-green-400' : syncStatus === 'error' ? 'text-amber-400' : 'text-slate-400'}`}>
-                {syncLabel(syncStatus)}
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {syncStatus === 'synced'
-                  ? 'Cases sync automatically across all your devices.'
-                  : syncStatus === 'error'
-                  ? 'Supabase unavailable — working from local storage.'
-                  : 'Cases are stored locally on this device only.'}
-              </p>
-            </div>
-          </div>
-
-          {/* Firm ID */}
           <div>
-            <p className="text-sm font-medium text-white mb-1">Firm ID</p>
-            <p className="text-xs text-slate-400 mb-2">
-              Your Firm ID is the shared key that links all devices in your firm. Copy it and enter it on any other device to sync cases across the firm.
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={firmIdInput}
-                onChange={e => setFirmIdInput(e.target.value)}
-                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-gold-500"
-              />
-              <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(firmId).catch(() => {});
-                  setFirmIdCopied(true);
-                  setTimeout(() => setFirmIdCopied(false), 2000);
-                }}
-                className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center gap-1.5 transition-colors shrink-0"
-              >
-                <Copy size={14} />
-                {firmIdCopied ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={() => {
-                  if (firmIdInput.trim().length > 8) {
-                    setFirmId(firmIdInput.trim());
-                    setFirmIdState(firmIdInput.trim());
-                    setSaveMessage('Firm ID updated — cases will sync to the new firm on next load.');
-                    setTimeout(() => setSaveMessage(null), 4000);
-                  }
-                }}
-                className="px-3 py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold text-sm transition-colors shrink-0"
-              >
-                Save
-              </button>
-            </div>
+            <h2 className="text-xl font-semibold text-white">Cloud Sync</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Keep your CaseBuddy matters available across authorized devices.</p>
           </div>
         </div>
-      </div>
 
-      {/* Data Management */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <div className={`flex items-center gap-3 p-3 rounded-lg mb-4 ${
+          syncStatus === 'synced'
+            ? 'bg-green-900/20 border border-green-700'
+            : syncStatus === 'error'
+              ? 'bg-amber-900/20 border border-amber-700'
+              : 'bg-slate-900/50 border border-slate-700'
+        }`}>
+          {syncStatus === 'synced' ? <Cloud size={18} className="text-green-400" /> : <CloudOff size={18} className="text-slate-500" />}
+          <div>
+            <p className={`font-medium text-sm ${syncStatus === 'synced' ? 'text-green-400' : syncStatus === 'error' ? 'text-amber-400' : 'text-slate-400'}`}>
+              {syncLabel(syncStatus)}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {syncStatus === 'synced'
+                ? 'Authorized case data is syncing.'
+                : syncStatus === 'error'
+                  ? 'Cloud sync is unavailable; local work remains available.'
+                  : 'This device is currently using local storage.'}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-sm font-medium text-white mb-1">Firm ID</p>
+          <p className="text-xs text-slate-400 mb-2">Used to connect authorized devices and firm workflows to the same CaseBuddy workspace.</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={firmIdInput}
+              onChange={(event) => setFirmIdInput(event.target.value)}
+              className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-gold-500"
+            />
+            <button
+              onClick={async () => {
+                await navigator.clipboard.writeText(firmId).catch(() => undefined);
+                setFirmIdCopied(true);
+                window.setTimeout(() => setFirmIdCopied(false), 2000);
+              }}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Copy size={14} /> {firmIdCopied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              onClick={() => {
+                if (firmIdInput.trim().length <= 8) return;
+                setFirmId(firmIdInput.trim());
+                setFirmIdState(firmIdInput.trim());
+                flash('Firm ID updated.');
+              }}
+              className="px-4 py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-slate-950 font-bold text-sm transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Database className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Data Management</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Data Management</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Export, import, and manage local CaseBuddy data.</p>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {/* Storage Info */}
-          <div className="bg-slate-900/50 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-300 font-medium">Cases stored</span>
-              <span className="text-gold-500 font-bold text-lg">{cases.length}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-300 font-medium">Storage used</span>
-              <span className="text-slate-400 text-sm">{storageInfo.used} KB / {storageInfo.available} KB</span>
-            </div>
-            <div className="w-full bg-slate-700 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all ${
-                  storageInfo.percentage > 80 ? 'bg-red-500' : storageInfo.percentage > 50 ? 'bg-yellow-500' : 'bg-green-500'
-                }`}
-                style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
-              />
-            </div>
-            <p className="text-xs text-slate-400">
-              Data is automatically saved to browser localStorage
-            </p>
+        <div className="bg-slate-900/50 rounded-lg p-4 space-y-3 mb-4">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-300 font-medium">Cases stored</span>
+            <span className="text-gold-500 font-bold text-lg">{cases.length}</span>
           </div>
-
-          {/* Export/Import */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <button
-              onClick={exportData}
-              disabled={cases.length === 0}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-900 disabled:text-slate-600 border border-slate-600 rounded-lg transition-colors"
-            >
-              <Download size={18} />
-              <span className="font-medium">Export Data</span>
-            </button>
-
-            <label className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg transition-colors cursor-pointer">
-              <Upload size={18} />
-              <span className="font-medium">Import Data</span>
-              <input
-                type="file"
-                accept=".json"
-                onChange={importData}
-                className="hidden"
-              />
-            </label>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-300 font-medium">Local storage used</span>
+            <span className="text-slate-400 text-sm">{storageInfo.used} KB / {storageInfo.available} KB</span>
           </div>
-
-          {/* Auto-save Toggle */}
-          <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="text-slate-300 font-medium">Auto-save to LocalStorage</p>
-              <p className="text-xs text-slate-400 mt-1">Automatically persist data between sessions</p>
-            </div>
-            <button
-              onClick={handleAutoSaveToggle}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                autoSaveEnabled ? 'bg-gold-500' : 'bg-slate-600'
-              }`}
-            >
-              <div
-                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  autoSaveEnabled ? 'transform translate-x-6' : ''
-                }`}
-              />
-            </button>
+          <div className="w-full bg-slate-700 rounded-full h-2">
+            <div
+              className={`h-2 rounded-full transition-all ${storageInfo.percentage > 80 ? 'bg-red-500' : storageInfo.percentage > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
+              style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+            />
           </div>
+        </div>
 
-          {/* Clear All Data */}
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <button
-            onClick={handleClearAllData}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-900/20 hover:bg-red-900/30 border border-red-700 rounded-lg transition-colors text-red-400"
+            onClick={exportData}
+            disabled={cases.length === 0}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-900 disabled:text-slate-600 border border-slate-600 rounded-lg transition-colors"
           >
-            <Trash2 size={18} />
-            <span className="font-medium">Clear All Data</span>
+            <Download size={18} /> Export Data
+          </button>
+          <label className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg transition-colors cursor-pointer">
+            <Upload size={18} /> Import Data
+            <input type="file" accept=".json" onChange={importData} className="hidden" />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg mb-4">
+          <div>
+            <p className="text-slate-300 font-medium">Local auto-save</p>
+            <p className="text-xs text-slate-400 mt-1">Persist local workspace state between sessions.</p>
+          </div>
+          <button
+            onClick={() => {
+              const nextValue = !autoSaveEnabled;
+              setAutoSaveEnabled(nextValue);
+              savePreferences({ autoSave: nextValue });
+            }}
+            className={`relative w-12 h-6 rounded-full transition-colors ${autoSaveEnabled ? 'bg-gold-500' : 'bg-slate-600'}`}
+            aria-label="Toggle local auto-save"
+          >
+            <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${autoSaveEnabled ? 'translate-x-6' : ''}`} />
           </button>
         </div>
-      </div>
 
-      {/* Theme */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <button
+          onClick={handleClearAllData}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-900/20 hover:bg-red-900/30 border border-red-700 rounded-lg transition-colors text-red-400"
+        >
+          <Trash2 size={18} /> Clear Local Data
+        </button>
+      </section>
+
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-5">
           <Palette className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Theme</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Appearance</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Set the CaseBuddy visual style for this workspace.</p>
+          </div>
         </div>
 
         <div className="space-y-6">
-          {/* Dark / Light Toggle */}
           <div>
             <p className="text-sm font-medium text-slate-300 mb-3">Mode</p>
             <div className="inline-flex bg-slate-900 border border-slate-700 rounded-lg p-1">
               <button
-                onClick={() => { handleThemeChange('dark'); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  theme === 'dark' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => handleThemeChange('dark')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${theme === 'dark' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
               >
-                <Moon size={16} />
-                Dark
+                <Moon size={16} /> Dark
               </button>
               <button
-                onClick={() => { handleThemeChange('light'); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  theme === 'light' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => handleThemeChange('light')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${theme === 'light' ? 'bg-gold-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
               >
-                <Sun size={16} />
-                Light
+                <Sun size={16} /> Light
               </button>
             </div>
           </div>
 
-          {/* Theme Presets */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium text-slate-300">Presets</p>
@@ -700,39 +658,31 @@ const Settings = () => {
                 }}
                 className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
               >
-                Reset to Default
+                Reset
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {themePresets.map(preset => {
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {themePresets.map((preset) => {
                 const isActive = activePresetId === preset.id;
                 return (
                   <button
                     key={preset.id}
                     onClick={() => {
-                      const cfg = applyPreset(preset.id);
+                      const config = applyPreset(preset.id);
                       setActivePresetId(preset.id);
-                      setCustomPrimary(cfg.primaryColor);
-                      setCustomAccent(cfg.accentColor);
+                      setCustomPrimary(config.primaryColor);
+                      setCustomAccent(config.accentColor);
                       setCustomSaved(false);
-                      if (preset.id === 'classic-ivory') {
-                        handleThemeChange('light');
-                      } else {
-                        handleThemeChange('dark');
-                      }
+                      handleThemeChange(preset.id === 'classic-ivory' ? 'light' : 'dark');
                     }}
-                    className={`text-left p-3 rounded-lg border transition-all ${
-                      isActive
-                        ? 'bg-gold-500/10 border-gold-500 shadow-[0_0_12px_rgba(212,175,55,0.15)]'
-                        : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'
-                    }`}
+                    className={`text-left p-3 rounded-lg border transition-all ${isActive ? 'bg-gold-500/10 border-gold-500' : 'bg-slate-900/50 border-slate-700 hover:border-slate-500'}`}
                   >
                     <p className="text-sm font-semibold text-white mb-1">{preset.name}</p>
                     <p className="text-xs text-slate-400 mb-2 line-clamp-2">{preset.description}</p>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.primary }} title="Primary" />
-                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.accent }} title="Accent" />
-                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.background }} title="Background" />
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.primary }} />
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.accent }} />
+                      <span className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.background }} />
                     </div>
                   </button>
                 );
@@ -740,36 +690,33 @@ const Settings = () => {
             </div>
           </div>
 
-          {/* Custom Colors */}
           <div>
             <p className="text-sm font-medium text-slate-300 mb-3">Custom Colors</p>
             <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Primary Color</label>
+              <label className="block">
+                <span className="block text-xs text-slate-400 mb-1.5">Primary</span>
                 <div className="flex items-center gap-2">
                   <span className="w-8 h-8 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: customPrimary }} />
                   <input
                     type="text"
                     value={customPrimary}
-                    onChange={e => setCustomPrimary(e.target.value)}
-                    placeholder="#D4AF37"
+                    onChange={(event) => setCustomPrimary(event.target.value)}
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gold-500"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Accent Color</label>
+              </label>
+              <label className="block">
+                <span className="block text-xs text-slate-400 mb-1.5">Accent</span>
                 <div className="flex items-center gap-2">
                   <span className="w-8 h-8 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: customAccent }} />
                   <input
                     type="text"
                     value={customAccent}
-                    onChange={e => setCustomAccent(e.target.value)}
-                    placeholder="#F59E0B"
+                    onChange={(event) => setCustomAccent(event.target.value)}
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gold-500"
                   />
                 </div>
-              </div>
+              </label>
             </div>
             <button
               onClick={() => {
@@ -797,249 +744,196 @@ const Settings = () => {
                 saveThemeConfig(config);
                 setActivePresetId(null);
                 setCustomSaved(true);
-                setTimeout(() => setCustomSaved(false), 2000);
+                window.setTimeout(() => setCustomSaved(false), 2000);
               }}
               className="mt-3 w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg py-2 text-sm font-medium text-slate-300 transition-colors"
             >
-              {customSaved ? <CheckCircle size={16} className="text-green-400" /> : null}
+              {customSaved && <CheckCircle size={16} className="text-green-400" />}
               Apply Custom Colors
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* User Profile */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <User className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">User Profile</h2>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Display Name</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Attorney J. Doe"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
-            />
+      <div className="grid lg:grid-cols-2 gap-6">
+        <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <User className="text-gold-500" size={24} />
+            <h2 className="text-xl font-semibold text-white">Profile</h2>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Senior Litigator"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
-            />
-          </div>
-          <button
-            onClick={handleSavePreferences}
-            className="w-full bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
-            Save Profile
-          </button>
-          <p className="text-xs text-slate-400">Profile information is stored locally and displayed in the header.</p>
-        </div>
-      </div>
-
-      {/* Firm Branding */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Building2 className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Firm Branding</h2>
-        </div>
-
-        <div className="space-y-4">
-          {/* Firm Name */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Firm Name</label>
-            <input
-              type="text"
-              value={firmName}
-              onChange={(e) => setFirmName(e.target.value)}
-              placeholder="CaseBuddy"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
-            />
-          </div>
-
-          {/* Tagline */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Tagline</label>
-            <input
-              type="text"
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              placeholder="AI-Powered Legal Platform"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
-            />
-          </div>
-
-          {/* Primary Attorney (reuses displayName) */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Primary Attorney Name</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Attorney J. Doe"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
-            />
-            <p className="text-xs text-slate-500 mt-1">This also updates your user profile display name.</p>
-          </div>
-
-          {/* Logo Upload */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Firm Logo</label>
-            {firmLogo ? (
-              <div className="flex items-center gap-4 p-3 bg-slate-900/50 rounded-lg">
-                <img src={firmLogo} alt="Firm Logo" className="h-12 w-auto max-w-[120px] object-contain rounded" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-300 truncate">Logo uploaded</p>
-                  <p className="text-xs text-slate-500">Stored in browser localStorage</p>
-                </div>
-                <div className="flex gap-2">
-                  <label className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg cursor-pointer transition-colors text-slate-300">
-                    Replace
-                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" ref={logoInputRef} />
-                  </label>
-                  <button
-                    onClick={handleRemoveLogo}
-                    className="px-3 py-1.5 text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-700 rounded-lg text-red-400 transition-colors"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <label className="flex items-center justify-center gap-2 px-4 py-6 bg-slate-900/50 border-2 border-dashed border-slate-600 hover:border-gold-500 rounded-lg cursor-pointer transition-colors group">
-                <Upload size={18} className="text-slate-500 group-hover:text-gold-500 transition-colors" />
-                <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Click to upload logo (PNG, JPG, SVG)</span>
-                <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-              </label>
-            )}
-          </div>
-
-          {/* White-label toggle */}
-          <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="text-slate-300 font-medium">White-Label Mode</p>
-              <p className="text-xs text-slate-400 mt-1">Hide "CaseBuddy" branding and replace with your firm name</p>
-            </div>
+          <div className="space-y-4">
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-300 mb-2">Display Name</span>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="Your name"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-300 mb-2">Role / Title</span>
+              <input
+                type="text"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Attorney, paralegal, litigant, administrator…"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+            </label>
             <button
-              onClick={() => setWhiteLabel(!whiteLabel)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${whiteLabel ? 'bg-gold-500' : 'bg-slate-600'}`}
+              onClick={handleSavePreferences}
+              className="w-full bg-gold-500 hover:bg-gold-400 text-slate-950 font-semibold py-2 px-4 rounded-lg transition-colors"
             >
-              <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${whiteLabel ? 'transform translate-x-6' : ''}`} />
+              Save Profile
             </button>
           </div>
+        </section>
 
-          {/* Preview Card */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Eye size={14} className="text-slate-400" />
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Header Preview</p>
+        <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Building2 className="text-gold-500" size={24} />
+            <h2 className="text-xl font-semibold text-white">Workspace Branding</h2>
+          </div>
+          <div className="space-y-4">
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-300 mb-2">Firm / Workspace Name</span>
+              <input
+                type="text"
+                value={firmName}
+                onChange={(event) => setFirmBranding((current) => ({ ...current, name: event.target.value }))}
+                placeholder="CaseBuddy"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-300 mb-2">Tagline</span>
+              <input
+                type="text"
+                value={tagline}
+                onChange={(event) => setFirmBranding((current) => ({ ...current, tagline: event.target.value }))}
+                placeholder={DEFAULT_TAGLINE}
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              />
+            </label>
+
+            <div>
+              <span className="block text-sm font-medium text-slate-300 mb-2">Logo</span>
+              {firmLogo ? (
+                <div className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg">
+                  <img src={firmLogo} alt="Workspace logo" className="h-10 w-auto max-w-[110px] object-contain rounded" />
+                  <div className="ml-auto flex gap-2">
+                    <label className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg cursor-pointer transition-colors text-slate-300">
+                      Replace
+                      <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" ref={logoInputRef} />
+                    </label>
+                    <button onClick={handleRemoveLogo} className="px-3 py-1.5 text-xs border border-red-700 rounded-lg text-red-400 hover:bg-red-900/20">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 px-4 py-5 bg-slate-900/50 border-2 border-dashed border-slate-600 hover:border-gold-500 rounded-lg cursor-pointer transition-colors">
+                  <Upload size={17} className="text-slate-500" />
+                  <span className="text-sm text-slate-400">Upload logo</span>
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                </label>
+              )}
             </div>
-            <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
-              <div className="flex items-center gap-3">
+
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+              <div>
+                <p className="text-slate-300 font-medium">White-label mode</p>
+                <p className="text-xs text-slate-400 mt-1">Use your organization name in the workspace header.</p>
+              </div>
+              <button
+                onClick={() => setFirmBranding((current) => ({ ...current, whiteLabel: !current.whiteLabel }))}
+                className={`relative w-12 h-6 rounded-full transition-colors ${whiteLabel ? 'bg-gold-500' : 'bg-slate-600'}`}
+                aria-label="Toggle white-label mode"
+              >
+                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${whiteLabel ? 'translate-x-6' : ''}`} />
+              </button>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Eye size={14} className="text-slate-400" />
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Preview</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 flex items-center gap-3">
                 {firmLogo ? (
                   <img src={firmLogo} alt="Logo" className="h-8 w-auto max-w-[80px] object-contain" />
                 ) : (
-                  <div className="h-8 w-8 rounded-full bg-gold-500/20 border border-gold-500/40 flex items-center justify-center">
-                    <Building2 size={16} className="text-gold-400" />
+                  <div className="h-8 w-8 rounded-lg bg-gold-500/15 border border-gold-500/30 flex items-center justify-center">
+                    <Scale size={16} className="text-gold-400" />
                   </div>
                 )}
-                <div>
-                  <p className="text-sm font-serif font-bold text-white">
-                    {whiteLabel ? (firmName || 'Your Firm Name') : 'CaseBuddy'}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {whiteLabel ? (tagline || 'Your Tagline') : 'AI-Powered Legal Platform'}
-                  </p>
-                </div>
-                <div className="ml-auto text-right">
-                  <p className="text-xs font-semibold text-slate-300">{displayName || 'Attorney J. Doe'}</p>
-                  <p className="text-xs text-slate-500">{title || 'Senior Litigator'}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-serif font-bold text-white truncate">{whiteLabel ? (firmName || 'Your Workspace') : 'CaseBuddy'}</p>
+                  <p className="text-xs text-slate-400 truncate">{whiteLabel ? (tagline || DEFAULT_TAGLINE) : DEFAULT_TAGLINE}</p>
                 </div>
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-1">This preview reflects how your branding will appear in the app header.</p>
-          </div>
 
-          <button
-            onClick={handleSaveFirmBranding}
-            className="w-full bg-gold-500 hover:bg-gold-600 text-slate-900 font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
-            Save Firm Branding
-          </button>
-        </div>
+            <button
+              onClick={handleSaveFirmBranding}
+              className="w-full bg-gold-500 hover:bg-gold-400 text-slate-950 font-semibold py-2 px-4 rounded-lg transition-colors"
+            >
+              Save Branding
+            </button>
+          </div>
+        </section>
       </div>
 
-      {/* Privacy & Security */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Shield className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Privacy & Security</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Privacy & Security</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Current CaseBuddy security model.</p>
+          </div>
         </div>
-
-        <div className="space-y-3 text-sm text-slate-300">
-          <p>
-            <strong className="text-white">Authentication:</strong> The /app workspace requires a signed-in account. Your case data is scoped to your firm and protected by Postgres Row Level Security — only authenticated members of your firm can read or write it.
-          </p>
-          <p>
-            <strong className="text-white">Data Storage:</strong> Case data is saved locally on this device and synced to a secure Supabase database so it's available across all your devices.
-          </p>
-          <p>
-            <strong className="text-white">API Usage:</strong> Your prompts and case information are sent to Google's Gemini API for processing. Review <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">Google's Privacy Policy</a>.
-          </p>
+        <div className="grid md:grid-cols-3 gap-3 text-sm">
+          <div className="p-4 rounded-xl bg-slate-900/55 border border-slate-700">
+            <p className="font-semibold text-white mb-1">Scoped case access</p>
+            <p className="text-xs text-slate-400 leading-relaxed">Signed-in access is constrained by case, user, and firm permissions rather than a shared public data surface.</p>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-900/55 border border-slate-700">
+            <p className="font-semibold text-white mb-1">Private sensitive storage</p>
+            <p className="text-xs text-slate-400 leading-relaxed">Sensitive matter files use private storage and controlled access paths rather than public object URLs.</p>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-900/55 border border-slate-700">
+            <p className="font-semibold text-white mb-1">Server-side provider credentials</p>
+            <p className="text-xs text-slate-400 leading-relaxed">Permanent provider keys belong on trusted server infrastructure and are not a browser configuration setting.</p>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Billing & Subscription */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Info className="text-gold-500" size={24} />
-          <h2 className="text-xl font-semibold text-white">Billing & Subscription</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Billing & Subscription</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Manage your CaseBuddy plan and billing.</p>
+          </div>
         </div>
-        <p className="text-sm text-slate-400 mb-4">
-          Manage your CaseBuddy plan, invoices, and payment methods.
-        </p>
         <div className="flex flex-wrap gap-3">
-          <a
-            href="/pricing"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl text-sm transition-colors"
-          >
+          <a href="/pricing" className="inline-flex items-center gap-2 px-4 py-2 bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl text-sm transition-colors">
             View Plans
           </a>
-          <button
-            onClick={() => window.open('https://billing.stripe.com/p/login/test_placeholder', '_blank')}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-600 text-slate-300 hover:border-gold-500/50 hover:text-white rounded-xl text-sm transition-colors"
-          >
-            Manage Billing Portal
-          </button>
         </div>
-      </div>
+      </section>
 
-      {/* Agent Activity Logs */}
       <AgentLogsPanel />
 
-      {/* About */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <section className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-3">About CaseBuddy</h2>
-        <p className="text-sm text-slate-300 mb-2">
-          CaseBuddy is an AI-powered legal trial preparation platform. Powered by Google Gemini, DeepSeek, and Deepgram.
+        <p className="text-sm text-slate-300 leading-relaxed max-w-3xl">
+          CaseBuddy is an all-in-one legal work platform designed to help self-represented litigants, defendants, solo practitioners, legal teams, and larger firms organize matters, reduce repetitive work, prepare more thoroughly, and accomplish more from a connected case workspace.
         </p>
-        <div className="flex gap-4 text-xs text-slate-400">
-          <span>Version 1.0.0</span>
-          <span>•</span>
-          <a href="https://ai.studio/apps/drive/1V2CDhsqj46ydvFpmYDwK7mwA9ZvplvwL" target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">
-            View on AI Studio
-          </a>
-        </div>
-      </div>
+        <p className="text-xs text-slate-500 mt-3">Legal assistance software. CaseBuddy does not guarantee legal outcomes.</p>
+      </section>
     </div>
   );
 };
