@@ -1,6 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const WORKER_DISPATCH_TIMEOUT_MS = 60_000;
 
@@ -14,6 +14,13 @@ const json = (body: object, status = 200) => new Response(JSON.stringify(body), 
 
 const configuredSecret = (name: string): string => (Deno.env.get(name) ?? '').trim();
 
+async function loadInternalSecret(supabase: SupabaseClient, name: 'pipeline_orchestrator_secret' | 'pipeline_worker_secret') {
+  const { data, error } = await supabase.rpc('get_pipeline_internal_secret', { p_name: name });
+  const secret = typeof data === 'string' ? data.trim() : '';
+  if (error || secret.length < 32) throw new Error('Pipeline internal authentication unavailable');
+  return secret;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: { Allow: 'POST, OPTIONS' } });
@@ -22,23 +29,23 @@ serve(async (req) => {
 
   const supabaseUrl = configuredSecret('SUPABASE_URL');
   const supabaseKey = configuredSecret('SUPABASE_SERVICE_ROLE_KEY');
-  const workerSecret = configuredSecret('PIPELINE_WORKER_SECRET');
-  const orchestratorSecret = configuredSecret('PIPELINE_ORCHESTRATOR_SECRET') || workerSecret;
-
-  if (!supabaseUrl || !supabaseKey || !workerSecret || !orchestratorSecret) {
+  if (!supabaseUrl || !supabaseKey) {
     console.error('[pipeline-orchestrator] required server configuration missing');
     return json({ error: 'Pipeline service unavailable' }, 503);
-  }
-
-  const callerSecret = (req.headers.get('x-pipeline-secret') ?? '').trim();
-  if (!callerSecret || callerSecret !== orchestratorSecret) {
-    return json({ error: 'Unauthorized' }, 401);
   }
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    const orchestratorSecret = await loadInternalSecret(supabase, 'pipeline_orchestrator_secret');
+    const callerSecret = (req.headers.get('x-pipeline-secret') ?? '').trim();
+    if (!callerSecret || callerSecret !== orchestratorSecret) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+
+    const workerSecret = await loadInternalSecret(supabase, 'pipeline_worker_secret');
 
     const { data: jobs, error: fetchError } = await supabase
       .from('pipeline_jobs')
