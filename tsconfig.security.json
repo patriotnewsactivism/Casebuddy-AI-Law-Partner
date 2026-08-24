@@ -3,7 +3,8 @@
   "compilerOptions": {
     "allowJs": false,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node", "vite/client"]
   },
   "files": [
     "vite.config.ts",
