@@ -5,6 +5,7 @@ export interface DeepgramTokenGrant {
 
 const DEEPGRAM_GRANT_URL = 'https://api.deepgram.com/v1/auth/grant';
 const DEFAULT_TTL_SECONDS = 60;
+const GRANT_TIMEOUT_MS = 5_000;
 
 /**
  * Exchange the server-held Deepgram API key for a short-lived bearer token.
@@ -24,6 +25,7 @@ export async function grantDeepgramToken(ttlSeconds = DEFAULT_TTL_SECONDS): Prom
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ ttl_seconds: ttl }),
+    signal: AbortSignal.timeout(GRANT_TIMEOUT_MS),
   });
 
   if (!response.ok) {
