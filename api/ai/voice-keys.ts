@@ -9,6 +9,8 @@ import { grantDeepgramToken } from './_shared/deepgramToken';
 
 export const config = { runtime: 'edge' };
 
+const AUTH_TIMEOUT_MS = 5_000;
+
 function corsHeaders(req: Request): Record<string, string> {
   const configured = (process.env.ALLOWED_ORIGIN || 'https://casebuddy.live')
     .split(',')
@@ -56,6 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
         Authorization: `Bearer ${sessionToken}`,
         apikey: supabaseAnonKey,
       },
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     });
     if (!userResp.ok) {
       return json(req, { error: 'Invalid or expired session. Please sign in again.' }, 401);
@@ -67,7 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const grant = await grantDeepgramToken();
     return json(req, {
-      deepgramKey: grant.accessToken,
+      deepgramToken: grant.accessToken,
       tokenType: 'bearer',
       expiresIn: grant.expiresIn,
     });
