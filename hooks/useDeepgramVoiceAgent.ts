@@ -140,11 +140,19 @@ const fetchVoiceCredential = async (publicEndpoint = false): Promise<VoiceCreden
   );
   if (!response.ok) {
     let detail = '';
+    let reason = '';
     try {
-      const body = await response.json() as { error?: string };
+      const body = await response.json() as { error?: string; reason?: string };
       detail = String(body?.error || '').trim();
+      reason = String(body?.reason || '').trim();
     } catch { /* ignore */ }
-    throw new Error(detail || 'Could not retrieve voice credentials.');
+
+    // The broker reports why a grant failed as a coarse code (not_configured,
+    // provider_rejected, …). Surfacing it here means an operator can diagnose a
+    // voice outage from the intake screen itself, without server-log access.
+    // It is operational state, never credential material.
+    const message = detail || 'Could not retrieve voice credentials.';
+    throw new Error(reason ? `${message} [${reason}]` : message);
   }
 
   const data = await response.json() as { deepgramKey?: string; tokenType?: string };
