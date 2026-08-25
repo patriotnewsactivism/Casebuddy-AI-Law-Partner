@@ -63,12 +63,43 @@ using (
 );
 
 -- Anonymous callers upload their own recording during the intake and never
--- read the bucket back. The path is prefixed with the firm_id so the read
--- policy above can scope it.
+-- read the bucket back. The path must be <firm_id>/<intake_id>/<file> so the
+-- read policy above can scope it, and the firm segment must name a real firm.
+--
+-- This is INSERT only — no UPDATE grant — so an existing recording can never be
+-- overwritten. A firm_id is public (it ships in the browser bundle as
+-- VITE_FIRM_ID), so this does not stop someone from writing junk under a known
+-- prefix; it bounds the damage instead. Junk is inert because staff only ever
+-- play back the recording_path stored on an intake row, and only
+-- upsert_public_intake can put a path there.
+-- firm_memberships is itself RLS-protected (members_read_own), so a policy
+-- subquery against it evaluates as the caller and returns nothing for anon —
+-- which would reject every public upload. A security-definer predicate is the
+-- only way to test firm existence from an anonymous policy. It discloses
+-- nothing new: firm ids already ship in the browser bundle as VITE_FIRM_ID.
+create or replace function public.intake_firm_exists(p_firm text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_catalog
+as $$
+  select exists (
+    select 1 from public.firm_memberships where firm_id = p_firm
+  );
+$$;
+
+revoke all on function public.intake_firm_exists(text) from public;
+grant execute on function public.intake_firm_exists(text) to anon, authenticated;
+
 drop policy if exists "intake_recordings_public_insert" on storage.objects;
 create policy "intake_recordings_public_insert"
 on storage.objects for insert to anon, authenticated
-with check (bucket_id = 'intake-recordings');
+with check (
+  bucket_id = 'intake-recordings'
+  and array_length(storage.foldername(name), 1) >= 2
+  and public.intake_firm_exists((storage.foldername(name))[1])
+);
 
 -- ── 3. Partial-intake upsert (anon, security definer) ───────────────────────
 

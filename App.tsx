@@ -88,6 +88,8 @@ import { orchestrator } from './services/agentOrchestrator';
 import { consolidateMemory } from './services/agentMemory';
 import { OPERATIONAL_AGENTS } from './agents/personas';
 import { flushRetryQueue } from './services/intakeStore';
+import { sweepAbandonedIntakes } from './services/intakeFollowup';
+import { drainAssignmentQueue } from './services/intakeAutoWork';
 import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
 import NotificationCenter from './components/NotificationCenter';
 import AgentStatusDashboard from './components/AgentStatusDashboard';
@@ -627,6 +629,30 @@ const App = () => {
       clearInterval(consolidationInterval);
     };
   }, []);
+
+  // ─── Intake automation: chase drop-offs, run assignment work ──────────────
+  // Kept separate from the engine lifecycle above so it can key on `user`
+  // without restarting the background engine on every auth change. Both
+  // operations are firm-scoped by RLS and no-op when signed out, and both
+  // claim their work before acting so several open tabs don't duplicate it.
+  useEffect(() => {
+    if (!user) return;
+
+    const runSweep = () => { void sweepAbandonedIntakes().catch(() => {}); };
+    const runDrain = () => { void drainAssignmentQueue().catch(() => {}); };
+
+    // Let the app settle before the first pass rather than competing with
+    // initial case/document loading for the same connection.
+    const kickoff = setTimeout(() => { runDrain(); runSweep(); }, 20_000);
+    const drainTimer = setInterval(runDrain, 2 * 60 * 1000);
+    const sweepTimer = setInterval(runSweep, 15 * 60 * 1000);
+
+    return () => {
+      clearTimeout(kickoff);
+      clearInterval(drainTimer);
+      clearInterval(sweepTimer);
+    };
+  }, [user]);
 
   return (
     <AppContext.Provider value={{ cases, activeCase, setActiveCase, addCase, updateCase, deleteCase, theme, setTheme, operatingMode, setOperatingMode, productTier, syncStatus, user, authLoading }}>

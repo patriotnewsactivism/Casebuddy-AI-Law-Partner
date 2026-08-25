@@ -139,6 +139,29 @@ export async function followUpAbandonedIntake(
   if (!to) return { notified: true, emailed: false, reason: 'no email captured' };
   if (!eligibleForEmail(intake)) return { notified: true, emailed: false, reason: 'attempt cap reached' };
 
+  const supabase = getSupabase();
+  if (!supabase) return { notified: true, emailed: false, reason: 'offline' };
+
+  // Claim the attempt BEFORE sending. This sweep runs in every staff browser
+  // that has the app open, so without a claim two tabs both read count=0 and
+  // both email the same prospect. The `.eq('followup_count', seen)` makes the
+  // update fail for the loser of the race, and `select` tells us which we were.
+  const seen = Number(intake.followup_count || 0);
+  const { data: claimed, error: claimError } = await supabase
+    .from(INTAKE_TABLE)
+    .update({
+      followup_count: seen + 1,
+      followup_last_at: new Date().toISOString(),
+      completion_state: 'abandoned',
+    })
+    .eq('id', intake.id)
+    .eq('followup_count', seen)
+    .select('id');
+
+  if (claimError || !claimed?.length) {
+    return { notified: true, emailed: false, reason: 'already claimed elsewhere' };
+  }
+
   try {
     await sendEmail({
       to,
@@ -148,19 +171,14 @@ export async function followUpAbandonedIntake(
     });
   } catch (err) {
     console.warn('[intakeFollowup] email failed:', err);
-    return { notified: true, emailed: false, reason: 'send failed' };
-  }
-
-  const supabase = getSupabase();
-  if (supabase) {
+    // Hand the attempt back so a later sweep can retry it rather than burning
+    // one of the two attempts on a send that never left the building.
     await supabase
       .from(INTAKE_TABLE)
-      .update({
-        followup_count: Number(intake.followup_count || 0) + 1,
-        followup_last_at: new Date().toISOString(),
-        completion_state: 'abandoned',
-      })
-      .eq('id', intake.id);
+      .update({ followup_count: seen })
+      .eq('id', intake.id)
+      .eq('followup_count', seen + 1);
+    return { notified: true, emailed: false, reason: 'send failed' };
   }
 
   return { notified: true, emailed: true };

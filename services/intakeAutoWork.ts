@@ -292,3 +292,55 @@ export async function runAssignmentWorkstreams(
 
   return results;
 }
+
+/**
+ * Find intakes with queued workstreams and run them. RLS scopes agent_tasks to
+ * the caller's firm, so this only ever drains the signed-in firm's queue.
+ *
+ * Tasks are claimed by flipping 'queued' to 'running' before work begins, which
+ * keeps two staff browsers running the same sweep from doing the same expensive
+ * AI work twice.
+ */
+export async function drainAssignmentQueue(limit = 3): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+
+  const { data: queued } = await supabase
+    .from('agent_tasks')
+    .select('intake_id')
+    .eq('status', 'queued')
+    .not('intake_id', 'is', null)
+    .limit(50);
+
+  if (!queued?.length) return 0;
+
+  const intakeIds = [...new Set(queued.map(t => String((t as { intake_id: string }).intake_id)))].slice(0, limit);
+  if (!intakeIds.length) return 0;
+
+  const { data: intakes } = await supabase
+    .from(INTAKE_TABLE)
+    .select('*')
+    .in('id', intakeIds);
+
+  if (!intakes?.length) return 0;
+
+  // Existing client names power the conflict check.
+  let clientNames: string[] = [];
+  try {
+    const { data: cases } = await supabase.from('cases').select('client').limit(500);
+    clientNames = (cases || [])
+      .map(c => String((c as { client?: string }).client || '').trim())
+      .filter(Boolean);
+  } catch { /* conflict check degrades to "cannot determine" without this */ }
+
+  let ran = 0;
+  for (const intake of intakes as IntakeCase[]) {
+    try {
+      const results = await runAssignmentWorkstreams(intake, clientNames);
+      ran += results.length;
+    } catch (err) {
+      console.warn('[intakeAutoWork] drain failed for', intake.id, err);
+    }
+  }
+  return ran;
+}
