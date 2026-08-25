@@ -8,7 +8,7 @@
  * browser requests and stricter IP-based grant pacing.
  */
 
-import { grantDeepgramToken } from './_shared/deepgramToken';
+import { grantDeepgramToken, grantFailureReason, DeepgramGrantError } from './_shared/deepgramToken';
 
 export const config = { runtime: 'edge' };
 
@@ -181,9 +181,16 @@ export default async function handler(req: Request): Promise<Response> {
       expiresIn: grant.expiresIn,
     });
   } catch (error) {
+    // `reason` is a coarse operational code, never credential material. It lets
+    // an operator separate "key missing from this deployment" from "Deepgram
+    // refused the key" without dashboard access. The upstream status stays in
+    // the server log only, since this endpoint is unauthenticated.
+    const reason = grantFailureReason(error);
     console.error('[voice-token-public] grant failed', {
+      reason,
+      providerStatus: error instanceof DeepgramGrantError ? error.providerStatus : undefined,
       message: error instanceof Error ? error.message : 'unknown error',
     });
-    return json(req, { error: 'Voice service is temporarily unavailable.' }, 503);
+    return json(req, { error: 'Voice service is temporarily unavailable.', reason }, 503);
   }
 }
