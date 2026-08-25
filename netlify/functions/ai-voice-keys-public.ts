@@ -12,12 +12,16 @@
  */
 
 import type { Handler, HandlerEvent } from '@netlify/functions';
+import {
+  grantDeepgramToken,
+  grantFailureReason,
+  DeepgramGrantError,
+} from '../../api/ai/_shared/deepgramToken';
 
 const RATE_WINDOW_MS = 60_000;
 const TOKEN_RATE_LIMIT = 10;
 const GENERIC_RATE_LIMIT = 6;
 const AUTH_TIMEOUT_MS = 5_000;
-const GRANT_TIMEOUT_MS = 5_000;
 const GRANT_TTL_SECONDS = 60;
 
 // Best-effort pacing. Netlify may run several concurrent function instances, so
@@ -164,37 +168,6 @@ function takeGrantSlot(event: HandlerEvent, scope: string, limit: number): { all
   return { allowed: true, retryAfter: 0 };
 }
 
-/** Exchange the server-held Deepgram API key for a short-lived bearer token. */
-async function grantDeepgramToken() {
-  const apiKey = (process.env.DEEPGRAM_API_KEY || '').trim();
-  if (!apiKey) throw new Error('Voice service not configured');
-
-  const response = await fetch('https://api.deepgram.com/v1/auth/grant', {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ ttl_seconds: GRANT_TTL_SECONDS }),
-    signal: AbortSignal.timeout(GRANT_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    console.error('[voice-token] Deepgram grant failed', { status: response.status });
-    throw new Error('Voice credential service unavailable');
-  }
-
-  const payload = await response.json() as { access_token?: string; expires_in?: number };
-  const accessToken = String(payload.access_token || '').trim();
-  if (!accessToken) throw new Error('Voice credential service returned no token');
-
-  return {
-    deepgramKey: accessToken,
-    tokenType: 'bearer',
-    expiresIn: Number(payload.expires_in) || GRANT_TTL_SECONDS,
-  };
-}
-
 export const handler: Handler = async event => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: corsHeaders(event), body: '' };
@@ -228,8 +201,19 @@ export const handler: Handler = async event => {
   }
 
   try {
-    return json(event, await grantDeepgramToken());
-  } catch {
-    return json(event, { error: 'Voice credential service unavailable' }, 503);
+    const grant = await grantDeepgramToken(GRANT_TTL_SECONDS);
+    return json(event, {
+      deepgramKey: grant.accessToken,
+      tokenType: 'bearer',
+      expiresIn: grant.expiresIn,
+    });
+  } catch (error) {
+    const reason = grantFailureReason(error);
+    console.error('[voice-token-public] grant failed', {
+      reason,
+      providerStatus: error instanceof DeepgramGrantError ? error.providerStatus : undefined,
+      message: error instanceof Error ? error.message : 'unknown error',
+    });
+    return json(event, { error: 'Voice service is temporarily unavailable.', reason }, 503);
   }
 };

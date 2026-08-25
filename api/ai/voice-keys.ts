@@ -5,7 +5,7 @@
  * Deepgram bearer token. Permanent AI/provider credentials remain server-side.
  */
 
-import { grantDeepgramToken } from './_shared/deepgramToken';
+import { grantDeepgramToken, grantFailureReason, DeepgramGrantError } from './_shared/deepgramToken';
 
 export const config = { runtime: 'edge' };
 
@@ -78,9 +78,15 @@ export default async function handler(req: Request): Promise<Response> {
       expiresIn: grant.expiresIn,
     });
   } catch (error) {
+    const reason = grantFailureReason(error);
+    const providerStatus = error instanceof DeepgramGrantError ? error.providerStatus : undefined;
     console.error('[voice-token] grant failed', {
+      reason,
+      providerStatus,
       message: error instanceof Error ? error.message : 'unknown error',
     });
-    return json(req, { error: 'Voice service is temporarily unavailable.' }, 503);
+    // This caller already proved a valid session, so the upstream status is
+    // included to make provider misconfiguration diagnosable from the client.
+    return json(req, { error: 'Voice service is temporarily unavailable.', reason, providerStatus }, 503);
   }
 }
