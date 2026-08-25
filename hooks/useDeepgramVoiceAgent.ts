@@ -98,6 +98,21 @@ export interface UseDeepgramVoiceAgentOptions {
   speakingRate?: number;
   /** Retained for API compatibility. Permanent ElevenLabs keys are no longer sent to browsers. */
   useElevenLabs?: boolean;
+  /**
+   * Always spoken before `greeting`, and never replaced by greeting
+   * personalization. Use it for anything that must be said on every call
+   * regardless of who is calling — a recording disclosure, for instance.
+   * Personalizing a greeting must not be able to silently drop it.
+   */
+  greetingPrefix?: string;
+  /**
+   * Receives a MediaStream carrying BOTH sides of the call — the caller's mic
+   * and the agent's synthesized speech mixed together — once the audio graph is
+   * live. Used to record the call. Not called unless supplied, so recording is
+   * strictly opt-in at the call site and this hook never captures audio on its
+   * own. The stream ends when stop() tears the graph down.
+   */
+  onRecordingStream?: (stream: MediaStream) => void;
 }
 
 export interface UseDeepgramVoiceAgentResult {
@@ -193,6 +208,8 @@ export function useDeepgramVoiceAgent(
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const outGainRef = useRef<GainNode | null>(null);
+  const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const mixMicSrcRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const nextStartRef = useRef(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const captionTimer = useRef<any>(null);
@@ -229,6 +246,10 @@ export function useDeepgramVoiceAgent(
   const stop = useCallback(() => {
     try { processorRef.current?.disconnect(); } catch { /* noop */ }
     try { sourceRef.current?.disconnect(); } catch { /* noop */ }
+    try { mixMicSrcRef.current?.disconnect(); } catch { /* noop */ }
+    try { mixDestRef.current?.disconnect(); } catch { /* noop */ }
+    mixMicSrcRef.current = null;
+    mixDestRef.current = null;
     processorRef.current = null;
     sourceRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -388,6 +409,26 @@ export function useDeepgramVoiceAgent(
         throw new Error('Microphone access denied. Allow mic access (and use HTTPS) to talk with the team.');
       }
 
+      // Mix both sides of the call into one stream for recording. The mic has
+      // echoCancellation on, so it does not pick the agent up from the
+      // speakers — the agent's audio has to be mixed in deliberately or the
+      // recording captures only the caller. Both nodes hang off outputCtx
+      // because nodes cannot connect across AudioContexts.
+      if (opts.onRecordingStream) {
+        try {
+          const mixDest = outputCtx.createMediaStreamDestination();
+          outGain.connect(mixDest);
+          const mixMicSrc = outputCtx.createMediaStreamSource(micStream);
+          mixMicSrc.connect(mixDest);
+          mixDestRef.current = mixDest;
+          mixMicSrcRef.current = mixMicSrc;
+          opts.onRecordingStream(mixDest.stream);
+        } catch (err) {
+          // Recording is never allowed to take the call down with it.
+          console.warn('[voice] call recording unavailable:', err);
+        }
+      }
+
       // Temporary Deepgram JWTs authenticate with the Bearer scheme.
       const ws = new WebSocket(AGENT_WS_URL, ['bearer', voiceToken]);
       ws.binaryType = 'arraybuffer';
@@ -399,9 +440,14 @@ export function useDeepgramVoiceAgent(
       const prompt = opts.agentId === 'maya'
         ? `${basePrompt}\n\n${MAYA_PROCEDURE_GUARD}`
         : basePrompt;
-      const greeting = opts.agentId === 'maya'
+      const resolvedGreeting = opts.agentId === 'maya'
         ? resolveMayaGreeting(opts.systemInstruction, opts.greeting)
         : opts.greeting;
+      // Applied after personalization on purpose: resolveMayaGreeting replaces
+      // the greeting wholesale for a known client, so a prefix folded into
+      // `greeting` upstream would be dropped for exactly the callers who are
+      // already clients.
+      const greeting = `${opts.greetingPrefix || ''}${resolvedGreeting}`;
 
       ws.onopen = () => {
         // Keep all permanent provider credentials server-side. Deepgram-managed

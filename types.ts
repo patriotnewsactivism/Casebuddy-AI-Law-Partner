@@ -112,6 +112,26 @@ export interface IntakeCase {
   intake: IntakeData;
   score_detail: IntakeScore;
   transcript: { speaker: string; text: string }[];
+
+  // ── Continuity, custody, and assignment ────────────────────────────────────
+  /** 'partial' while a call is live, 'abandoned' once it goes stale, 'complete' when Maya finished. */
+  completion_state?: 'partial' | 'complete' | 'abandoned';
+  /** Bumped on every checkpoint; staleness here is what the follow-up sweep keys on. */
+  last_activity_at?: string;
+  /** Unguessable token letting the caller resume their own unfinished intake. */
+  resume_token?: string;
+  /** True when the caller heard the recording disclosure and audio was captured. */
+  recording_consent?: boolean;
+  /** Object path in the private `intake-recordings` bucket. Never a public URL. */
+  recording_path?: string;
+  recording_seconds?: number;
+  /** Output of the assignment workstreams, keyed by task type. */
+  extracted?: Record<string, { title: string; body: string; openItems: string[] }>;
+  assigned_to?: string;
+  assigned_to_name?: string;
+  assigned_at?: string;
+  followup_count?: number;
+  followup_last_at?: string;
 }
 
 export interface Document {

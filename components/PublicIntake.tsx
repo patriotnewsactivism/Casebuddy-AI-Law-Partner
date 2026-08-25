@@ -7,7 +7,10 @@ import {
 } from 'lucide-react';
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake, callGeminiProxy } from '../services/intakeService';
-import { submitIntake } from '../services/intakeStore';
+import {
+  submitIntake, saveIntakeProgress, resumeIntake, newResumeToken,
+} from '../services/intakeStore';
+import { startIntakeRecorder, uploadIntakeRecording, type IntakeRecorderHandle } from '../services/intakeRecording';
 import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
 import { emailIntakeHandoff, emailClientIntakeConfirmation } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
@@ -26,6 +29,18 @@ import {
 
 // Maya's voice — Thalia is Deepgram's warmest, most natural-sounding American female.
 const MAYA_VOICE = 'aura-2-thalia-en';
+
+// Spoken before anything is captured. Several states require all-party consent
+// to record a call, and these are privileged intake conversations, so the
+// disclosure is said out loud rather than buried in page text — and the
+// caller's acknowledgement is stored with the audio.
+const RECORDING_DISCLOSURE =
+  'Before we start, I want you to know this call is recorded and transcribed so ' +
+  'our attorneys have an accurate record of what you tell me. ';
+
+// How often in-progress intake state is checkpointed to the server. A caller
+// who drops off mid-sentence still leaves everything up to the last checkpoint.
+const PROGRESS_SAVE_MS = 8_000;
 
 // When a client token is present, Maya already knows who she's speaking with
 // This is injected at runtime inside the component after invite resolves
@@ -200,11 +215,30 @@ const TypingIndicator: React.FC = () => (
   </div>
 );
 
-type Phase = 'welcome' | 'talking' | 'processing' | 'result';
+type Phase = 'welcome' | 'talking' | 'processing' | 'result' | 'incomplete';
 
 const PublicIntake: React.FC = () => {
   const { token } = useParams<{ token?: string }>();
   const [firmId, setFirmId] = React.useState<string | null>(null);
+
+  // Continuity: one unguessable token identifies this caller's in-progress
+  // intake. It survives a reload (sessionStorage) so a refresh mid-call resumes
+  // the same record instead of orphaning it and starting a second one.
+  const resumeTokenRef = React.useRef<string>('');
+  if (!resumeTokenRef.current) {
+    const fromUrl = new URLSearchParams(
+      typeof window === 'undefined' ? '' : window.location.search,
+    ).get('resume');
+    let stored = '';
+    try { stored = sessionStorage.getItem('casebuddy_intake_resume') || ''; } catch { /* private mode */ }
+    resumeTokenRef.current = (fromUrl || stored || newResumeToken()).trim();
+    try { sessionStorage.setItem('casebuddy_intake_resume', resumeTokenRef.current); } catch { /* ignore */ }
+  }
+
+  const recorderRef = React.useRef<IntakeRecorderHandle | null>(null);
+  const savedIntakeIdRef = React.useRef<string | null>(null);
+  const finalizedRef = React.useRef(false);
+  const [resumedFrom, setResumedFrom] = React.useState<Partial<IntakeData> | null>(null);
 
   const [clientInvite, setClientInvite] = React.useState<ResolvedClientInvite | null>(null);
   const [mode, setMode] = useState<'voice' | 'chat' | 'form'>('voice');
@@ -281,6 +315,12 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   const voice = useDeepgramVoiceAgent({
     voiceModel: MAYA_VOICE,
     agentId: 'maya',
+    // Consent-gated call recording. The disclosure is spoken in Maya's greeting
+    // before any audio reaches the recorder, and the acknowledgement is stored
+    // with the recording path on the intake row.
+    onRecordingStream: (stream) => {
+      recorderRef.current = startIntakeRecorder(stream);
+    },
     // Use Deepgram's native Aura-2 voice (Thalia — warm, natural American
     // female). The ElevenLabs BYO path opens a second WebSocket to
     // ElevenLabs that fails with FAILED_TO_SPEAK when the voice/key/format
@@ -289,6 +329,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     useElevenLabs: false,
     systemInstruction,
     greeting: mayaProfile.greeting,
+    greetingPrefix: RECORDING_DISCLOSURE,
     publicEndpoint: true,
   });
   const { status, error, liveCaption, transcript, inputLevel, agentSpeaking, start, stop } = voice;
@@ -296,6 +337,84 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, liveCaption]);
+
+  // Cheap contact sniffing for in-call checkpoints. Running the full AI
+  // extractor every few seconds would be wasteful and slow; an email address is
+  // all a follow-up actually needs, and the full extraction runs once at the
+  // end. Only the caller's own turns are scanned so Maya reading an address
+  // back cannot be mistaken for the caller supplying one.
+  const sniffContact = useCallback((turns: { speaker: string; text: string }[]) => {
+    const said = turns.filter(t => t.speaker === 'you').map(t => t.text).join(' ');
+    const email = said.match(/[\w.+-]+@[\w-]+\.[\w.]{2,}/)?.[0] || '';
+    const phone = said.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)?.[0] || '';
+    return { email: email.trim(), phone: phone.trim() };
+  }, []);
+
+  // Resume a caller who dropped off earlier and came back via their link.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('resume');
+    if (!token) return;
+    let cancelled = false;
+    void resumeIntake(token).then(prior => {
+      if (cancelled || !prior) return;
+      savedIntakeIdRef.current = prior.intake_id;
+      setResumedFrom(prior.intake as Partial<IntakeData>);
+      if (prior.firm_id) setFirmId(prior.firm_id);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Checkpoint in-progress intakes. An abandoned call still leaves a
+  // contactable record, and `last_activity_at` going stale is what the
+  // server-side sweep keys on — so recovery never depends on catching an
+  // unload event, which browsers do not reliably deliver.
+  useEffect(() => {
+    if (phase !== 'talking' || transcript.length === 0 || finalizedRef.current) return;
+    const timer = setInterval(() => {
+      const { email, phone } = sniffContact(transcript);
+      void saveIntakeProgress({
+        resumeToken: resumeTokenRef.current,
+        firmId: firmId ?? undefined,
+        completion: 'partial',
+        intake: {
+          fullName: clientInvite?.client_name || '',
+          contact: clientInvite?.client_email || email || clientInvite?.client_phone || phone,
+          email: clientInvite?.client_email || email,
+          phone: clientInvite?.client_phone || phone,
+        },
+        transcript,
+        recordingConsent: Boolean(recorderRef.current?.active),
+        clientInviteId: clientInvite?.invite_id || undefined,
+      }).then(id => { if (id) savedIntakeIdRef.current = id; });
+    }, PROGRESS_SAVE_MS);
+    return () => clearInterval(timer);
+  }, [phase, transcript, firmId, clientInvite, sniffContact]);
+
+  // Best-effort last word when the tab goes away. keepalive lets the request
+  // outlive the page; if it is dropped anyway the staleness sweep still finds
+  // this intake from its last checkpoint.
+  useEffect(() => {
+    const onHide = () => {
+      if (finalizedRef.current || transcript.length === 0) return;
+      const { email, phone } = sniffContact(transcript);
+      void saveIntakeProgress({
+        resumeToken: resumeTokenRef.current,
+        firmId: firmId ?? undefined,
+        completion: 'abandoned',
+        intake: {
+          fullName: clientInvite?.client_name || '',
+          contact: clientInvite?.client_email || email || phone,
+          email: clientInvite?.client_email || email,
+          phone: clientInvite?.client_phone || phone,
+        },
+        transcript,
+        recordingConsent: Boolean(recorderRef.current?.active),
+      });
+    };
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, [transcript, firmId, clientInvite, sniffContact]);
 
   // Language detection disabled — user requested English only unless explicitly specified.
 
@@ -311,22 +430,45 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       }
     }
 
+    finalizedRef.current = true;
     let intakeId: string | undefined;
     try {
-      const result = await submitIntake({
-        firmId:         firmId ?? undefined,
-        clientInviteId: clientInvite?.invite_id,
-        intake,
-        score: finalScore,
-        transcript: transcriptForSave,
-      });
-      intakeId = result?.id;
-      // Mark the invite as completed so attorney can track it
-      if (clientInvite?.invite_id && result?.id) {
-        void markInviteCompleted(clientInvite.invite_id, result.id);
+      if (mode === 'voice') {
+        // A voice call has been checkpointing all along under its resume token.
+        // Finalize that same row — calling submitIntake here would insert a
+        // second, duplicate intake for one conversation and leave the partial
+        // behind to be chased as if the caller had never finished.
+        const { recordingPath, recordingSeconds } = await finalizeRecording(savedIntakeIdRef.current);
+        const id = await saveIntakeProgress({
+          resumeToken:    resumeTokenRef.current,
+          firmId:         firmId ?? undefined,
+          completion:     'complete',
+          intake,
+          score:          finalScore,
+          transcript:     transcriptForSave,
+          recordingPath,
+          recordingSeconds,
+          recordingConsent: Boolean(recordingPath),
+          clientInviteId: clientInvite?.invite_id || undefined,
+        });
+        intakeId = id || savedIntakeIdRef.current || undefined;
+      } else {
+        const result = await submitIntake({
+          firmId:         firmId ?? undefined,
+          clientInviteId: clientInvite?.invite_id,
+          intake,
+          score: finalScore,
+          transcript: transcriptForSave,
+        });
+        intakeId = result?.id;
       }
+      // Mark the invite as completed so attorney can track it
+      if (clientInvite?.invite_id && intakeId) {
+        void markInviteCompleted(clientInvite.invite_id, intakeId);
+      }
+      try { sessionStorage.removeItem('casebuddy_intake_resume'); } catch { /* ignore */ }
     } catch (saveErr: any) {
-      console.error('[PublicIntake] submitIntake failed:', saveErr?.message);
+      console.error('[PublicIntake] intake save failed:', saveErr?.message);
     }
     // Hand the case off to the routed specialist by email
     void emailIntakeHandoff(intake, finalScore);
@@ -374,9 +516,58 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     }
   };
 
+  /**
+   * Stop the recorder and store the audio against the intake. Returns what the
+   * intake row should record about it. Never throws — a recording that fails to
+   * upload must not cost us the intake itself.
+   */
+  const finalizeRecording = async (intakeId: string | null) => {
+    const handle = recorderRef.current;
+    recorderRef.current = null;
+    if (!handle?.active) return { recordingPath: undefined, recordingSeconds: 0 };
+
+    try {
+      const recording = await handle.stop();
+      if (!recording || !intakeId || !firmIdForUpload()) {
+        return { recordingPath: undefined, recordingSeconds: recording?.seconds || 0 };
+      }
+      const stored = await uploadIntakeRecording({
+        recording,
+        firmId: firmIdForUpload()!,
+        intakeId,
+      });
+      return {
+        recordingPath: stored?.path,
+        recordingSeconds: stored?.seconds ?? recording.seconds,
+      };
+    } catch (err) {
+      console.warn('[PublicIntake] recording finalize failed:', err);
+      return { recordingPath: undefined, recordingSeconds: 0 };
+    }
+  };
+
+  const firmIdForUpload = (): string | null =>
+    firmId || ((import.meta.env.VITE_FIRM_ID as string | undefined) || '').trim() || null;
+
+  /**
+   * Did Maya actually get the story? Her procedure takes name and contact
+   * before the narrative, so a call that ends with contact details but no
+   * matter summary is someone who left partway — that must be recorded as
+   * unfinished and followed up, not scored and filed as a real intake.
+   */
+  const looksComplete = (intake: IntakeData): boolean => {
+    const summary = (intake.summary || '').trim();
+    const narrative = (intake.detailedNarrative || '').trim();
+    const callerTurns = transcript.filter(t => t.speaker === 'you').length;
+    return (summary.length > 25 || narrative.length > 80) && callerTurns >= 3;
+  };
+
   const finish = async () => {
     stop();
+
+    // Nothing was said at all — no record to keep, and nothing to follow up on.
     if (transcript.length === 0) {
+      void finalizeRecording(null);
       setPhase('welcome');
       return;
     }
@@ -388,6 +579,35 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     } catch {
       intake = fallbackIntake(transcript);
     }
+
+    if (!looksComplete(intake)) {
+      finalizedRef.current = true;
+      const id = await saveIntakeProgress({
+        resumeToken: resumeTokenRef.current,
+        firmId: firmId ?? undefined,
+        completion: 'abandoned',
+        intake,
+        transcript,
+        recordingConsent: Boolean(recorderRef.current?.active),
+        clientInviteId: clientInvite?.invite_id || undefined,
+      });
+      savedIntakeIdRef.current = id || savedIntakeIdRef.current;
+
+      const { recordingPath, recordingSeconds } = await finalizeRecording(savedIntakeIdRef.current);
+      if (recordingPath) {
+        await saveIntakeProgress({
+          resumeToken: resumeTokenRef.current,
+          firmId: firmId ?? undefined,
+          completion: 'abandoned',
+          recordingPath,
+          recordingSeconds,
+          recordingConsent: true,
+        });
+      }
+      setPhase('incomplete');
+      return;
+    }
+
     await finishIntake(intake, null, transcript);
   };
 
@@ -874,6 +1094,31 @@ Return ONLY valid JSON:
               <Loader2 size={40} className="animate-spin text-gold-400 mx-auto mb-4" />
               <p className="text-slate-300 font-medium">Reviewing your intake…</p>
               <p className="text-slate-500 text-sm mt-1">This takes just a moment.</p>
+            </div>
+          )}
+
+          {phase === 'incomplete' && (
+            <div className="text-center">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+                <Clock size={44} className="text-gold-400 mx-auto mb-4" />
+                <h2 className="text-2xl font-serif font-bold text-white">We saved what you told us</h2>
+                <p className="text-slate-400 mt-3 max-w-md mx-auto leading-relaxed">
+                  We didn't get all the way through, but nothing you shared was lost.
+                  Someone from the firm will follow up so we can finish — or you can
+                  pick up right where you left off whenever you're ready.
+                </p>
+                <button
+                  onClick={() => { finalizedRef.current = false; setPhase('welcome'); }}
+                  className="mt-6 inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400
+                             text-slate-950 font-semibold px-6 py-3 rounded-lg transition-colors"
+                >
+                  <Phone size={16} /> Continue my intake
+                </button>
+                <p className="text-slate-600 text-xs mt-5">
+                  If anything in your situation has a court date or filing deadline,
+                  tell us as soon as you can — timing matters more than anything else.
+                </p>
+              </div>
             </div>
           )}
 
