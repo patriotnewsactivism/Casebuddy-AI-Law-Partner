@@ -1,16 +1,170 @@
-import type { Handler } from '@netlify/functions';
+/**
+ * Public intake voice credential broker (Netlify parity implementation).
+ *
+ * Mirrors `api/ai/voice-keys-public.ts`. This endpoint never returns permanent
+ * provider credentials: it exchanges the server-held Deepgram API key for a
+ * short-lived bearer token. Client/firm-specific intake links are validated
+ * through the scoped Supabase RPC; the generic /intake entrypoint is limited to
+ * same-origin browser requests and stricter IP-based grant pacing.
+ *
+ * Netlify and Vercel must stay behaviourally equivalent — see CLAUDE.md. Do not
+ * relax the caller checks here to make a preview deploy work.
+ */
 
-const CORS = {
-  'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || 'https://casebuddy.live',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'no-store',
-};
+import type { Handler, HandlerEvent } from '@netlify/functions';
 
 const RATE_WINDOW_MS = 60_000;
-const RATE_LIMIT = 10;
-const grantsByIp = new Map<string, { count: number; resetAt: number }>();
+const TOKEN_RATE_LIMIT = 10;
+const GENERIC_RATE_LIMIT = 6;
+const AUTH_TIMEOUT_MS = 5_000;
+const GRANT_TIMEOUT_MS = 5_000;
+const GRANT_TTL_SECONDS = 60;
 
+// Best-effort pacing. Netlify may run several concurrent function instances, so
+// this bounds abuse per instance rather than acting as a global quota; the
+// 60-second token TTL remains the primary blast-radius control.
+const grantsByKey = new Map<string, { count: number; resetAt: number }>();
+
+const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+function configuredOrigins(): string[] {
+  return (process.env.ALLOWED_ORIGIN || 'https://casebuddy.live')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+}
+
+function header(event: HandlerEvent, name: string): string {
+  return (event.headers[name] || event.headers[name.toLowerCase()] || '').trim();
+}
+
+function requestOrigin(event: HandlerEvent): string {
+  try {
+    return new URL(event.rawUrl).origin;
+  } catch {
+    return '';
+  }
+}
+
+function isSameOrigin(event: HandlerEvent): boolean {
+  const origin = header(event, 'origin');
+  const ownOrigin = requestOrigin(event);
+  return Boolean(origin && ownOrigin && origin === ownOrigin);
+}
+
+function corsHeaders(event: HandlerEvent): Record<string, string> {
+  const configured = configuredOrigins();
+  const origin = header(event, 'origin');
+  const ownOrigin = requestOrigin(event);
+  const allowedOrigin = origin && (origin === ownOrigin || configured.includes(origin))
+    ? origin
+    : configured[0];
+
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Intake-Token',
+    'Cache-Control': 'no-store',
+    Vary: 'Origin',
+  };
+}
+
+const json = (
+  event: HandlerEvent,
+  body: object,
+  statusCode = 200,
+  extraHeaders: Record<string, string> = {},
+) => ({
+  statusCode,
+  headers: { ...corsHeaders(event), ...extraHeaders, 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+function clientIp(event: HandlerEvent): string {
+  const forwarded = header(event, 'x-forwarded-for');
+  return (
+    header(event, 'x-nf-client-connection-ip') ||
+    forwarded.split(',')[0]?.trim() ||
+    'unknown'
+  );
+}
+
+function intakeTokenFromRequest(event: HandlerEvent): string | null {
+  const explicit = header(event, 'x-intake-token');
+  if (explicit) return explicit;
+
+  const referrer = header(event, 'referer');
+  if (!referrer) return null;
+  try {
+    const url = new URL(referrer);
+    const match = url.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+    if (!match?.[1]) return null;
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function isGenericPublicIntakeRequest(event: HandlerEvent): boolean {
+  if (!isSameOrigin(event)) return false;
+
+  const referrer = header(event, 'referer');
+  if (!referrer) return false;
+  try {
+    const url = new URL(referrer);
+    if (url.origin !== requestOrigin(event)) return false;
+    return /^\/intake\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function validIntakeToken(token: string): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+  const candidate = token.trim();
+  if (candidate.length < 5 || candidate.length > 64) return false;
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/resolve_public_intake_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ p_token: candidate }),
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+    });
+    if (!response.ok) return false;
+
+    const payload = await response.json() as unknown;
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    return Boolean(row && typeof row === 'object' && (row as { firm_id?: string }).firm_id);
+  } catch {
+    return false;
+  }
+}
+
+function takeGrantSlot(event: HandlerEvent, scope: string, limit: number): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+  const key = `${clientIp(event)}:${scope}`;
+  const current = grantsByKey.get(key);
+
+  if (!current || current.resetAt <= now) {
+    grantsByKey.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return { allowed: true, retryAfter: 0 };
+  }
+
+  if (current.count >= limit) {
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+  }
+
+  current.count += 1;
+  return { allowed: true, retryAfter: 0 };
+}
+
+/** Exchange the server-held Deepgram API key for a short-lived bearer token. */
 async function grantDeepgramToken() {
   const apiKey = (process.env.DEEPGRAM_API_KEY || '').trim();
   if (!apiKey) throw new Error('Voice service not configured');
@@ -21,60 +175,61 @@ async function grantDeepgramToken() {
       Authorization: `Token ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ ttl_seconds: 60 }),
-    signal: AbortSignal.timeout(5_000),
+    body: JSON.stringify({ ttl_seconds: GRANT_TTL_SECONDS }),
+    signal: AbortSignal.timeout(GRANT_TIMEOUT_MS),
   });
 
-  if (!response.ok) throw new Error('Voice credential service unavailable');
+  if (!response.ok) {
+    console.error('[voice-token] Deepgram grant failed', { status: response.status });
+    throw new Error('Voice credential service unavailable');
+  }
+
   const payload = await response.json() as { access_token?: string; expires_in?: number };
-  if (!payload.access_token) throw new Error('Voice credential service returned no token');
+  const accessToken = String(payload.access_token || '').trim();
+  if (!accessToken) throw new Error('Voice credential service returned no token');
 
   return {
-    deepgramKey: payload.access_token,
+    deepgramKey: accessToken,
     tokenType: 'bearer',
-    expiresIn: Number(payload.expires_in) || 60,
+    expiresIn: Number(payload.expires_in) || GRANT_TTL_SECONDS,
   };
 }
 
-function takeGrantSlot(ip: string): { allowed: boolean; retryAfter: number } {
-  const now = Date.now();
-  const current = grantsByIp.get(ip);
-  if (!current || current.resetAt <= now) {
-    grantsByIp.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, retryAfter: 0 };
-  }
-  if (current.count >= RATE_LIMIT) {
-    return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
-  }
-  current.count += 1;
-  return { allowed: true, retryAfter: 0 };
-}
-
 export const handler: Handler = async event => {
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
+  }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return json(event, { error: 'Method not allowed' }, 405);
   }
 
-  const forwarded = event.headers['x-forwarded-for'] || '';
-  const ip = (event.headers['x-nf-client-connection-ip'] || forwarded.split(',')[0] || 'unknown').trim();
-  const slot = takeGrantSlot(ip);
+  const intakeToken = intakeTokenFromRequest(event);
+  let scope = 'generic';
+  let limit = GENERIC_RATE_LIMIT;
+
+  if (intakeToken) {
+    if (!(await validIntakeToken(intakeToken))) {
+      return json(event, { error: 'A valid intake link is required for this voice session.' }, 401);
+    }
+    scope = `token:${intakeToken.slice(-8)}`;
+    limit = TOKEN_RATE_LIMIT;
+  } else if (!isGenericPublicIntakeRequest(event)) {
+    return json(event, { error: 'Public voice access is limited to the CaseBuddy intake experience.' }, 401);
+  }
+
+  const slot = takeGrantSlot(event, scope, limit);
   if (!slot.allowed) {
-    return {
-      statusCode: 429,
-      headers: { ...CORS, 'Retry-After': String(slot.retryAfter) },
-      body: JSON.stringify({ error: 'Too many voice credential requests. Please try again shortly.' }),
-    };
+    return json(
+      event,
+      { error: 'Too many voice credential requests. Please try again shortly.' },
+      429,
+      { 'Retry-After': String(slot.retryAfter) },
+    );
   }
 
   try {
-    const token = await grantDeepgramToken();
-    return { statusCode: 200, headers: CORS, body: JSON.stringify(token) };
+    return json(event, await grantDeepgramToken());
   } catch {
-    return {
-      statusCode: 503,
-      headers: CORS,
-      body: JSON.stringify({ error: 'Voice credential service unavailable' }),
-    };
+    return json(event, { error: 'Voice credential service unavailable' }, 503);
   }
 };

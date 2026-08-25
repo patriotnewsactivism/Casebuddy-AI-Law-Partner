@@ -13,6 +13,8 @@
     "services/runtimeKeys.ts",
     "api/ai/_shared/deepgramToken.ts",
     "api/ai/voice-keys.ts",
-    "api/ai/voice-keys-public.ts"
+    "api/ai/voice-keys-public.ts",
+    "netlify/functions/ai-voice-keys.ts",
+    "netlify/functions/ai-voice-keys-public.ts"
   ]
 }
