@@ -3,9 +3,14 @@
  *
  * All provider selection and permanent credentials live behind /api/ai/chat.
  * Browser code must not fall back to direct provider calls or VITE_* secrets.
+ *
+ * Trust paths:
+ * - signed-in CaseBuddy users send their Supabase access token;
+ * - public intake pages send only the scoped intake-link token from the URL.
  */
 
 import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
+import { getSession } from './authService';
 
 export interface DeepSeekParams {
   systemInstruction?: string;
@@ -30,6 +35,40 @@ function cleanJsonResponse(text: string): string {
   return cleaned;
 }
 
+function publicIntakeTokenFromPath(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch {
+    return match[1].trim() || null;
+  }
+}
+
+/**
+ * Authorization headers shared by all browser → CaseBuddy AI proxy calls.
+ * Only a short-lived Supabase access token or a scoped public-intake token is
+ * sent. Permanent provider credentials never enter the browser.
+ */
+export async function buildAIProxyHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+  try {
+    const session = await getSession();
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`;
+      return headers;
+    }
+  } catch {
+    // Public intake has no authenticated session; fall through to its scoped token.
+  }
+
+  const intakeToken = publicIntakeTokenFromPath();
+  if (intakeToken) headers['X-Intake-Token'] = intakeToken;
+  return headers;
+}
+
 async function callServerProxy(params: DeepSeekParams): Promise<string> {
   const messages = params.messages.map((message) => ({
     role: message.role,
@@ -51,12 +90,11 @@ async function callServerProxy(params: DeepSeekParams): Promise<string> {
 
   const response = await fetch('/api/ai/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await buildAIProxyHeaders(),
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    // Do not echo provider/upstream response bodies into browser-visible errors.
     throw new Error(`AI service unavailable (${response.status})`);
   }
 

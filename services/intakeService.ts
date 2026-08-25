@@ -1,12 +1,9 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { getGeminiKey } from './runtimeKeys';
 import { IntakeData, IntakeScore } from '../types';
 import { LEGAL_SPECIALISTS } from '../agents/personas';
-import { retryWithBackoff, withTimeout } from '../utils/errorHandler';
-import { deepseekChat } from './deepseek';
+import { retryWithBackoff } from '../utils/errorHandler';
+import { buildAIProxyHeaders, deepseekChat } from './deepseek';
 
-// Intake text analysis uses DeepSeek as primary (per project architecture).
-// Gemini is only used for multimodal (OCR/transcription).
+// Intake text analysis uses the canonical CaseBuddy multi-provider proxy.
 const callDeepSeekJson = async (system: string, user: string, maxTokens = 3000): Promise<string> => {
   const text = await deepseekChat({
     systemInstruction: system,
@@ -19,21 +16,18 @@ const callDeepSeekJson = async (system: string, user: string, maxTokens = 3000):
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 };
 
-// Intake AI calls go through the server-side proxy (/api/ai/gemini), which holds
-// the GEMINI_API_KEY. This keeps the key out of the browser and avoids depending
-// on a per-session client key that may be missing or restricted — the cause of
-// intakes silently failing at the extraction step. If the proxy isn't reachable
-// (e.g. a host without the edge function) we fall back to direct browser call.
+// Gemini remains an authenticated/scoped fallback for intake-specific generation.
+// The provider credential stays on the server. Signed-in users send a Supabase
+// access token; public intake pages send only the scoped intake-link token.
 const callGeminiProxy = async (params: {
   model: string;
   contents: unknown;
   config?: unknown;
 }): Promise<string> => {
-  // Retry on rate limit or transient errors
   return retryWithBackoff(async () => {
     const resp = await fetch('/api/ai/gemini', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await buildAIProxyHeaders(),
       body: JSON.stringify(params),
     });
     if (!resp.ok) {
@@ -42,7 +36,6 @@ const callGeminiProxy = async (params: {
         const body = await resp.json();
         if (body?.error) message = body.error;
       } catch { /* non-JSON error body */ }
-      // Retry on rate limit, throw on other errors
       if (resp.status === 429) throw new Error(message);
       throw new Error(message);
     }
@@ -56,7 +49,7 @@ const callGeminiProxy = async (params: {
   }, 3);
 };
 
-/** Export the proxy caller for use by IntakePage.tsx */
+/** Export the proxy caller for intake UI fallbacks. */
 export { callGeminiProxy };
 
 // Score at/above this is auto-accepted; below ACCEPT but at/above REVIEW goes to
@@ -71,9 +64,7 @@ const transcriptToText = (transcript: Turn[]): string =>
     .map(t => `${t.speaker === 'you' || t.speaker === 'user' ? 'CLIENT' : 'MAYA'}: ${t.text}`)
     .join('\n');
 
-/**
- * Parse a model's JSON response defensively.
- */
+/** Parse a model's JSON response defensively. */
 const safeParseJson = <T = any>(raw: string | undefined, context: string): T => {
   const text = (raw || '').trim();
   if (!text) throw new Error(`${context}: empty response from model`);
@@ -99,12 +90,11 @@ const safeParseJson = <T = any>(raw: string | undefined, context: string): T => 
 
 /**
  * Distill a free-form intake conversation into a structured IntakeData record.
- * Uses DeepSeek as primary (per project architecture) with Gemini fallback.
+ * Uses the CaseBuddy multi-provider proxy with a scoped Gemini fallback.
  */
 export const extractIntake = async (transcript: Turn[]): Promise<IntakeData> => {
   const convo = transcriptToText(transcript);
   return retryWithBackoff(async () => {
-    // DeepSeek is the primary text model per project architecture
     const text = await callDeepSeekJson(
       `You are the senior intake analyst for a law firm. Read the full intake call between MAYA (the firm's intake specialist) and a prospective CLIENT, and produce a thorough, faithful case report the attorneys can act on.
 
@@ -125,8 +115,7 @@ FIELD GUIDANCE:
 - "clientQuotes": a few short, exact verbatim quotes in the client's own words.
 - "openQuestions": important things that are still unknown or unclear.
 - "matterType": the legal practice area in plain English.
-
-- "email": the client's email address, exactly as stated. Maya's call flow requires asking for both a phone number and an email — capture whichever/however many were actually given.
+- "email": the client's email address, exactly as stated.
 - "phone": the client's phone number, exactly as stated.
 
 Return ONLY valid JSON with these fields: fullName, contact, email, phone, matterType, jurisdiction, summary, detailedNarrative, incidentDate, opposingParties, deadlines, injuriesOrDamages, desiredOutcome, priorCounsel, witnesses, evidenceMentioned, financialImpact, priorLegalActions, emotionalState, keyFacts, clientQuotes, openQuestions, timeline, parties.`,
@@ -135,10 +124,6 @@ Return ONLY valid JSON with these fields: fullName, contact, email, phone, matte
     );
     const data = safeParseJson<Partial<IntakeData>>(text, 'extractIntake');
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-    // Coerce any field that MUST be a plain string — AI JSON output sometimes
-    // returns an object (e.g. {name, role}) here instead of a string, which
-    // crashes React with "Objects are not valid as a React child" if rendered
-    // directly. Never trust the model's typing; always sanitize before use.
     const str = (v: unknown, fallback = ''): string => {
       if (typeof v === 'string') return v;
       if (v == null) return fallback;
@@ -150,7 +135,6 @@ Return ONLY valid JSON with these fields: fullName, contact, email, phone, matte
       }
       if (typeof v === 'object') {
         const obj = v as Record<string, unknown>;
-        // Common shapes: {name, role}, {name}, {event, date}
         return String(obj.name || obj.event || obj.title || obj.value || JSON.stringify(obj)) || fallback;
       }
       return String(v) || fallback;
@@ -181,7 +165,7 @@ Return ONLY valid JSON with these fields: fullName, contact, email, phone, matte
       timeline: arr<{ date: string; event: string }>(data.timeline),
       parties: arr<{ name: string; role: string }>(data.parties),
     };
-}, 3);
+  }, 3);
 };
 
 const specialistList = LEGAL_SPECIALISTS.map(
@@ -190,7 +174,7 @@ const specialistList = LEGAL_SPECIALISTS.map(
 
 /**
  * Score the intake for case strength + firm fit, decide a disposition, and route
- * it to the right specialist department. Uses DeepSeek as primary.
+ * it to the right specialist department.
  */
 export const scoreIntake = async (intake: IntakeData): Promise<IntakeScore> => {
   return retryWithBackoff(async () => {

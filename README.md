@@ -1,98 +1,128 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# CaseBuddy
 
-# CaseBuddy AI Lawfirm
+**Legal work, unified.**
 
-An AI-powered all in one agentic lawfirm with secure, server-side API handling.
+CaseBuddy is an all-in-one agentic legal-work platform for self-represented litigants and defendants, solo practitioners, and multi-attorney law firms. It brings case management, evidence and discovery, legal research, drafting, deadlines, client workflows, trial preparation, and firm operations into one matter-centered system.
 
-## Architecture Overview
+Production: `https://casebuddy.live`
 
-CaseBuddy AI Lawfirm uses a modern, secure architecture with **Supabase** as the backend:
+## Product direction
 
-- **Frontend**: React 19 + TypeScript + Tailwind CSS
-- **Backend**: Supabase (PostgreSQL + Auth + RLS + Realtime)
-- **Hosting**: Vercel (static build + serverless API routes)
-- **AI**: Google Gemini (primary), Deepgram (voice)
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   React App     │─────▶│  Supabase Edge   │─────▶│  External APIs  │
-│   (Frontend)    │      │    Functions     │      │  (Gemini, etc.) │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
-        │                        │
-        │                        │
-        ▼                        ▼
-┌─────────────────────────────────────────────────┐
-│              Supabase Platform                   │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────┐ │
-│  │  PostgreSQL │  │    Auth     │  │ Storage  │ │
-│  │  Database   │  │   Service   │  │ Buckets  │ │
-│  └─────────────┘  └─────────────┘  └──────────┘ │
-└─────────────────────────────────────────────────┘
-```
+CaseBuddy is one product — not a collection of separate “AI law partner,” “case companion,” discovery, OCR, and trial-prep applications.
 
-## Security Features
+The canonical commercial codebase is this repository. Strong capabilities from older CaseBuddy repositories are being migrated here behind a common authentication, tenancy, matter, document, and audit model.
 
-- **No exposed API keys**: All third-party API keys are stored server-side 
-- **Row Level Security (RLS)**: Database-level access control ensuring users can only access their own data
-- **Authentication**: Built-in user authentication 
-- **Rate limiting**: Per-user rate limiting on all Edge Functions
-- **Secure file storage**: User-isolated storage buckets
+See:
 
-## Quick Start
+- [`docs/PLATFORM_ARCHITECTURE.md`](./docs/PLATFORM_ARCHITECTURE.md)
+- [`docs/MODULE_MIGRATION_MATRIX.md`](./docs/MODULE_MIGRATION_MATRIX.md)
+- [`docs/CONSOLIDATION_PLAN.md`](./docs/CONSOLIDATION_PLAN.md)
+- [`SECURITY.md`](./SECURITY.md)
 
-**Prerequisites:**
-- Node.js 18+
+## Core experience
 
-### 1. Clone and Install
+### Ask CaseBuddy
+
+Users should be able to start with the legal problem or task rather than guessing which module to open.
+
+Ask CaseBuddy routes a plain-English request to the appropriate legal-work department or practice-area specialist while keeping the active matter context attached. Dedicated workspaces remain available when the user needs a deeper workflow.
+
+### Matter-centered workspaces
+
+Current platform areas include:
+
+- case files and intake;
+- evidence vault and discovery;
+- OCR and transcription;
+- legal research and strategy;
+- drafting and work product;
+- deadlines and case pipeline;
+- witness and deposition preparation;
+- trial and jury simulation;
+- client portal and communications;
+- billing, CRM/growth, analytics, and firm command;
+- connected-app and media workflows.
+
+## Architecture
+
+### Web
+
+- React 19 + TypeScript
+- Vite
+- Tailwind CSS
+- Vercel production hosting and short-lived API routes
+
+### Backend
+
+- Supabase PostgreSQL
+- Supabase Auth
+- Row Level Security
+- Supabase Storage for private matter files
+- Realtime where useful for collaboration
+
+### AI / voice
+
+Permanent third-party provider credentials stay server-side. Browser code uses CaseBuddy server endpoints or short-lived provider grants where supported.
+
+The model/provider layer is intentionally replaceable. Domain logic should not depend on one model vendor.
+
+### Background processing
+
+Supabase Edge Functions and authenticated workers handle asynchronous work. Long-running discovery/media/OCR/export workloads may be moved to dedicated worker infrastructure when request-lifetime limits make that appropriate.
+
+## Security principles
+
+CaseBuddy handles information that can be confidential, privileged, or highly sensitive.
+
+- No permanent AI/provider secrets in browser bundles.
+- Tenant, firm, user, and matter boundaries are enforced at the data layer.
+- Sensitive object storage is private; temporary access uses authenticated or signed URLs.
+- Service-role and internal worker credentials are server-only.
+- Consequential external actions should remain reviewable and require explicit authorization.
+- Agent/research output must distinguish record facts, allegations, inference, legal analysis, and items requiring verification.
+
+The normal production build includes a client-secret sentinel:
 
 ```bash
-git clone <repository-url>
-cd Casebuddy-AI-Lawfirm
+npm run build
+```
+
+This runs the security-focused TypeScript gate, Vite production build, and emitted-bundle credential scan.
+
+## Development
+
+Prerequisite: Node.js 18+.
+
+```bash
 npm install
-```
-
-
-### 4. Run Locally
-
-```bash
 npm run dev
 ```
 
-The app will be available at `http://localhost:5000`.
+Production verification:
 
-## Documentation
+```bash
+npm run build
+```
 
-- **[SETUP.md](./SETUP.md)** - Detailed setup instructions
-- **[SECURITY.md](./SECURITY.md)** - Security architecture and best practices
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture overview
-- **[AGENTS.md](./AGENTS.md)** - Development guidelines for AI assistants
+Additional scripts:
 
-## Available Scripts
+```bash
+npm run typecheck
+npm run typecheck:security
+npm run check:client-secrets
+npm run verify:security
+```
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server on port 5000 |
-| `npm run build` | Create production build |
-| `npm run preview` | Preview production build locally |
+Environment configuration belongs in local/deployment secrets. Use `.env.example` for variable names and never commit real credentials.
 
-## Features
+## Consolidation policy
 
-- **Case Management**: Create, organize, and track legal cases
-- **Evidence Management**: Upload and analyze evidence with AI
-- **Witness Lab**: AI-powered witness preparation simulations
-- **Strategy Room**: AI-assisted case strategy analysis
-- **Transcriber**: Audio transcription with AI analysis
-- **Drafting Assistant**: AI-powered legal document drafting
-- **Voice Features**: Text-to-speech and speech-to-text capabilities
+New shared CaseBuddy product work lands here by default.
 
-## Tech Stack
+Legacy CaseBuddy repositories are donor sources. Useful capabilities, prompts, tests, migrations, and workflow logic are ported into the canonical platform. Redundant frontends and services are archived only after parity, data migration, redirects, credentials, and rollback boundaries are verified.
 
-- **Frontend**: React 19, TypeScript, Tailwind CSS
-- **Build Tool**: Vite
-- **Backend**: Supabase (PostgreSQL, Auth, RLS, Realtime)
-- **Hosting**: Vercel (serverless API routes + cron jobs)
-- **AI**: Google Gemini (primary), Deepgram (voice/STT)
+The first major consolidation workstream is **Discovery**, combining the strongest parts of DiscoveryLens, case-companion, the Discovery Scraper, and the existing canonical document/OCR/transcription pipeline.
 
-## License
+## Legal-use boundary
 
-MIT
+CaseBuddy assists with organization, research, analysis, drafting, preparation, and legal workflows. It does not guarantee outcomes and must not represent fictional AI personas as real licensed attorneys. Users should obtain licensed legal counsel where appropriate.
