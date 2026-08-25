@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSession } from '../services/authService';
-import { getElevenLabsVoiceId } from '../agents/voiceProfiles';
 
 // Live voice pipeline:
 //   Deepgram Voice Agent (ears + managed LLM + Aura-2 mouth)
@@ -24,6 +23,20 @@ const EOT_THRESHOLD = 0.8;
 const EOT_TIMEOUT_MS = 8000;
 const BARGE_FADE_MS = 90;
 
+const MAYA_PROCEDURE_GUARD = `
+NON-NEGOTIABLE MAYA INTAKE PROCEDURE:
+- Work from the entire conversation state, not only the caller's latest sentence.
+- Never ask for a fact the caller already provided. If they volunteer multiple facts at once, retain all of them and advance to the next missing item.
+- For a new prospect, gather in this order: (1) name, (2) BOTH phone number and email address, then (3) invite the full story.
+- Do not ask "what's going on?" before name + both contact methods are known, unless the system context explicitly says those details are already on file.
+- If client context already provides name, phone, or email, treat those fields as KNOWN and do not re-ask them unless the caller asks to update them.
+- After the caller's uninterrupted story, collect only what is still missing: when it happened, opposing party, injuries/damages/financial impact, desired outcome, prior counsel if relevant, deadlines/court dates, urgency, and a consultation time.
+- Ask one question at a time. Do not interrupt a caller who is still telling the story. Silence and pauses are acceptable.
+- Confirm phone/email once, not repeatedly. Confirm the consultation time once at the end.
+- Never give legal advice or invent facts.
+- Keep the language of the active system prompt. If the intake is in Spanish, follow this exact procedure in Spanish.
+`;
+
 function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
   if (fromRate === toRate) return input;
   const ratio = fromRate / toRate;
@@ -34,6 +47,30 @@ function resample(input: Float32Array, fromRate: number, toRate: number): Float3
     result[i] = input[nextIndex];
   }
   return result;
+}
+
+function currentPublicIntakeToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch {
+    return match[1].trim() || null;
+  }
+}
+
+function resolveMayaGreeting(systemInstruction: string, fallback: string): string {
+  const clientMatch = systemInstruction.match(/^Client name:\s*(.+)$/mi);
+  if (!clientMatch?.[1]) return fallback;
+
+  const fullName = clientMatch[1].trim();
+  const firstName = fullName.split(/\s+/)[0] || fullName;
+  const spanish = /^hola\b/i.test(fallback.trim()) || /\beres maya\b/i.test(systemInstruction);
+
+  return spanish
+    ? `Hola ${firstName}, soy Maya de CaseBuddy. Ya tengo tu información de contacto, así que podemos ir directo al tema. ¿Qué está pasando?`
+    : `Hi ${firstName}, this is Maya over at CaseBuddy. I've already got your contact information on file, so we can get right into it — what's going on?`;
 }
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
@@ -89,13 +126,26 @@ const fetchVoiceCredential = async (publicEndpoint = false): Promise<VoiceCreden
     const session = await getSession();
     if (!session?.access_token) throw new Error('Sign in is required for voice access.');
     headers.Authorization = `Bearer ${session.access_token}`;
+  } else {
+    // Send the client/firm intake token explicitly when present. The broker still
+    // supports same-origin /intake without a token for CaseBuddy's generic public
+    // intake landing page, but client-specific sessions remain RPC-validated.
+    const intakeToken = currentPublicIntakeToken();
+    if (intakeToken) headers['X-Intake-Token'] = intakeToken;
   }
 
   const response = await fetch(
     publicEndpoint ? '/api/ai/voice-keys-public' : '/api/ai/voice-keys',
     { method: 'POST', headers }
   );
-  if (!response.ok) throw new Error('Could not retrieve voice credentials.');
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = await response.json() as { error?: string };
+      detail = String(body?.error || '').trim();
+    } catch { /* ignore */ }
+    throw new Error(detail || 'Could not retrieve voice credentials.');
+  }
 
   const data = await response.json() as { deepgramKey?: string; tokenType?: string };
   const token = String(data.deepgramKey || '').trim();
@@ -335,9 +385,15 @@ export function useDeepgramVoiceAgent(
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
-      const prompt = opts.caseContext
+      const basePrompt = opts.caseContext
         ? `${opts.systemInstruction}\n\nACTIVE CASE CONTEXT (use naturally if relevant):\n${opts.caseContext}`
         : opts.systemInstruction;
+      const prompt = opts.agentId === 'maya'
+        ? `${basePrompt}\n\n${MAYA_PROCEDURE_GUARD}`
+        : basePrompt;
+      const greeting = opts.agentId === 'maya'
+        ? resolveMayaGreeting(opts.systemInstruction, opts.greeting)
+        : opts.greeting;
 
       ws.onopen = () => {
         // Keep all permanent provider credentials server-side. Deepgram-managed
@@ -365,7 +421,7 @@ export function useDeepgramVoiceAgent(
             speak: {
               provider: { type: 'deepgram', model: opts.voiceModel },
             },
-            greeting: opts.greeting,
+            greeting,
           },
         };
 
