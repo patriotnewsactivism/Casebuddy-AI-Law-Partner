@@ -59,13 +59,13 @@ export const createClientInvite = async (opts: {
 
 /**
  * Public intake context resolved from either a per-client invite token or the
- * firm's general intake token. Generic firm tokens intentionally have no
- * invite_id/client PII, but still carry the authoritative firm_id so intake
- * persistence cannot silently fall back to another tenant.
+ * firm's general intake token. Generic firm tokens intentionally carry an empty
+ * invite_id and no client PII, but still carry the authoritative firm_id so
+ * intake persistence cannot silently fall back to another tenant.
  */
 export interface ResolvedClientInvite {
   firm_id: string;
-  invite_id: string | null;
+  invite_id: string;
   client_name: string;
   client_email: string;
   client_phone: string;
@@ -86,7 +86,7 @@ export const resolveClientToken = async (token: string): Promise<ResolvedClientI
   const isClientInvite = Boolean(row.is_client_invite && row.invite_id);
   return {
     firm_id: String(row.firm_id),
-    invite_id: isClientInvite ? String(row.invite_id) : null,
+    invite_id: isClientInvite ? String(row.invite_id) : '',
     client_name: isClientInvite ? String(row.client_name || '') : '',
     client_email: isClientInvite ? String(row.client_email || '') : '',
     client_phone: isClientInvite ? String(row.client_phone || '') : '',
