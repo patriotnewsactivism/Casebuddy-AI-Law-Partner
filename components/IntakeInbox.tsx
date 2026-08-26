@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { AppContext } from '../App';
 import { Case, CaseStatus, IntakeCase, IntakeStatus } from '../types';
-import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel } from '../services/intakeStore';
+import { fetchIntakes, subscribeIntakes, updateIntakeStatus, intakeBackendLabel, assignIntake } from '../services/intakeStore';
+import { drainAssignmentQueue } from '../services/intakeAutoWork';
 import { createClientInvite, fetchClientInvites, deleteClientInvite, ClientInvite } from '../services/clientInviteStore';
 import { getSpecialistById } from '../agents/personas';
 import { onIntakeReceived } from '../services/caseEventHooks';
@@ -383,6 +384,19 @@ const IntakeInbox: React.FC = () => {
       // onCaseCreated → the 'new-case-intake' agent workflow with the full brief.
       addCase(newCase);
       await handleStatusChange(intake.id, 'accepted');
+
+      // Routing to a specialist IS the assignment. assign_intake records it and
+      // queues the four workstreams (limitations, precedent, case prep,
+      // conflicts) in one transaction, so work can never be lost by an
+      // assignment that lands without it. Kick the drain rather than waiting
+      // for its next tick — the deadline analysis is the point of doing this
+      // early, and it is worth nothing if it arrives late.
+      const assignee = (newCase as any).assignedSpecialistId || intake.recommended_agent_id || '';
+      if (assignee) {
+        void assignIntake(intake.id, assignee, intake.recommended_department || '')
+          .then(ok => { if (ok) void drainAssignmentQueue().catch(() => {}); })
+          .catch(() => {});
+      }
 
       // Matter-specific follow-on workflow (medical records, immigration, …)
       const wf = createWorkflow(matterWorkflowKey(intake.matter_type), newCase.id);
