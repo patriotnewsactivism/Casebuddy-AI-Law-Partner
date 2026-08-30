@@ -936,7 +936,7 @@ serve(async (req) => {
       throw new Error(`Gemini ${purpose} failed for all keys/models: ${keyErrors.join('; ')}`);
     };
 
-    const geminiOcr = async (fileBlob, mimeType, isImage) => {
+    const geminiOcr = async (fileBlob: Blob, mimeType: string, isImage: boolean): Promise<string> => {
       const arrayBuffer = await fileBlob.arrayBuffer();
       const base64 = arrayBufferToBase64(arrayBuffer);
 
@@ -1044,7 +1044,7 @@ serve(async (req) => {
       return text;
     };
 
-    const ocrSpaceExtract = async (blob, isImage, ct) => {
+    const ocrSpaceExtract = async (blob: Blob, isImage: boolean, ct: string): Promise<string> => {
       if (!ocrSpaceApiKey) throw new Error('OCR.space API key not configured');
       console.log('Using OCR.space fallback...');
       const extension = isImage ? 'jpg' : 'pdf';
@@ -1289,7 +1289,7 @@ serve(async (req) => {
     let adverseFindings: string[] = [];
     let actionItems: string[] = [];
     let summary = '';
-    let timelineEvents: unknown[] = [];
+    let timelineEvents: TimelineEventCandidate[] = [];
     let extractedEntities: unknown[] = [];
     let analysisProvider: 'gemini' | 'openai' | 'cohere' | 'heuristic' | 'none' = 'none';
 
@@ -1303,17 +1303,32 @@ serve(async (req) => {
     if (hasSubstantialText) {
       console.log('Analyzing extracted text with AI (chunked)...');
       
-      const parseAnalysisJson = (content: string) => {
+      const parseAnalysisJson = (content: string): StructuredChunkAnalysis | null => {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (!jsonMatch) return null;
         const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        const rawTimelineEvents = Array.isArray(parsed.timeline_events) ? parsed.timeline_events : [];
+        const timelineEvents: TimelineEventCandidate[] = rawTimelineEvents.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const row = item as Record<string, unknown>;
+          return [{
+            date: typeof row.date === 'string' ? row.date : undefined,
+            event_title: typeof row.event_title === 'string' ? row.event_title : undefined,
+            description: typeof row.description === 'string' ? row.description : undefined,
+            importance: typeof row.importance === 'string' ? row.importance : undefined,
+            event_type: typeof row.event_type === 'string' ? row.event_type : undefined,
+            phase: typeof row.phase === 'string' ? row.phase : undefined,
+            next_required_action: typeof row.next_required_action === 'string' ? row.next_required_action : undefined,
+            entities: Array.isArray(row.entities) ? row.entities.map((entity) => String(entity)) : [],
+          }];
+        });
         return {
           summary: String(parsed.summary || ''),
           keyFacts: Array.isArray(parsed.key_facts) ? parsed.key_facts.map((i) => String(i)) : [],
           favorableFindings: Array.isArray(parsed.favorable_findings) ? parsed.favorable_findings.map((i) => String(i)) : [],
           adverseFindings: Array.isArray(parsed.adverse_findings) ? parsed.adverse_findings.map((i) => String(i)) : [],
           actionItems: Array.isArray(parsed.action_items) ? parsed.action_items.map((i) => String(i)) : [],
-          timelineEvents: Array.isArray(parsed.timeline_events) ? (parsed.timeline_events as unknown[]) : [],
+          timelineEvents,
           entities: Array.isArray(parsed.entities) ? parsed.entities : [],
         };
       };
@@ -1437,7 +1452,7 @@ ${textChunk}`;
                   responseMimeType: 'application/json',
                 },
               },
-              'analysis'
+              'ANALYSIS'
             );
             chunkContent = extractGeminiText(payload);
             if (chunkContent) chunkProvider = 'gemini';

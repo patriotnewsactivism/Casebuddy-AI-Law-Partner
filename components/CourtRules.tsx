@@ -175,7 +175,7 @@ const CourtRules: React.FC = () => {
   const [triggerDate, setTriggerDate] = useState('');
   const [calculating, setCalculating] = useState(false);
   const [deadlineResults, setDeadlineResults] = useState<DeadlineCalculation[]>([]);
-  const [commonDeadlines, setCommonDeadlines] = useState<JurisdictionInfo['commonDeadlines']>([]);
+  const [commonDeadlines, setCommonDeadlines] = useState<DeadlineCalculation[]>([]);
   const [jurisdictionInfo, setJurisdictionInfo] = useState<JurisdictionInfo | null>(null);
 
   const jurisdictions = getJurisdictions();
@@ -598,7 +598,7 @@ const CourtRules: React.FC = () => {
                     <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/30">
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-slate-300">{cd.event}</span>
-                        <span className="text-xs text-gold-400 font-mono">{cd.citation}</span>
+                        <span className="text-xs text-gold-400 font-mono">{cd.rule}</span>
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${getUrgencyClass(cd.days)}`}>
                         {cd.days}d {cd.calendarDays ? '(calendar)' : '(business)'}
