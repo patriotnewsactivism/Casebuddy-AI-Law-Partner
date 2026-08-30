@@ -665,7 +665,7 @@ Include: scope of representation, fee agreement placeholder, client obligations,
           )}
           {letterState.text && (<>
             <button onClick={() => { navigator.clipboard.writeText(letterState.text!); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="flex items-center gap-2 border border-slate-700 text-slate-300 px-4 py-2.5 rounded-xl hover:bg-slate-800 text-sm transition-colors"><Copy size={14} />{letterState.copied ? 'Copied!' : 'Copy'}</button>
-            <button onClick={() => printAsPdf(textToPdfHtml(letterState.text!, `Engagement Letter — ${form.name}`))} className="flex items-center gap-2 border border-slate-700 text-slate-300 px-4 py-2.5 rounded-xl hover:bg-slate-800 text-sm transition-colors"><Printer size={14} />Print / PDF</button>
+            <button onClick={() => printAsPdf(`Engagement Letter — ${form.name}`, textToPdfHtml(`Engagement Letter — ${form.name}`, '', letterState.text!))} className="flex items-center gap-2 border border-slate-700 text-slate-300 px-4 py-2.5 rounded-xl hover:bg-slate-800 text-sm transition-colors"><Printer size={14} />Print / PDF</button>
           </>)}
           <button onClick={resetIntake} className="flex items-center gap-2 border border-slate-700 text-slate-400 px-4 py-2.5 rounded-xl hover:bg-slate-800 text-sm transition-colors ml-auto">+ New Intake</button>
         </div>

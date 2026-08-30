@@ -189,7 +189,7 @@ const DiscoveryManager: React.FC = () => {
     }
   };
 
-  const handleStatusUpdate = async (id: string, status: string) => {
+  const handleStatusUpdate = async (id: string, status: DiscoveryRequest['status']) => {
     await updateDiscoveryRequest(id, { status });
     loadData();
   };

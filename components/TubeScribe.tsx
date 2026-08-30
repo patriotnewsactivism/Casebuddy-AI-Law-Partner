@@ -254,7 +254,7 @@ const TubeScribe: React.FC = () => {
                 isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
                 'bg-slate-800 text-slate-500 border border-slate-700'
               }`}>
-                <Icon size={12} className={isCurrent && s !== 'completed' ? 'animate-spin' : ''} />
+                <Icon size={12} className={isCurrent ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">{STATUS_LABELS[s]}</span>
               </div>
               {i < STATUS_ORDER.length - 1 && (

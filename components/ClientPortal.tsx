@@ -8,7 +8,8 @@ import { AppContext } from '../App';
 import { deepseekChat } from '../services/deepseek';
 import { pushNotification } from '../services/notificationManager';
 import { toast } from 'react-toastify';
-import { CaseMessage, CaseStatus } from '../types';
+import { CaseStatus } from '../types';
+import type { CaseMessage } from '../services/caseThreadService';
 import { uploadDocument, reanalyzeDocument } from '../services/documentPipeline';
 
 interface EvidenceItem {

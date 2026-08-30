@@ -92,7 +92,7 @@ const StrategyRoom = () => {
           title: insight.title,
           content: insight.description,
           confidence: insight.confidence ?? 80,
-          type: insight.type === 'opportunity' ? 'opportunity' : insight.type === 'risk' ? 'risk' : 'prediction',
+          type: insight.type === 'opportunity' ? 'opportunity' : insight.type === 'risk' ? 'risk' : 'recommendation',
           source: 'research',
         });
       }

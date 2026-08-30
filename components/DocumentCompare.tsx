@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   compareDocuments, compareDocumentsFromStrings, exportDiffAsText,
-  type CompareResult, type DiffLine, type CompareOptions
+  type CompareResult, type DiffLine, type CompareOptions, type DiffType
 } from '../services/documentCompareService';
 
 const SAMPLE_ORIGINAL = `MOTION TO SUPPRESS EVIDENCE

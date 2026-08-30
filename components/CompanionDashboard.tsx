@@ -48,7 +48,7 @@ const CompanionDashboard = () => {
       {/* Hero */}
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-          {greeting()}{user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}.
+          {greeting()}{user?.user_metadata?.full_name ? `, ${String(user.user_metadata.full_name).split(' ')[0]}` : ''}.
         </h1>
         <p className="text-slate-400 text-sm">
           Here is your legal overview for {today}. Let's get you prepared.
