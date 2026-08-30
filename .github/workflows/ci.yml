@@ -58,3 +58,49 @@ jobs:
 
       - name: Check Edge Function entrypoints
         run: deno check supabase/functions/deepgram-token/index.ts supabase/functions/ocr-document/index.ts supabase/functions/pipeline-orchestrator/index.ts supabase/functions/pipeline-worker/index.ts supabase/functions/tts-generate/index.ts
+
+  public-intake-contract:
+    name: Public intake authorization contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+
+      - name: Create Supabase database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          create role anon nologin;
+          create role authenticated nologin;
+          create role service_role nologin;
+          SQL
+
+      - name: Run public intake authorization regression suite
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f supabase/tests/public_intake_authorization_test.sql 2>&1 | tee /tmp/public-intake-test.log
+          if grep -q 'FAIL' /tmp/public-intake-test.log; then
+            echo 'Public intake authorization regression suite reported FAIL'
+            exit 1
+          fi
+          grep -q 'T17 anon RPC execute retained: PASS' /tmp/public-intake-test.log
