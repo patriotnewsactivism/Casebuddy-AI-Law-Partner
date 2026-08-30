@@ -437,7 +437,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         const { recordingPath, recordingSeconds } = await finalizeRecording(savedIntakeIdRef.current);
         const id = await saveIntakeProgress({
           resumeToken:    resumeTokenRef.current,
-          firmId:         firmId ?? undefined,
+          routeToken:     token,
           completion:     'complete',
           intake,
           score:          finalScore,
