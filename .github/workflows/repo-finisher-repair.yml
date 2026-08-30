@@ -1,0 +1,39 @@
+name: RepoFinisher one-time repair
+
+on:
+  push:
+    branches: ['casebuddy/completion-2026-08-30']
+    paths:
+      - '.repo-finisher/apply_typecheck_repairs.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: casebuddy/completion-2026-08-30
+          fetch-depth: 0
+
+      - name: Apply audited repairs
+        run: python3 .repo-finisher/apply_typecheck_repairs.py
+
+      - name: Validate patch whitespace
+        run: git diff --check
+
+      - name: Commit repaired sources
+        run: |
+          if git diff --quiet; then
+            echo 'No repairs needed'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components services
+          git commit -m 'fix: repair browser TypeScript contract drift'
+          git push origin HEAD:casebuddy/completion-2026-08-30
