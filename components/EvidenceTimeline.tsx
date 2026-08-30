@@ -4,9 +4,11 @@ import { TimelineEvent, Evidence } from '../types';
 import { Calendar, Clock, Plus, Edit2, Trash2, AlertCircle, FileText, Filter, Download, Zap, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+type TimelineEventWithAI = TimelineEvent & { isAIExtracted?: boolean };
+
 const EvidenceTimeline = () => {
   const { activeCase } = useContext(AppContext);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [events, setEvents] = useState<TimelineEventWithAI[]>([]);
   const [evidenceList, setEvidenceList] = useState<Evidence[]>([]);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [showAddEvidence, setShowAddEvidence] = useState(false);
@@ -28,7 +30,7 @@ const EvidenceTimeline = () => {
   const handleAddEvent = () => {
     if (!newEvent.title || !newEvent.date) return;
 
-    const event: TimelineEvent = {
+    const event: TimelineEventWithAI = {
       id: `event-${Date.now()}`,
       title: newEvent.title,
       date: newEvent.date,
@@ -602,7 +604,7 @@ const EvidenceTimeline = () => {
                     <button
                       onClick={() => {
                         setShowAddEvidence(false);
-                        setNewEvent({
+                        setNewEvidence({
                           type: 'EVIDENCE' as any,
                           status: 'pending',
                           dateObtained: new Date().toISOString().split('T')[0]

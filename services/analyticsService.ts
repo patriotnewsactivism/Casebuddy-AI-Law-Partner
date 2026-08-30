@@ -3,6 +3,7 @@ import { getTimeEntries, getExpenses, getInvoices } from './billingService';
 import { getPipelineStats } from './crmService';
 import { getLeadStats } from './marketingService';
 import { deepseekChat } from './deepseek';
+import { CaseStatus } from '../types';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -109,17 +110,17 @@ export const getFirmAnalytics = (): FirmAnalytics => {
 
   // Case counts
   const totalCases = cases.length;
-  const activeCases = cases.filter(c => c.status === 'active').length;
+  const activeCases = cases.filter(c => c.status !== CaseStatus.CLOSED).length;
   const casesOpenedThisMonth = cases.filter(c => {
     if (!c.updatedAt) return false;
     // Treat updatedAt as proxy for case opened; if a case has no createdAt, fallback
     return isInMonth(c.updatedAt);
   }).length;
   const casesClosedThisMonth = cases.filter(c => {
-    return c.status === 'closed' && c.updatedAt && isInMonth(c.updatedAt);
+    return c.status === CaseStatus.CLOSED && c.updatedAt && isInMonth(c.updatedAt);
   }).length;
 
-  const closedCases = cases.filter(c => c.status === 'closed');
+  const closedCases = cases.filter(c => c.status === CaseStatus.CLOSED);
   const wonCases = closedCases.filter(c => c.winProbability >= 50);
   const winRate = closedCases.length > 0
     ? Math.round((wonCases.length / closedCases.length) * 100)
@@ -165,7 +166,7 @@ export const getFirmAnalytics = (): FirmAnalytics => {
 
   // Overdue invoices
   const overdueInvoices = invoices.filter(inv => {
-    if (inv.status === 'paid' || inv.status === 'void' || inv.status === 'cancelled') return false;
+    if (inv.status === 'paid' || inv.status === 'cancelled') return false;
     if (!inv.dueDate) return false;
     return new Date(inv.dueDate) < now;
   });

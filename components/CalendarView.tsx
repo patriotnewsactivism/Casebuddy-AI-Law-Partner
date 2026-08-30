@@ -241,7 +241,7 @@ const CalendarView: React.FC = () => {
       updated.lastSyncedAt = new Date().toISOString();
       setSyncStatus(updated);
       setSyncingProvider(null);
-      const newConfig = { ...syncConfig, provider: syncConfig.provider === 'both' ? 'both' : provider };
+      const newConfig: SyncConfig = { ...syncConfig, provider: syncConfig.provider === 'both' ? 'both' : provider };
       setSyncConfig(newConfig);
       saveSyncConfig(newConfig);
     }, 1500);

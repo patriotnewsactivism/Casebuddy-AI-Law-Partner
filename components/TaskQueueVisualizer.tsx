@@ -64,7 +64,7 @@ const TaskQueueVisualizer: React.FC = () => {
         {pending.length > 0 && (
           <span className="text-[10px] text-slate-500 ml-1">{pending.length} queued</span>
         )}
-        <AlertCircle size={12} className="ml-auto text-slate-600" title="Background AI tasks" />
+        <span className="ml-auto" title="Background AI tasks"><AlertCircle size={12} className="text-slate-600" /></span>
       </div>
 
       <div className="space-y-1.5">

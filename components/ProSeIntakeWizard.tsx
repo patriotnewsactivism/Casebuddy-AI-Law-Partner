@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { AppContext } from '../App';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Briefcase, UserX, Calendar, CheckCircle, Scale } from 'lucide-react';
-import { LegalCase } from '../types';
+import { Case, CaseStatus } from '../types';
 
 const ProSeIntakeWizard = () => {
   const { addCase, setActiveCase } = useContext(AppContext);
@@ -20,18 +20,16 @@ const ProSeIntakeWizard = () => {
   const handleBack = () => setStep(s => Math.max(s - 1, 1));
   
   const handleSubmit = () => {
-    const newCase: LegalCase = {
+    const newCase: Case = {
       id: `case-${Date.now()}`,
       title: formData.title || 'Untitled Case',
       client: 'Myself (Pro Se)',
-      status: 'Active',
+      status: CaseStatus.PRE_TRIAL,
       summary: formData.summary,
       opposingCounsel: formData.opposingCounsel || 'Unknown',
+      judge: 'Unknown',
       nextCourtDate: formData.nextCourtDate || 'TBD',
-      trialDate: 'TBD',
-      documents: 0,
       winProbability: 50,
-      createdAt: new Date().toISOString()
     };
     
     addCase(newCase);

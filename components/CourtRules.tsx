@@ -175,7 +175,7 @@ const CourtRules: React.FC = () => {
   const [triggerDate, setTriggerDate] = useState('');
   const [calculating, setCalculating] = useState(false);
   const [deadlineResults, setDeadlineResults] = useState<DeadlineCalculation[]>([]);
-  const [commonDeadlines, setCommonDeadlines] = useState<DeadlineCalculation[]>([]);
+  const [commonDeadlines, setCommonDeadlines] = useState<JurisdictionInfo['commonDeadlines']>([]);
   const [jurisdictionInfo, setJurisdictionInfo] = useState<JurisdictionInfo | null>(null);
 
   const jurisdictions = getJurisdictions();

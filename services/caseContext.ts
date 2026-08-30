@@ -109,11 +109,11 @@ function persistCaseDetailsRemote(caseId: string, details: IntakeDetails): void 
     // remote row is merged with this call's fields via a follow-up read so a
     // saveIntakeTranscript() call doesn't clobber narrative fields (and vice
     // versa) when the two writers fire independently.
-    void supabase
+    void Promise.resolve(supabase
       .from('case_details')
       .select('*')
       .eq('case_id', caseId)
-      .maybeSingle()
+      .maybeSingle())
       .then(({ data: existingRemote }: { data: any }) => {
         const merged = existingRemote ? { ...existingRemote, ...row } : row;
         return supabase.from('case_details').upsert(merged, { onConflict: 'case_id' });

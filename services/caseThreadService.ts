@@ -18,7 +18,7 @@ function db() {
 }
 import { deepseekChat } from './deepseek';
 import {
-  getAgentById, getSpecialistById, getParalegalById, getAnyPersonById,
+  getAgentById, getSpecialistById, getParalegalById, getParalegalsByAttorney, getAnyPersonById,
   OPERATIONAL_AGENTS, LEGAL_SPECIALISTS, PARALEGALS,
 } from '../agents/personas';
 import { AGENT_CONFIG } from '../config/agentConfig';

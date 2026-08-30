@@ -370,7 +370,7 @@ const TrialSim = () => {
         title: logTitle,
         content: transcriptText.slice(0, 1000),
         confidence: 90,
-        type: 'prediction',
+        type: 'recommendation',
         source: 'monitoring',
       });
 

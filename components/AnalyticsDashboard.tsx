@@ -33,7 +33,7 @@ interface KpiCardProps {
 }
 
 const KpiCard: React.FC<KpiCardProps> = ({ icon: Icon, label, value, trend, trendValue, description, colorClass, bgClass }) => {
-  const trendIcon = trend === 'up' ? ArrowUpRight : trend === 'down' ? ArrowDownRight : ChevronUp;
+  const TrendIcon = trend === 'up' ? ArrowUpRight : trend === 'down' ? ArrowDownRight : ChevronUp;
   const trendColor = trend === 'up' ? 'text-green-400' : trend === 'down' ? 'text-red-400' : 'text-slate-500';
 
   return (
@@ -48,7 +48,7 @@ const KpiCard: React.FC<KpiCardProps> = ({ icon: Icon, label, value, trend, tren
         <span className="text-2xl font-bold text-white tracking-tight">{value}</span>
         {trend && (
           <span className={`flex items-center gap-0.5 text-xs font-semibold ${trendColor}`}>
-            <trendIcon size={14} />
+            <TrendIcon size={14} />
             {trendValue}
           </span>
         )}
