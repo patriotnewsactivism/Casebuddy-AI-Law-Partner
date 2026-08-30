@@ -8,7 +8,7 @@ import {
 import { useDeepgramVoiceAgent } from '../hooks/useDeepgramVoiceAgent';
 import { extractIntake, scoreIntake, callGeminiProxy } from '../services/intakeService';
 import {
-  submitIntake, saveIntakeProgress, resumeIntake, newResumeToken,
+  saveIntakeProgress, resumeIntake, newResumeToken,
 } from '../services/intakeStore';
 import { startIntakeRecorder, uploadIntakeRecording, type IntakeRecorderHandle } from '../services/intakeRecording';
 import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
@@ -258,15 +258,15 @@ const PublicIntake: React.FC = () => {
           setFirmId(invite.firm_id);
           setClientInvite(invite);
 
-          // If mode wasn't explicitly set in URL, check notes metadata tag
-          if (!modeParam) {
-            const match = (invite.notes || '').match(/\[mode:(voice|chat|form)\]/);
-            if (match && ['voice', 'chat', 'form'].includes(match[1])) {
-              setMode(match[1] as any);
-            }
+          // If mode wasn't explicitly set in URL, use the bounded mode
+          // metadata returned by the public token resolver. Internal notes are
+          // deliberately never exposed to the browser.
+          if (!modeParam && invite.intake_mode) {
+            setMode(invite.intake_mode);
           }
         } else {
-          console.warn('[PublicIntake] Unknown token — intake will use default firm_id');
+          console.warn('[PublicIntake] Unknown or expired intake token');
+          setSubmitError('This intake link is invalid or expired. Please request a new link from the firm.');
         }
       });
     }
@@ -290,11 +290,9 @@ const PublicIntake: React.FC = () => {
   // When a client token resolves, inject client context so Maya greets by name
   // and skips re-asking for info the attorney already captured
   const firstName = clientInvite?.client_name?.split(' ')[0] ?? '';
-  const cleanNotes = clientInvite?.notes ? clientInvite.notes.replace(/\[mode:(voice|chat|form)\]/g, '').trim() : '';
-
-  // Force Maya to English unless the attorney explicitly noted they are hispanic/spanish speaking
-  const isHispanic = clientInvite?.notes?.toLowerCase().match(/\b(hispanic|spanish)\b/);
-  const storedLang = (isHispanic ? 'es' : 'en') as SupportedLanguage;
+  // Only the bounded language preference returned by the token resolver is
+  // public. Free-form attorney notes stay server-side.
+  const storedLang = (clientInvite?.preferred_language || 'en') as SupportedLanguage;
   const mayaProfile = getMayaLanguageProfile(storedLang);
 
   // Build system instruction with language-aware Maya prompt
@@ -306,8 +304,7 @@ const PublicIntake: React.FC = () => {
 IMPORTANT — you already know who you are speaking with:
 Client name: ${clientInvite.client_name}${clientInvite.client_phone ? `
 Phone on file: ${clientInvite.client_phone}` : ''}${clientInvite.client_email ? `
-Email on file: ${clientInvite.client_email}` : ''}${cleanNotes ? `
-Attorney notes: ${cleanNotes}` : ''}
+Email on file: ${clientInvite.client_email}` : ''}
 
 Open with: "Hi ${firstName}, thanks for calling in — " and use their name naturally. You already have their contact info so skip asking for it unless they want to update it.`
     : basePrompt;
@@ -375,7 +372,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       const { email, phone } = sniffContact(transcript);
       void saveIntakeProgress({
         resumeToken: resumeTokenRef.current,
-        firmId: firmId ?? undefined,
+        routeToken: token,
         completion: 'partial',
         intake: {
           fullName: clientInvite?.client_name || '',
@@ -385,8 +382,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         },
         transcript,
         recordingConsent: Boolean(recorderRef.current?.active),
-        clientInviteId: clientInvite?.invite_id || undefined,
-      }).then(id => { if (id) savedIntakeIdRef.current = id; });
+              }).then(id => { if (id) savedIntakeIdRef.current = id; });
     }, PROGRESS_SAVE_MS);
     return () => clearInterval(timer);
   }, [phase, transcript, firmId, clientInvite, sniffContact]);
@@ -400,7 +396,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       const { email, phone } = sniffContact(transcript);
       void saveIntakeProgress({
         resumeToken: resumeTokenRef.current,
-        firmId: firmId ?? undefined,
+        routeToken: token,
         completion: 'abandoned',
         intake: {
           fullName: clientInvite?.client_name || '',
@@ -449,22 +445,22 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
           recordingPath,
           recordingSeconds,
           recordingConsent: Boolean(recordingPath),
-          clientInviteId: clientInvite?.invite_id || undefined,
-        });
+                  });
         intakeId = id || savedIntakeIdRef.current || undefined;
       } else {
-        const result = await submitIntake({
-          firmId:         firmId ?? undefined,
-          clientInviteId: clientInvite?.invite_id,
+        const id = await saveIntakeProgress({
+          resumeToken: resumeTokenRef.current,
+          routeToken: token,
+          completion: 'complete',
           intake,
           score: finalScore,
           transcript: transcriptForSave,
         });
-        intakeId = result?.id;
+        intakeId = id || undefined;
       }
       // Mark the invite as completed so attorney can track it
-      if (clientInvite?.invite_id && intakeId) {
-        void markInviteCompleted(clientInvite.invite_id, intakeId);
+      if (clientInvite?.invite_id && token && intakeId) {
+        void markInviteCompleted(token, intakeId);
       }
       try { sessionStorage.removeItem('casebuddy_intake_resume'); } catch { /* ignore */ }
     } catch (saveErr: any) {
@@ -584,20 +580,19 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       finalizedRef.current = true;
       const id = await saveIntakeProgress({
         resumeToken: resumeTokenRef.current,
-        firmId: firmId ?? undefined,
+        routeToken: token,
         completion: 'abandoned',
         intake,
         transcript,
         recordingConsent: Boolean(recorderRef.current?.active),
-        clientInviteId: clientInvite?.invite_id || undefined,
-      });
+              });
       savedIntakeIdRef.current = id || savedIntakeIdRef.current;
 
       const { recordingPath, recordingSeconds } = await finalizeRecording(savedIntakeIdRef.current);
       if (recordingPath) {
         await saveIntakeProgress({
           resumeToken: resumeTokenRef.current,
-          firmId: firmId ?? undefined,
+          routeToken: token,
           completion: 'abandoned',
           recordingPath,
           recordingSeconds,

@@ -45,7 +45,7 @@ export const newResumeToken = (): string => {
 
 export interface PartialIntakeArgs {
   resumeToken: string;
-  firmId?: string;
+  routeToken?: string;
   completion: 'partial' | 'complete' | 'abandoned';
   intake?: Partial<IntakeData>;
   score?: IntakeScore | null;
@@ -54,7 +54,6 @@ export interface PartialIntakeArgs {
   recordingConsent?: boolean;
   recordingPath?: string;
   recordingSeconds?: number;
-  clientInviteId?: string;
 }
 
 /**
@@ -67,11 +66,10 @@ export const saveIntakeProgress = async (args: PartialIntakeArgs): Promise<strin
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const firmId = resolveIntakeFirmIdOrNull(args.firmId);
-  if (!firmId) {
-    console.warn('[intakeStore] progress not saved — no firm could be resolved');
-    return null;
-  }
+  const routeToken = (
+    args.routeToken ||
+    ((import.meta.env.VITE_PUBLIC_INTAKE_TOKEN as string | undefined) || '')
+  ).trim();
 
   const intake = args.intake || {};
   const payload: Record<string, unknown> = {
@@ -94,11 +92,10 @@ export const saveIntakeProgress = async (args: PartialIntakeArgs): Promise<strin
   if (args.extracted) payload.extracted = args.extracted;
   if (args.recordingPath) payload.recording_path = args.recordingPath;
   if (args.recordingSeconds) payload.recording_seconds = args.recordingSeconds;
-  if (args.clientInviteId) payload.client_invite_id = args.clientInviteId;
 
   const { data, error } = await supabase.rpc('upsert_public_intake', {
     p_resume_token: args.resumeToken,
-    p_firm_id: firmId,
+    p_route_token: routeToken,
     p_payload: payload,
     p_completion: args.completion,
   });

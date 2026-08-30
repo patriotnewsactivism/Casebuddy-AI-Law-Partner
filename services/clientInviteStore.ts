@@ -69,7 +69,9 @@ export interface ResolvedClientInvite {
   client_name: string;
   client_email: string;
   client_phone: string;
-  notes: string;
+  invite_status: string;
+  intake_mode: 'voice' | 'chat' | 'form' | '';
+  preferred_language: 'en' | 'es';
   is_client_invite: boolean;
 }
 
@@ -90,17 +92,21 @@ export const resolveClientToken = async (token: string): Promise<ResolvedClientI
     client_name: isClientInvite ? String(row.client_name || '') : '',
     client_email: isClientInvite ? String(row.client_email || '') : '',
     client_phone: isClientInvite ? String(row.client_phone || '') : '',
-    notes: isClientInvite ? String(row.notes || '') : '',
+    invite_status: isClientInvite ? String(row.invite_status || '') : '',
+    intake_mode: isClientInvite && ['voice', 'chat', 'form'].includes(String(row.intake_mode || ''))
+      ? String(row.intake_mode) as 'voice' | 'chat' | 'form'
+      : '',
+    preferred_language: row.preferred_language === 'es' ? 'es' : 'en',
     is_client_invite: isClientInvite,
   };
 };
 
-export const markInviteCompleted = async (inviteId: string, intakeCaseId: string): Promise<void> => {
+export const markInviteCompleted = async (token: string, intakeCaseId: string): Promise<void> => {
   const supabase = getSupabase();
   if (!supabase) return;
 
   const { error } = await supabase.rpc('complete_client_invite', {
-    p_invite_id: inviteId,
+    p_token: token.trim(),
     p_intake_case_id: intakeCaseId,
   });
   if (error) console.warn('[clientInviteStore] completion update failed:', error.message);

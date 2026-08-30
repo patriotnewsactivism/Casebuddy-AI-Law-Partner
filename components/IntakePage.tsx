@@ -6,7 +6,7 @@ import {
   Send, MessageSquare, Sparkles, Bot
 } from 'lucide-react';
 import { printAsPdf, textToPdfHtml } from '../utils/pdfExport';
-import { submitIntake } from '../services/intakeStore';
+import { saveIntakeProgress, newResumeToken } from '../services/intakeStore';
 import { scoreIntake, callGeminiProxy } from '../services/intakeService';
 import { deepseekChat } from '../services/deepseek';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
@@ -440,7 +440,13 @@ Return ONLY valid JSON:
     }
     try {
       const transcriptForSave = convo ? convo.map(m => ({ speaker: m.role, text: m.content })) : [];
-      await submitIntake({ intake: intakeData, score: intakeScore, transcript: transcriptForSave });
+      await saveIntakeProgress({
+        resumeToken: newResumeToken(),
+        completion: 'complete',
+        intake: intakeData,
+        score: intakeScore,
+        transcript: transcriptForSave,
+      });
     } catch (e: any) { console.error('[IntakePage] submitIntake error:', e?.message); }
 
     setLoading(false);
