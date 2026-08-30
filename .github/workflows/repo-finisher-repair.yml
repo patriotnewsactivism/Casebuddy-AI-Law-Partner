@@ -5,6 +5,7 @@ on:
     branches: ['casebuddy/completion-2026-08-30']
     paths:
       - '.repo-finisher/apply_typecheck_repairs.py'
+      - '.github/workflows/repo-finisher-repair.yml'
 
 permissions:
   contents: write
