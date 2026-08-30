@@ -42,3 +42,19 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  edge-functions:
+    name: Supabase Edge Function typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check Edge Function entrypoints
+        run: deno check supabase/functions/deepgram-token/index.ts supabase/functions/ocr-document/index.ts supabase/functions/pipeline-orchestrator/index.ts supabase/functions/pipeline-worker/index.ts supabase/functions/tts-generate/index.ts
