@@ -1,0 +1,24 @@
+name: RepoFinisher route arg fix
+on:
+  push:
+    branches: ['casebuddy/completion-2026-08-30']
+    paths:
+      - '.repo-finisher/fix_public_intake_route_arg.py'
+      - '.github/workflows/repo-finisher-route-arg-fix.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: casebuddy/completion-2026-08-30
+      - run: python3 .repo-finisher/fix_public_intake_route_arg.py
+      - run: git diff --check
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/PublicIntake.tsx
+          git commit -m 'fix: pass route token when finalizing voice intake'
+          git push origin HEAD:casebuddy/completion-2026-08-30
