@@ -37,11 +37,11 @@ jobs:
       - name: Security typecheck
         run: npm run typecheck:security
 
-      - name: Client secret scan
-        run: npm run check:client-secrets
-
       - name: Production build
         run: npm run build
+
+      - name: Client secret scan
+        run: npm run check:client-secrets
 
   edge-functions:
     name: Supabase Edge Function typecheck
