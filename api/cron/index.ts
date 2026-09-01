@@ -37,18 +37,42 @@ const _sb = async (url: string, key: string, path: string, opts: RequestInit = {
   try { return JSON.parse(text); } catch { return []; }
 };
 
+// Tries SendGrid first (matches api/email/send.ts's provider order), then
+// falls back to Resend — either on a missing key or a failed SendGrid call —
+// so automation mail isn't silently dropped when only one provider is set up.
 const _email = async (sgKey: string, to: string, subject: string, html: string): Promise<void> => {
-  if (!sgKey || !to) return;
-  await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${sgKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: 'noreply@casebuddy.live', name: 'CaseBuddy AI' },
-      subject,
-      content: [{ type: 'text/html', value: html }],
-    }),
-  });
+  if (!to) return;
+
+  if (sgKey) {
+    try {
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: 'noreply@casebuddy.live', name: 'CaseBuddy AI' },
+          subject,
+          content: [{ type: 'text/html', value: html }],
+        }),
+      });
+      if (r.ok) return;
+    } catch { /* fall through to Resend */ }
+  }
+
+  const resendKey = process.env.RESEND_API_KEY || '';
+  if (!resendKey) return;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'CaseBuddy AI <noreply@casebuddy.live>',
+        to: [to],
+        subject,
+        html,
+      }),
+    });
+  } catch { /* both providers unavailable; caller has no email fallback left */ }
 };
 
 const _sms = async (sid: string, token: string, from: string, to: string, body: string): Promise<void> => {
@@ -212,6 +236,7 @@ async function handle_intakeProcessor(_req: Request): Promise<Response> {
 
 async function handle_sendPendingEmails(_req: Request): Promise<Response> {
   const SG_KEY = process.env.SENDGRID_API_KEY || '';
+  const RESEND_KEY = process.env.RESEND_API_KEY || '';
   const SB_URL = process.env.SUPABASE_URL || '';
   const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const log: string[] = [];
@@ -221,23 +246,48 @@ async function handle_sendPendingEmails(_req: Request): Promise<Response> {
     rex: { name: 'Rex' }, sierra: { name: 'Sierra' }, doc: { name: 'Doc' },
   };
 
+  // Tries SendGrid first, then falls back to Resend — either on a missing
+  // key or a failed SendGrid call — so agent-drafted mail isn't silently
+  // dropped when only one provider is configured.
+  const deliver = async (agentName: string, toEmail: string, subject: string, html: string): Promise<void> => {
+    if (SG_KEY) {
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${SG_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: toEmail }] }],
+          from: { email: 'agents@casebuddy.live', name: `${agentName} - CaseBuddy` },
+          reply_to: { email: 'firm@casebuddy.live', name: 'CaseBuddy Law' },
+          subject,
+          content: [{ type: 'text/html', value: html }],
+        }),
+      });
+      if (r.ok) return;
+      if (!RESEND_KEY) throw new Error(`SendGrid rejected (HTTP ${r.status})`);
+    }
+
+    if (!RESEND_KEY) throw new Error('No email provider configured (set SENDGRID_API_KEY or RESEND_API_KEY)');
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${agentName} - CaseBuddy <agents@casebuddy.live>`,
+        to: [toEmail],
+        reply_to: 'firm@casebuddy.live',
+        subject,
+        html,
+      }),
+    });
+    if (!r.ok) throw new Error(`Resend rejected (HTTP ${r.status})`);
+  };
+
   try {
     const emails = await _sb(SB_URL, SB_KEY,
       'email_queue?status=eq.pending&order=created_at.asc&limit=20');
     for (const em of (Array.isArray(emails) ? emails : [])) {
       const agentName = (AGENTS[em.agent_id] || { name: 'CaseBuddy' }).name;
       try {
-        await fetch('https://api.sendgrid.com/v3/mail/send', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${SG_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            personalizations: [{ to: [{ email: em.to_email }] }],
-            from: { email: 'agents@casebuddy.live', name: `${agentName} - CaseBuddy` },
-            reply_to: { email: 'firm@casebuddy.live', name: 'CaseBuddy Law' },
-            subject: em.subject,
-            content: [{ type: 'text/html', value: em.body_html || em.body_text || '' }],
-          }),
-        });
+        await deliver(agentName, em.to_email, em.subject, em.body_html || em.body_text || '');
         await _sb(SB_URL, SB_KEY, `email_queue?id=eq.${em.id}`, {
           method: 'PATCH',
           headers: { Prefer: 'return=minimal' } as Record<string, string>,
@@ -334,9 +384,14 @@ export default async function handler(req: Request): Promise<Response> {
   const url    = new URL(req.url);
   const action = url.searchParams.get('action') || 'health';
 
-  // ── Authenticate cron requests (skip health checks) ─────────────────────
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && action !== 'health') {
+  // ── Authenticate cron requests (skip health checks) ──────────────────────
+  // Fails closed: an unset CRON_SECRET must deny privileged actions, not
+  // leave them open to anyone who finds the URL.
+  if (action !== 'health') {
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return _ok({ error: 'Cron endpoint not configured (CRON_SECRET unset)' }, 503);
+    }
     const auth = req.headers.get('authorization');
     if (auth !== `Bearer ${cronSecret}`) {
       return _ok({ error: 'Unauthorized' }, 401);
