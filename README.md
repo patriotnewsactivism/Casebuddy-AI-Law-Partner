@@ -17,7 +17,7 @@ See:
 - [`docs/PLATFORM_ARCHITECTURE.md`](./docs/PLATFORM_ARCHITECTURE.md)
 - [`docs/MODULE_MIGRATION_MATRIX.md`](./docs/MODULE_MIGRATION_MATRIX.md)
 - [`docs/CONSOLIDATION_PLAN.md`](./docs/CONSOLIDATION_PLAN.md)
-- [`SECURITY.md`](./SECURITY.md)
+- [`docs/SECURITY_FOUNDATION.md`](./docs/SECURITY_FOUNDATION.md)
 
 ## Core experience
 

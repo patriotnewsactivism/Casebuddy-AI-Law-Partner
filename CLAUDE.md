@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 > **Synchronization rule:** `QWEN.md`, `AGENTS.md`, and `CLAUDE.md` describe the
 > same architecture. Update all three together when the architecture changes.
-> This version was synchronized on 2026-08-24.
+> This version was synchronized on 2026-09-04.
 
 ## Project Overview
 
@@ -28,6 +28,14 @@ Operating modes:
 
 Product tiers are `personal`, `professional`, and `enterprise` (see
 `TIER_FEATURES` and `services/tierService.ts`).
+
+This repository is the canonical consolidation target for CaseBuddy. Legacy
+sibling repositories (DiscoveryLens, case-companion, Discovery Scraper, and
+others) are donor sources being migrated in behind a common auth/tenancy/
+matter/document/audit model, not independent products. Before treating
+overlapping or seemingly redundant code as dead, check
+`docs/PLATFORM_ARCHITECTURE.md`, `docs/MODULE_MIGRATION_MATRIX.md`, and
+`docs/CONSOLIDATION_PLAN.md`.
 
 ## Commands
 
@@ -187,6 +195,11 @@ application layout.
 `AuthGate` permits local-only/demo operation when Supabase is not configured;
 otherwise unauthenticated users are redirected to login.
 
+`components/AskCaseBuddy.tsx` is the primary "Ask CaseBuddy" entry point: it
+routes a plain-English request to the appropriate practice-area persona/
+specialist while keeping the active case attached. Treat it as a router into
+existing workspaces and personas, not a standalone chatbot widget.
+
 ## State & Persistence
 
 `AppContext` owns cases, active case, theme, operating mode, product tier, sync
@@ -225,6 +238,15 @@ If the scan fails:
 3. rebuild;
 4. do **not** exclude the secret or relax the scanner as a workaround.
 
+## Personas & Legal-Use Boundary
+
+`agents/personas.ts` defines named legal-specialist personas (e.g. Rosa
+Martinez) used by Ask CaseBuddy and the AI team hub. Each persona's
+`systemInstruction` carries a standard disclaimer that substantive legal
+advice is educational/planning-only and requires a licensed attorney's
+review of the specific facts. When adding or editing a persona, keep this
+disclaimer and do not present a persona as a real licensed attorney.
+
 ## Key Gotchas
 
 1. Dev port is **5000**, not 3000.
@@ -238,3 +260,8 @@ If the scan fails:
 9. A legacy feature that expects a browser provider key should be migrated
    server-side, not "fixed" by exposing the key again.
 10. `QWEN.md`, `AGENTS.md`, and `CLAUDE.md` must stay synchronized.
+11. Legacy CaseBuddy repos (DiscoveryLens, case-companion, Discovery
+    Scraper) are migration donors, not parallel products — check the
+    `docs/` consolidation docs before treating overlapping code as dead.
+12. Persona `systemInstruction`s in `agents/personas.ts` must keep their
+    licensed-attorney disclaimer.
