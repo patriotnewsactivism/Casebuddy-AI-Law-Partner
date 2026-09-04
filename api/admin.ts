@@ -4,47 +4,22 @@
  * Replaces: setup/run-migration, pacer/search
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireFirmMember, AuthError } from './_shared/auth';
 
-// ── run-migration ─────────────────────────────────────────────────────────────
+// ── run-migration (diagnostic: reports table existence only, never runs DDL) ──
+//
+// NOTE: this used to embed a copy of the firm_emails CREATE TABLE/RLS SQL as a
+// string constant "for reference," including the original wide-open
+// `USING (true) WITH CHECK (true)` policy + `GRANT ALL ... TO anon`. That
+// policy was intentionally closed by migration 0009_strict_attorney_client_rls
+// (firm-scoped RLS, anon revoked). The constant was never executed by this
+// handler, but it was dangerous copy-paste bait — anyone "helpfully" running
+// it from the Supabase dashboard would have reopened a firm-wide-anonymous
+// hole in firm_emails. Removed; the real, current source of truth is
+// supabase/migrations/0009_strict_attorney_client_rls.sql.
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
-// Uses Supabase's postgres REST via pg over the Management API isn't available,
-// so we create tables by trying inserts with specific column lists and catching errors.
-// Instead, we use the Supabase Management REST API via direct SQL execution.
-
-const CREATE_FIRM_EMAILS = `
-CREATE TABLE IF NOT EXISTS public.firm_emails (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  received_at   timestamptz NOT NULL DEFAULT now(),
-  direction     text NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-  from_address  text NOT NULL DEFAULT '',
-  from_name     text NOT NULL DEFAULT '',
-  to_address    text NOT NULL DEFAULT '',
-  agent_id      text NOT NULL DEFAULT 'maya',
-  subject       text NOT NULL DEFAULT '',
-  body          text NOT NULL DEFAULT '',
-  intent        text NOT NULL DEFAULT 'general',
-  replied       boolean NOT NULL DEFAULT false,
-  read          boolean NOT NULL DEFAULT false,
-  starred       boolean NOT NULL DEFAULT false,
-  thread_id     uuid,
-  metadata      jsonb NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS firm_emails_agent_idx     ON public.firm_emails (agent_id);
-CREATE INDEX IF NOT EXISTS firm_emails_direction_idx ON public.firm_emails (direction);
-CREATE INDEX IF NOT EXISTS firm_emails_received_idx  ON public.firm_emails (received_at DESC);
-ALTER TABLE public.firm_emails ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'firm_emails' AND policyname = 'firm_emails_open'
-  ) THEN
-    CREATE POLICY firm_emails_open ON public.firm_emails FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
-GRANT ALL ON public.firm_emails TO anon, authenticated, service_role;
-`;
 
 async function handleRunMigration(req: VercelRequest, res: VercelResponse) {
   // Require a secret to prevent abuse
@@ -59,31 +34,27 @@ async function handleRunMigration(req: VercelRequest, res: VercelResponse) {
 
   const results: string[] = [];
 
-  // Run SQL statements one by one via Supabase's pg RPC
-  // We create a temporary RPC function using the service role
-  const runSQL = async (sql: string, label: string) => {
+  const checkTable = async (table: string) => {
     try {
-      // Try via PostgREST rpc endpoint — won't work for DDL
-      // Instead, try inserting a dummy row to see if table exists
-      const testRes = await fetch(`${SB_URL}/rest/v1/firm_emails?limit=0`, {
+      const testRes = await fetch(`${SB_URL}/rest/v1/${table}?limit=0`, {
         headers: {
           apikey: SB_KEY,
           Authorization: `Bearer ${SB_KEY}`,
         },
       });
       if (testRes.ok) {
-        results.push(`✓ ${label}: table already exists`);
+        results.push(`✓ ${table}: table already exists`);
         return true;
       }
-      results.push(`✗ ${label}: table missing — run SQL in Supabase Dashboard`);
+      results.push(`✗ ${table}: table missing — run the migration SQL in Supabase Dashboard`);
       return false;
     } catch (e: any) {
-      results.push(`✗ ${label}: ${e.message}`);
+      results.push(`✗ ${table}: ${e.message}`);
       return false;
     }
   };
 
-  await runSQL(CREATE_FIRM_EMAILS, 'firm_emails');
+  await checkTable('firm_emails');
 
   // Check agent_deadlines too
   const deadlinesRes = await fetch(`${SB_URL}/rest/v1/agent_deadlines?limit=0`, {
@@ -136,6 +107,15 @@ const json = (body: object, status = 200) =>
 async function handlePacerSearch(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  // PACER charges the firm's account per search — must never be reachable
+  // by an unauthenticated caller.
+  try {
+    await requireFirmMember(req);
+  } catch (err) {
+    const status = err instanceof AuthError ? err.status : 401;
+    return json({ error: err instanceof Error ? err.message : 'Unauthorized' }, status);
+  }
 
   const username = process.env.PACER_USERNAME;
   const password = process.env.PACER_PASSWORD;

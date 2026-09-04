@@ -1,27 +1,43 @@
 /**
  * Netlify Function — Outbound email (SendGrid primary, Resend fallback).
- * Ported from api/email/send.ts
+ * Ported from api/email/send.ts — must keep the same auth/authorization
+ * contract as the Vercel implementation (see CLAUDE.md "Vercel and Netlify
+ * must preserve equivalent security behavior").
  *
  * POST /api/email/send
- * Body: { to, subject, html, fromEmail?, fromName?, cc?, bcc?, replyTo? }
+ * Body: { to, subject, html, fromEmail?, fromName?, cc?, bcc?, replyTo?, caseId? }
+ * Auth: Authorization: Bearer <supabase access token> (firm member), OR
+ *       x-internal-secret: <EMAIL_SEND_INTERNAL_SECRET> for trusted internal callers.
  */
+
+import {
+  requireFirmMemberOrInternalSecret,
+  caseBelongsToFirm,
+  restrictiveCors,
+  recordAuditEvent,
+  checkRateLimit,
+  AuthError,
+} from '../../api/_shared/auth';
 
 const FIRM_DOMAIN = 'casebuddy.live';
 const FIRM_EMAIL = `firm@${FIRM_DOMAIN}`;
 const FIRM_NAME = 'CaseBuddy Law';
-const DEFAULT_ARCHIVE_BCC = 'casebuddylaw@gmail.com';
 
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const MAX_RECIPIENTS = 50;
+const MAX_HTML_BYTES = 200_000;
+const RATE_LIMIT_PER_HOUR = 60;
 
-const json = (status: number, body: unknown) =>
+const json = (req: Request, status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    headers: { ...restrictiveCors(req), 'Content-Type': 'application/json' },
   });
+
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 const toList = (v: unknown): string[] => {
   if (!v) return [];
@@ -100,40 +116,92 @@ async function sendViaResend(p: {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
-  if (req.method !== 'POST') return json(405, { error: 'Method not allowed' });
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: restrictiveCors(req) });
+  if (req.method !== 'POST') return json(req, 405, { error: 'Method not allowed' });
+
+  let user;
+  try {
+    user = await requireFirmMemberOrInternalSecret(req, 'EMAIL_SEND_INTERNAL_SECRET');
+  } catch (err) {
+    const status = err instanceof AuthError ? err.status : 401;
+    return json(req, status, { error: err instanceof Error ? err.message : 'Unauthorized' });
+  }
+
+  if (!checkRateLimit(`email-send:${user.userId}`, RATE_LIMIT_PER_HOUR, 60 * 60 * 1000)) {
+    await recordAuditEvent({
+      eventType: 'email.send', userId: user.userId, firmId: user.firmId,
+      result: 'denied', detail: 'rate limit exceeded',
+    });
+    return json(req, 429, { error: 'Too many send requests. Please try again later.' });
+  }
 
   let payload: any;
-  try { payload = await req.json(); } catch { return json(400, { error: 'Invalid JSON body' }); }
+  try { payload = await req.json(); } catch { return json(req, 400, { error: 'Invalid JSON body' }); }
 
   const to = toList(payload.to);
-  const subject = String(payload.subject || '').trim();
+  const subject = String(payload.subject || '').trim().slice(0, 500);
   const html = String(payload.html || payload.htmlBody || '').trim();
+  const matterId = payload.caseId ? String(payload.caseId) : null;
 
-  if (!to.length) return json(400, { error: 'At least one valid "to" recipient is required' });
-  if (!subject) return json(400, { error: 'Missing subject' });
-  if (!html) return json(400, { error: 'Missing html body' });
+  if (!to.length) return json(req, 400, { error: 'At least one valid "to" recipient is required' });
+  if (!subject) return json(req, 400, { error: 'Missing subject' });
+  if (!html) return json(req, 400, { error: 'Missing html body' });
+  if (new TextEncoder().encode(html).length > MAX_HTML_BYTES) {
+    return json(req, 413, { error: 'Email body exceeds the size limit.' });
+  }
 
   const from = safeFrom(payload.fromEmail, payload.fromName);
   const cc = uniq(toList(payload.cc));
-  const archive = (process.env.FIRM_ARCHIVE_BCC || DEFAULT_ARCHIVE_BCC).trim();
-  const bcc = uniq([...toList(payload.bcc), archive]).filter(e => !to.includes(e) && !cc.includes(e));
+  const archiveConfigured = (process.env.FIRM_ARCHIVE_BCC || '').trim();
+  const bcc = uniq([...toList(payload.bcc), ...(archiveConfigured ? [archiveConfigured] : [])])
+    .filter(e => !to.includes(e) && !cc.includes(e));
   const replyTo = toList(payload.replyTo)[0];
 
+  const totalRecipients = to.length + cc.length + bcc.length;
+  if (totalRecipients > MAX_RECIPIENTS) {
+    return json(req, 413, { error: `Too many recipients (max ${MAX_RECIPIENTS}).` });
+  }
+
+  if (matterId && user.firmId && !(await caseBelongsToFirm(matterId, user.firmId))) {
+    await recordAuditEvent({
+      eventType: 'email.send', userId: user.userId, firmId: user.firmId, matterId,
+      result: 'denied', detail: 'matter does not belong to caller firm',
+    });
+    return json(req, 403, { error: 'The referenced case is not accessible to your firm.' });
+  }
+
   const params = { to, cc, bcc, from, replyTo, subject, html };
+  const payloadHash = await sha256Hex(JSON.stringify({ to, cc, bcc, subject, from }));
 
   const hasSendgrid = !!process.env.SENDGRID_API_KEY;
   const hasResend = !!process.env.RESEND_API_KEY;
   if (!hasSendgrid && !hasResend)
-    return json(503, { error: 'Email is not configured. Set SENDGRID_API_KEY or RESEND_API_KEY.' });
+    return json(req, 503, { error: 'Email is not configured. Set SENDGRID_API_KEY or RESEND_API_KEY.' });
 
   const primary = await sendViaSendgrid(params);
-  if (primary.ok) return json(200, { ok: true, provider: 'sendgrid' });
+  if (primary.ok) {
+    await recordAuditEvent({
+      eventType: 'email.send', userId: user.userId, firmId: user.firmId, matterId,
+      target: to.join(','), payloadHash, result: 'success', detail: 'provider=sendgrid',
+    });
+    return json(req, 200, { ok: true, provider: 'sendgrid' });
+  }
 
   const fallback = await sendViaResend(params);
-  if (fallback.ok) return json(200, { ok: true, provider: 'resend', primaryError: primary.detail });
+  if (fallback.ok) {
+    await recordAuditEvent({
+      eventType: 'email.send', userId: user.userId, firmId: user.firmId, matterId,
+      target: to.join(','), payloadHash, result: 'success', detail: 'provider=resend (sendgrid fallback)',
+    });
+    return json(req, 200, { ok: true, provider: 'resend', primaryError: primary.detail });
+  }
 
-  return json(502, {
+  await recordAuditEvent({
+    eventType: 'email.send', userId: user.userId, firmId: user.firmId, matterId,
+    target: to.join(','), payloadHash, result: 'failure',
+    detail: `sendgrid=${primary.detail || 'n/a'}; resend=${fallback.detail || 'n/a'}`,
+  });
+  return json(req, 502, {
     error: 'All email providers failed',
     sendgrid: hasSendgrid ? primary.detail : 'not configured',
     resend: hasResend ? fallback.detail : 'not configured',

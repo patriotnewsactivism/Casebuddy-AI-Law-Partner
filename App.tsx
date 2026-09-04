@@ -94,7 +94,7 @@ import { onCaseCreated, onCaseUpdated } from './services/caseEventHooks';
 import NotificationCenter from './components/NotificationCenter';
 import AgentStatusDashboard from './components/AgentStatusDashboard';
 import { loadCasesWithSync, upsertCaseToCloud, deleteCaseFromCloud, subscribeCases, syncLocalCasesToCloud, SyncStatus, syncLabel, adoptFirmIdFromUser } from './services/caseStore';
-import { onAuthStateChange, signOut, getSession } from './services/authService';
+import { onAuthStateChange, signOut } from './services/authService';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -480,32 +480,13 @@ const App = () => {
     return () => { unsub(); clearTimeout(timeout); };
   }, []);
 
-  // ─── Fetch server-side API keys once authenticated ─────────────────────────
-  // The Gemini key lives server-side (GEMINI_API_KEY). Services fall back to
-  // window.__GEMINI_API_KEY, so we fetch it via the voice-keys endpoint and
-  // cache it on window so all services pick it up without any VITE_ env var.
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const session = await getSession();
-        if (!session?.access_token) return;
-        const resp = await fetch('/api/ai/voice-keys', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.geminiKey) (window as any).__GEMINI_API_KEY = data.geminiKey;
-          if (data.deepgramKey) (window as any).__DEEPGRAM_API_KEY = data.deepgramKey;
-          if (data.deepseekKey) (window as any).__DEEPSEEK_API_KEY = data.deepseekKey;
-        }
-      } catch { /* silent — services fall back to VITE_ env vars */ }
-    })();
-  }, [user]);
+  // NOTE: a window.__GEMINI_API_KEY / __DEEPGRAM_API_KEY / __DEEPSEEK_API_KEY
+  // runtime-key-caching effect previously lived here. It was dead code (the
+  // voice-keys endpoint never returns geminiKey/deepseekKey, and the Deepgram
+  // voice hook fetches its own short-lived token directly rather than reading
+  // the cached window value) and it implemented exactly the window-key
+  // architecture the credential boundary prohibits, so it was removed rather
+  // than fixed. See docs/SECURITY_REMEDIATION.md.
 
   const setTheme = (t: 'dark' | 'light') => {
     setThemeState(t);

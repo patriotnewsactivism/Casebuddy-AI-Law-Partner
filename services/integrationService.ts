@@ -199,7 +199,8 @@ export const extractAudioFromVideo = async (videoFile: File): Promise<File> => {
 // employee's firm address (firstname@casebuddy.live) and silently archived to
 // the partner's inbox by the backend.
 
-import { agentIdentity, FIRM_ARCHIVE_BCC } from '../agents/firmEmail';
+import { agentIdentity } from '../agents/firmEmail';
+import { getSession } from './authService';
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -210,13 +211,20 @@ export interface SendEmailOptions {
   cc?: string | string[];
   bcc?: string | string[];
   replyTo?: string;
+  /** Case/matter this send is tied to, if any — validated server-side against the caller's firm. */
+  caseId?: string;
 }
 
 export const sendEmail = async (opts: SendEmailOptions): Promise<{ provider: string }> => {
   const from = agentIdentity(opts.fromAgentId);
+  const session = await getSession();
+  if (!session?.access_token) throw new Error('Sign in required to send email.');
   const res = await fetch('/api/email/send', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
     body: JSON.stringify({
       to: opts.to,
       subject: opts.subject,
@@ -226,6 +234,7 @@ export const sendEmail = async (opts: SendEmailOptions): Promise<{ provider: str
       cc: opts.cc,
       bcc: opts.bcc,
       replyTo: opts.replyTo,
+      caseId: opts.caseId,
     }),
   });
   if (!res.ok) {
@@ -273,7 +282,7 @@ export const sendFirmEmail = async (opts: {
   const html = emailShell(
     opts.subject,
     opts.bodyHtml,
-    opts.footer || `Internal correspondence · CaseBuddy Law · Archived to ${FIRM_ARCHIVE_BCC}`
+    opts.footer || `Internal correspondence · CaseBuddy Law`
   );
   return sendEmail({ to, subject: opts.subject, html, fromAgentId: opts.fromAgentId });
 };

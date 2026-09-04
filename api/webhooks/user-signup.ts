@@ -99,7 +99,10 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const res = await fetch(`${APP_URL}/api/email/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': process.env.EMAIL_SEND_INTERNAL_SECRET || '',
+      },
       body: JSON.stringify({
         to: [email],
         subject: `Welcome to CaseBuddy, ${displayName.split(' ')[0]} — let's get you set up`,

@@ -1,15 +1,16 @@
 // Firm email identities. Every AI employee has a real inbox at the firm domain
-// (firstname@casebuddy.live); the firm itself is firm@casebuddy.live. Every
-// message the firm sends is silently archived to the partner's personal inbox
-// so there's always a human-readable paper trail.
+// (firstname@casebuddy.live); the firm itself is firm@casebuddy.live.
+//
+// Archive BCC (if any) is firm-configured server-side via the FIRM_ARCHIVE_BCC
+// env var read in api/email/send.ts / netlify/functions/email-send.ts — it is
+// intentionally NOT hardcoded here or anywhere in source. A personal address
+// must never be baked into the codebase or shown to clients in email footers.
 
 import { OPERATIONAL_AGENTS, LEGAL_SPECIALISTS } from './personas';
 
 export const FIRM_DOMAIN = 'casebuddy.live';
 export const FIRM_NAME = 'CaseBuddy Law';
 export const FIRM_EMAIL = `firm@${FIRM_DOMAIN}`;
-// Always BCC'd on outbound firm mail so the partner keeps the full record.
-export const FIRM_ARCHIVE_BCC = 'casebuddylaw@gmail.com';
 
 export interface EmailIdentity {
   email: string;
