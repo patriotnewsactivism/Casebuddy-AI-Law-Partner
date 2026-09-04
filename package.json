@@ -8,9 +8,12 @@
     "check:client-secrets": "node scripts/check-client-secrets.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:security": "tsc --noEmit -p tsconfig.security.json",
-    "build": "npm run typecheck:security && vite build && npm run check:client-secrets",
+    "build": "npm run typecheck:security && npm run typecheck:server && vite build && npm run check:client-secrets && npm run build:server",
     "verify:security": "npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:server": "esbuild server/index.ts --platform=node --format=esm --bundle --packages=external --outfile=dist-server/server.js",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "start": "node dist-server/server.js"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.10",
@@ -34,7 +37,9 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "react-toastify": "^11.0.5",
-    "recharts": "^3.4.1"
+    "recharts": "^3.4.1",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@netlify/functions": "^5.3.0",
@@ -47,6 +52,12 @@
     "postcss": "^8.5.15",
     "tailwindcss": "3",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "@types/express": "^4.17.21",
+    "@types/node-cron": "^3.0.11",
+    "esbuild": "^0.24.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
