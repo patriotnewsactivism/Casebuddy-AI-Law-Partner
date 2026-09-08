@@ -17,9 +17,28 @@ export const isSupabaseConfigured = Boolean(url && anonKey);
 
 let client: SupabaseClient | null = null;
 
+/**
+ * Referral token for the public intake route. It is intentionally attached as
+ * an HTTP header instead of trusting a browser-supplied firm_id. Postgres can
+ * inspect this header and resolve the receiving firm through
+ * resolve_public_intake_token(). The token is opaque and contains no user UUID.
+ */
+const publicIntakeTokenFromLocation = (): string => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const match = window.location.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+    if (!match?.[1]) return '';
+    const token = decodeURIComponent(match[1]).trim();
+    return token.length >= 5 && token.length <= 128 ? token : '';
+  } catch {
+    return '';
+  }
+};
+
 export const getSupabase = (): SupabaseClient | null => {
   if (!isSupabaseConfigured) return null;
   if (!client) {
+    const intakeToken = publicIntakeTokenFromLocation();
     client = createClient(url, anonKey, {
       auth: {
         persistSession: true,        // Keep user signed in across reloads
@@ -27,6 +46,9 @@ export const getSupabase = (): SupabaseClient | null => {
         detectSessionInUrl: true,     // Handle OAuth redirect callbacks
       },
       realtime: { params: { eventsPerSecond: 5 } },
+      global: {
+        headers: intakeToken ? { 'X-Intake-Token': intakeToken } : {},
+      },
     });
   }
   return client;
