@@ -3,17 +3,14 @@ import { getSupabase } from './supabaseClient';
 /**
  * Intake call recording.
  *
- * Captures both sides of a Maya intake call only after the prospect has made an
- * explicit recording choice in the public intake UI. Audio is stored in the
- * private `intake-recordings` bucket for the narrow purpose of intake accuracy.
- * The browser never receives general INSERT authority on that bucket: it asks a
- * server endpoint for an intake-scoped signed upload token after the intake row
- * exists.
+ * Captures both sides of a Maya intake call only after the prospect affirmatively
+ * consents. Audio is stored in the private `intake-recordings` bucket solely to
+ * preserve intake accuracy. The browser never receives general INSERT authority
+ * on that bucket; it receives an intake-scoped signed upload token instead.
  */
 
 export const RECORDING_BUCKET = 'intake-recordings';
 
-/** Ordered by preference; the first the browser supports wins. */
 const CANDIDATE_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -31,6 +28,57 @@ function pickMimeType(): string | null {
   return null;
 }
 
+function currentIntakeToken(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const match = window.location.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+    return match?.[1] ? decodeURIComponent(match[1]).trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function currentResumeToken(): string {
+  if (typeof window === 'undefined') return '';
+  try { return sessionStorage.getItem('casebuddy_intake_resume') || ''; }
+  catch { return ''; }
+}
+
+/**
+ * Explicit pre-capture consent. The mixed stream exists at this point, but the
+ * MediaRecorder has not started and the voice WebSocket is not open yet, so no
+ * call audio has been captured when this choice is presented.
+ *
+ * Declining sends the prospect to the non-recorded secure chat intake instead
+ * of silently recording or forcing them to abandon the intake.
+ */
+function obtainRecordingConsent(): boolean {
+  if (typeof window === 'undefined') return false;
+  let consent = false;
+  try {
+    consent = window.confirm(
+      'For intake accuracy, may CaseBuddy privately record this Maya voice consultation? ' +
+      'The recording is used only to verify what was said, is not public, and is subject to the firm’s retention policy.\n\n' +
+      'Choose OK to consent to recording. Choose Cancel to continue with the secure text intake without audio recording.'
+    );
+  } catch {
+    consent = false;
+  }
+
+  try {
+    if (consent) {
+      sessionStorage.setItem('casebuddy_intake_recording_consent', new Date().toISOString());
+    } else {
+      sessionStorage.removeItem('casebuddy_intake_recording_consent');
+      const next = new URL(window.location.href);
+      next.searchParams.set('mode', 'chat');
+      setTimeout(() => window.location.replace(next.toString()), 0);
+    }
+  } catch { /* private mode / navigation edge case */ }
+
+  return consent;
+}
+
 export interface IntakeRecording {
   blob: Blob;
   mimeType: string;
@@ -38,17 +86,15 @@ export interface IntakeRecording {
 }
 
 export interface IntakeRecorderHandle {
-  /** False when the browser cannot record; the call still proceeds normally. */
   readonly active: boolean;
   stop: () => Promise<IntakeRecording | null>;
 }
 
-/**
- * Begin recording a mixed call stream. Never throws — a browser that cannot
- * record must not take the intake down with it, so failures return an inert
- * handle and the call continues without audio.
- */
 export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
+  if (!obtainRecordingConsent()) {
+    return { active: false, stop: async () => null };
+  }
+
   const mimeType = pickMimeType();
   if (!mimeType) {
     console.warn('[intakeRecording] MediaRecorder unavailable — continuing without audio');
@@ -65,7 +111,6 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
 
   const chunks: Blob[] = [];
   const startedAt = Date.now();
-
   recorder.addEventListener('dataavailable', event => {
     if (event.data && event.data.size > 0) chunks.push(event.data);
   });
@@ -79,56 +124,57 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
 
   return {
     active: true,
-    stop: () =>
-      new Promise<IntakeRecording | null>(resolve => {
-        if (recorder.state === 'inactive') {
-          resolve(null);
-          return;
-        }
-        recorder.addEventListener(
-          'stop',
-          () => {
-            const blob = new Blob(chunks, { type: mimeType });
-            resolve(
-              blob.size > 0
-                ? { blob, mimeType, seconds: Math.round((Date.now() - startedAt) / 1000) }
-                : null,
-            );
-          },
-          { once: true },
+    stop: () => new Promise<IntakeRecording | null>(resolve => {
+      if (recorder.state === 'inactive') {
+        resolve(null);
+        return;
+      }
+      recorder.addEventListener('stop', () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        resolve(
+          blob.size > 0
+            ? { blob, mimeType, seconds: Math.round((Date.now() - startedAt) / 1000) }
+            : null,
         );
-        try {
-          recorder.stop();
-        } catch {
-          resolve(null);
-        }
-      }),
+      }, { once: true });
+      try { recorder.stop(); } catch { resolve(null); }
+    }),
   };
 }
 
 export interface UploadRecordingArgs {
   recording: IntakeRecording;
   intakeId: string;
-  resumeToken: string;
+  /** Legacy field retained for call-site compatibility; server ignores it. */
+  firmId?: string;
+  resumeToken?: string;
   publicToken?: string;
-  consent: boolean;
+  consent?: boolean;
 }
 
 /**
  * Upload a finished recording through an intake-scoped signed upload token.
- * Returns the storage path to persist on the intake row, or null if storage is
- * unavailable. The intake itself is never lost because audio could not upload.
+ * The receiving firm comes from the referral token/server configuration, never
+ * from the browser-provided firmId.
  */
 export async function uploadIntakeRecording(
   args: UploadRecordingArgs,
 ): Promise<{ path: string; seconds: number } | null> {
   const supabase = getSupabase();
-  if (!supabase || !args.consent) return null;
+  if (!supabase) return null;
 
   const intakeId = args.intakeId.trim();
-  const resumeToken = args.resumeToken.trim();
-  if (!intakeId || resumeToken.length < 16) {
-    console.warn('[intakeRecording] refusing upload without a valid intake session');
+  const resumeToken = (args.resumeToken || currentResumeToken()).trim();
+  const publicToken = (args.publicToken || currentIntakeToken()).trim();
+  const consent = args.consent ?? Boolean(
+    typeof window !== 'undefined' && (() => {
+      try { return sessionStorage.getItem('casebuddy_intake_recording_consent'); }
+      catch { return ''; }
+    })()
+  );
+
+  if (!consent || !intakeId || resumeToken.length < 16) {
+    console.warn('[intakeRecording] refusing upload without consent and a valid intake session');
     return null;
   }
 
@@ -138,12 +184,12 @@ export async function uploadIntakeRecording(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(args.publicToken ? { 'X-Intake-Token': args.publicToken } : {}),
+        ...(publicToken ? { 'X-Intake-Token': publicToken } : {}),
       },
       body: JSON.stringify({
         intakeId,
         resumeToken,
-        publicToken: args.publicToken || undefined,
+        publicToken: publicToken || undefined,
         mimeType: args.recording.mimeType,
         consent: true,
       }),
@@ -178,7 +224,7 @@ export async function uploadIntakeRecording(
 
 /**
  * Request a 60-second, staff-authenticated playback URL. The server verifies
- * that the intake belongs to the caller's firm and records the access event.
+ * firm ownership and records the access event before issuing the URL.
  */
 export async function getRecordingPlaybackUrl(intakeId: string): Promise<string | null> {
   const supabase = getSupabase();
