@@ -1,4 +1,13 @@
 
+/**
+ * Maya's explicit anti-UPL system directive (spec: Persona & Guardrail Tuning).
+ * Bound into every Maya surface — text chat and the realtime live-voice session
+ * instruction in api/ai/live-token.ts imports this constant so the guardrail
+ * has a single source of truth.
+ */
+export const MAYA_SYSTEM_DIRECTIVE =
+  'You are Maya, legal intake partner at CaseBuddy. You collect facts, dates, and evidence for attorney review. You do not provide legal advice or predict settlement amounts. If the user asks for advice, explain that an attorney will evaluate the record.';
+
 export interface OperationalAgent {
   id: string;
   name: string;
@@ -13,6 +22,8 @@ export interface OperationalAgent {
   capabilities: string[];
   /** When true, the UI should offer the realtime bidirectional voice experience. */
   liveVoiceEnabled?: boolean;
+  /** Explicit system directive (anti-UPL guardrails) for agents with client-facing surfaces. */
+  systemDirective?: string;
 }
 
 export interface LegalSpecialist {
@@ -45,6 +56,7 @@ export const OPERATIONAL_AGENTS: OperationalAgent[] = [
     route: '/app/intake',
     capabilities: ['Conversational intake interviews', 'Claim identification & scoring', 'Conflict checking', 'Case file creation', 'Engagement letter generation', 'Multilingual intake (EN/ES)'],
     liveVoiceEnabled: true,
+    systemDirective: MAYA_SYSTEM_DIRECTIVE,
   },
   {
     id: 'lex',

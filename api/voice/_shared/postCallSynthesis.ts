@@ -215,8 +215,13 @@ export async function runPostCallSynthesis(sessionId: string): Promise<void> {
       await sbFetch(`intake_cases?id=eq.${session.intakeId}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' },
+        // NOTE: only writes columns that exist on the production intake_cases
+        // table (plus live_voice_session_id / intake_memorandum added by
+        // 20260908_live_voice_session_facts.sql). PR #49 recording-privacy
+        // columns (recording_consent_at etc.) are intentionally NOT written
+        // here: live voice sessions do not persist audio, so the recording
+        // machinery in api/intake/recording-retention.ts does not apply.
         body: JSON.stringify({
-          completion_state: 'complete',
           summary: synthesis.summary,
           intake_memorandum: synthesis.memorandum,
           score: synthesis.score,
@@ -225,7 +230,6 @@ export async function runPostCallSynthesis(sessionId: string): Promise<void> {
           intake: synthesis.intakeData,
           transcript,
           live_voice_session_id: sessionId,
-          last_activity_at: new Date().toISOString(),
         }),
       });
       console.log(`[postCallSynthesis] updated intake ${session.intakeId}`);
@@ -253,16 +257,13 @@ export async function runPostCallSynthesis(sessionId: string): Promise<void> {
           jurisdiction: synthesis.jurisdiction,
           intake: synthesis.intakeData,
           transcript,
-          completion_state: 'complete',
           status: 'new',
           disposition: synthesis.score >= 60 ? 'accepted' : 'review',
           recommended_department: synthesis.matterType,
           recommended_agent_id: '',
           urgency: synthesis.score >= 80 ? 'high' : synthesis.score >= 50 ? 'medium' : 'low',
           score_detail: {},
-          recording_consent: session.recordingConsent,
           live_voice_session_id: sessionId,
-          last_activity_at: new Date().toISOString(),
         }),
       });
       if (result) {

@@ -606,7 +606,7 @@ const DiscoveryManager: React.FC = () => {
                       {Object.entries(STATUS_STYLES).map(([key, val]) => (
                         <button
                           key={key}
-                          onClick={() => handleStatusUpdate(req.id, key)}
+                          onClick={() => handleStatusUpdate(req.id, key as DiscoveryRequest['status'])}
                           className={`text-xs px-2 py-0.5 rounded-full ${
                             req.status === key ? val.bg + ' ' + val.color : 'bg-gray-700 text-gray-500 hover:text-gray-300'
                           }`}

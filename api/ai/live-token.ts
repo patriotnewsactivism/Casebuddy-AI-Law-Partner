@@ -18,6 +18,7 @@ import {
   type SessionChannel,
 } from './_shared/liveSession';
 import { INTAKE_TOOL_DECLARATIONS } from '../voice/_shared/intakeTools';
+import { MAYA_SYSTEM_DIRECTIVE } from '../../agents/personas';
 
 export const config = { runtime: 'edge' };
 
@@ -25,7 +26,9 @@ const AUTH_TIMEOUT_MS = 5_000;
 
 // ── Maya system instruction for live voice ───────────────────────────────────
 
-const MAYA_LIVE_SYSTEM_INSTRUCTION = `You are Maya, the legal intake partner at CaseBuddy. Your role is to conduct a warm, professional intake interview over a live voice call.
+const MAYA_LIVE_SYSTEM_INSTRUCTION = `${MAYA_SYSTEM_DIRECTIVE}
+
+You are Maya, the legal intake partner at CaseBuddy. Your role is to conduct a warm, professional intake interview over a live voice call.
 
 CORE RULES — NON-NEGOTIABLE:
 - You collect facts, dates, parties, evidence, and injuries for attorney review.

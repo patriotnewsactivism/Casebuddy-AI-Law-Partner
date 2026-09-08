@@ -243,6 +243,14 @@ const CourtRules: React.FC = () => {
   };
 
   // ── Deadline Calculator Handlers ────────────────────────────────────────
+  /** Map a service DeadlineCalculation to the common-deadline display shape. */
+  const toCommonDeadline = (d: DeadlineCalculation) => ({
+    event: d.event,
+    days: d.days,
+    calendarDays: d.calendarDays,
+    citation: d.rule || d.notes || '',
+  });
+
   const handleCalculate = async () => {
     if (!triggerDate || !calcJurisdiction || !eventType) return;
     setCalculating(true);
@@ -250,7 +258,7 @@ const CourtRules: React.FC = () => {
     const results = await calculateDeadlines(triggerDate, calcJurisdiction, eventType);
     setDeadlineResults(results);
     const cd = getCommonDeadlines(calcJurisdiction);
-    setCommonDeadlines(cd);
+    setCommonDeadlines(cd.map(toCommonDeadline));
     const info = getJurisdictionById(calcJurisdiction);
     setJurisdictionInfo(info || null);
     setCalculating(false);
@@ -259,7 +267,7 @@ const CourtRules: React.FC = () => {
   useEffect(() => {
     if (calcJurisdiction) {
       const cd = getCommonDeadlines(calcJurisdiction);
-      setCommonDeadlines(cd);
+      setCommonDeadlines(cd.map(toCommonDeadline));
       const info = getJurisdictionById(calcJurisdiction);
       setJurisdictionInfo(info || null);
     }

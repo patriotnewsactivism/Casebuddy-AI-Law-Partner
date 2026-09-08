@@ -3,6 +3,7 @@ import { Mic, MicOff, X } from 'lucide-react';
 import { AppContext } from '../App';
 import { Link } from 'react-router-dom';
 import { OPERATIONAL_AGENTS } from '../agents/personas';
+import MayaLiveVoicePanel from './MayaLiveVoicePanel';
 
 /**
  * FloatingVoiceButton — firm-wide push-to-talk shortcut.
@@ -26,6 +27,9 @@ const FloatingVoiceButton: React.FC = () => {
       {/* Agent picker */}
       {open && (
         <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 mb-1 w-48 animate-fade-in">
+          <div className="mb-2">
+            <MayaLiveVoicePanel compact />
+          </div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1 mb-2">Call an Agent</p>
           <div className="space-y-1">
             {voiceAgents.map(a => (

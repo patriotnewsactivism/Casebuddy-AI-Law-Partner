@@ -164,7 +164,7 @@ export async function handleClientStream(
           }
 
           // Execute server-side intake tool
-          const result = await executeIntakeTool(toolName, args, session.facts);
+          const result = await executeIntakeTool(toolName, args, session.facts, session.firmId);
 
           // Notify client of completion
           if (clientWs.readyState === 1) {

@@ -163,18 +163,24 @@ async function sbQuery(path: string, init: RequestInit = {}): Promise<any> {
  */
 export async function executeCheckConflict(
   partyName: string,
+  /** Firm scoping — REQUIRED in multi-tenant deployments. When provided, only
+   *  the caller's own firm's records are searched (tenant boundary isolation). */
+  firmId?: string,
 ): Promise<ToolResult> {
   const normalized = partyName.trim().toLowerCase();
   if (!normalized) {
     return { name: 'check_conflict', content: { hasConflict: false, matches: [], note: 'Empty party name.' } };
   }
 
+  // Firm scoping is applied to every query below (tenant boundary isolation).
+  const firmFilter = firmId ? `&firm_id=eq.${encodeURIComponent(firmId)}` : '';
+
   const matches: string[] = [];
 
   // Search intake_cases for opposing party matches (JSONB field)
   try {
     const intakes = await sbQuery(
-      `intake_cases?select=id,full_name,intake&or=(full_name.ilike.*${encodeURIComponent(normalized)}*)`,
+      `intake_cases?select=id,full_name,intake&or=(full_name.ilike.*${encodeURIComponent(normalized)}*)${firmFilter}`,
     );
     if (Array.isArray(intakes)) {
       for (const row of intakes) {
@@ -192,12 +198,14 @@ export async function executeCheckConflict(
 
   // Search cases table
   try {
+    // NOTE: the production `cases` table's columns are name / client_name
+    // (there is no title/client column) — previous queries here silently 400'd.
     const cases = await sbQuery(
-      `cases?select=id,title,client&or=(client.ilike.*${encodeURIComponent(normalized)}*,title.ilike.*${encodeURIComponent(normalized)}*)`,
+      `cases?select=id,name,client_name,opposing_party&or=(name.ilike.*${encodeURIComponent(normalized)}*,client_name.ilike.*${encodeURIComponent(normalized)}*,opposing_party.ilike.*${encodeURIComponent(normalized)}*)${firmFilter}`,
     );
     if (Array.isArray(cases)) {
       for (const row of cases) {
-        matches.push(`Active case: "${row.title}" — client ${row.client}`);
+        matches.push(`Active case: "${row.name || 'Untitled'}" — client ${row.client_name || 'unknown'}`);
       }
     }
   } catch { /* non-fatal */ }
@@ -306,10 +314,11 @@ export async function executeIntakeTool(
   toolName: string,
   args: Record<string, string>,
   sessionFacts: LiveSessionFact[],
+  firmId?: string,
 ): Promise<ToolResult> {
   switch (toolName) {
     case 'check_conflict':
-      return executeCheckConflict(args.party_name || '');
+      return executeCheckConflict(args.party_name || '', firmId);
 
     case 'verify_court_jurisdiction':
       return executeVerifyJurisdiction(args.county_or_city || '', args.state || '');

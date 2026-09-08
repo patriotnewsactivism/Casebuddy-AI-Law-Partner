@@ -164,6 +164,7 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
                 fc.name,
                 fc.args || {},
                 currentSession?.facts || [],
+                currentSession?.firmId,
               );
               toolResponses.push({
                 id: fc.id,

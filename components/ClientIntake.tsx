@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus, CheckCircle, AlertTriangle, Loader, Download, Copy, ChevronRight, ChevronLeft } from 'lucide-react';
 import { deepseekChat } from '../services/deepseek';
+import MayaLiveVoicePanel from './MayaLiveVoicePanel';
 
 interface IntakeForm {
   // Personal Info
@@ -224,6 +225,10 @@ Include: scope of representation, fee agreement, billing procedures, client obli
         </h1>
         <p className="text-slate-400 mt-1">Onboard new clients professionally with conflict checking and automatic engagement letter generation.</p>
       </div>
+
+      {/* Maya realtime live voice intake — waveform, listening/speaking states,
+          tap-to-interrupt barge-in, and in-call tool activity (MayaLiveVoicePanel). */}
+      <MayaLiveVoicePanel />
 
       {/* Stepper */}
       <div className="flex items-center gap-0 mb-8">
