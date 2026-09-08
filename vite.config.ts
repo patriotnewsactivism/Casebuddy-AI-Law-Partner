@@ -110,7 +110,7 @@ export default defineConfig(({ mode }) => {
                 return;
               }
               // Dynamic import to avoid pulling server-only code into the Vite bundle
-              import('../api/ai/_shared/liveSession').then(({ createSession }) => {
+              import('./api/ai/_shared/liveSession').then(({ createSession }) => {
                 const session = createSession({
                   channel: 'browser',
                   firmId: env.VITE_FIRM_ID || 'dev-firm',
@@ -151,7 +151,7 @@ export default defineConfig(({ mode }) => {
                 const wss = new WebSocketServer({ noServer: true });
                 wss.handleUpgrade(request, socket, head, async (ws) => {
                   const sessionId = url.searchParams.get('session') || '';
-                  const { handleClientStream } = await import('../api/voice/client-stream');
+                  const { handleClientStream } = await import('./api/voice/client-stream');
                   handleClientStream(ws, sessionId);
                 });
               } catch (err) {
@@ -166,7 +166,7 @@ export default defineConfig(({ mode }) => {
                 const { WebSocketServer } = await import('ws');
                 const wss = new WebSocketServer({ noServer: true });
                 wss.handleUpgrade(request, socket, head, async (ws) => {
-                  const { handleTwilioMedia } = await import('../api/voice/twilio-media');
+                  const { handleTwilioMedia } = await import('./api/voice/twilio-media');
                   handleTwilioMedia(ws);
                 });
               } catch (err) {

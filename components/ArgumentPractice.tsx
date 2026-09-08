@@ -14,6 +14,12 @@ import { Link } from 'react-router-dom';
 
 const REX = OPERATIONAL_AGENTS.find(a => a.id === 'rex')!;
 
+// Gemini Live models: 3.1 Flash Live Preview primary with 2.5 Native Audio fallback
+const PRIMARY_LIVE_MODEL =
+  (import.meta.env.VITE_GEMINI_LIVE_MODEL as string) || 'gemini-3.1-flash-live-preview';
+const FALLBACK_LIVE_MODEL =
+  (import.meta.env.VITE_GEMINI_LIVE_FALLBACK_MODEL as string) || 'gemini-2.5-flash-native-audio-preview-09-2025';
+
 // --- Audio Utils for Live API ---
 function resample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
   if (fromRate === toRate) return input;
@@ -118,6 +124,7 @@ const TrialSim = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [liveVolume, setLiveVolume] = useState(0);
   const [objectionAlert, setObjectionAlert] = useState<{grounds: string, explanation: string} | null>(null);
+  const [activeModelName, setActiveModelName] = useState<string>(PRIMARY_LIVE_MODEL);
   
   // State for UI
   const [messages, setMessages] = useState<Message[]>([]);
@@ -235,115 +242,150 @@ const TrialSim = () => {
 
       const systemInstruction = getTrialSimSystemInstruction(phase, mode, opponentName, activeCase.summary);
 
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
-          systemInstruction: systemInstruction,
-          tools: [{ functionDeclarations: [coachingTool, objectionTool] }],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-        },
-        callbacks: {
-          onopen: () => {
-            console.log("Live Connected");
-            setIsLive(true);
-            setIsConnecting(false);
-            sessionPromise.then(session => session.sendToolResponse({
-                functionResponses: { name: 'initial_context_trigger', id: 'init', response: { status: 'ready' } }
-            }));
+      let fallbackAttempted = false;
 
-            const source = inputCtx.createMediaStreamSource(micStream);
-            sourceRef.current = source;
-            const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
-            processorRef.current = scriptProcessor;
-            scriptProcessor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              const resampledInput = resample(inputData, inputCtx.sampleRate, 16000);
-              let sum = 0;
-              for(let i=0; i<resampledInput.length; i++) sum += resampledInput[i] * resampledInput[i];
-              setLiveVolume(Math.sqrt(sum / resampledInput.length) * 100);
+      const connectWithModel = async (targetModel: string): Promise<void> => {
+        console.log(`[TrialSim] Connecting to Gemini Live with model: ${targetModel}...`);
 
-              const pcmBlob = createBlob(resampledInput);
-              sessionPromise.then(s => s.sendRealtimeInput({ media: pcmBlob }));
-            };
-            source.connect(scriptProcessor);
-            scriptProcessor.connect(inputCtx.destination);
+        const sessionPromise = ai.live.connect({
+          model: targetModel,
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+            systemInstruction: systemInstruction,
+            tools: [{ functionDeclarations: [coachingTool, objectionTool] }],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
           },
-          onmessage: async (msg: LiveServerMessage) => {
-             const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-             if (audioData) {
-                if (outputCtx.state === 'suspended') await outputCtx.resume();
-                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputCtx.currentTime);
-                const audioBuffer = await decodeAudioData(decode(audioData), outputCtx, 24000, 1);
-                const source = outputCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(outputNode);
-                source.addEventListener('ended', () => sourcesRef.current.delete(source));
-                source.start(nextStartTimeRef.current);
-                nextStartTimeRef.current += audioBuffer.duration;
-                sourcesRef.current.add(source);
-             }
+          callbacks: {
+            onopen: () => {
+              console.log(`[TrialSim] Live Connected successfully on ${targetModel}`);
+              setActiveModelName(targetModel);
+              setIsLive(true);
+              setIsConnecting(false);
+              sessionPromise.then(session => session.sendToolResponse({
+                  functionResponses: { name: 'initial_context_trigger', id: 'init', response: { status: 'ready' } }
+              }));
 
-             if (msg.serverContent?.inputTranscription?.text) {
-               currentInputTranscription.current += msg.serverContent.inputTranscription.text;
-               setLiveCaption({ text: currentInputTranscription.current, speaker: 'you' });
-               clearTimeout(liveCaptionTimer.current);
-             }
-             if (msg.serverContent?.outputTranscription?.text) {
-               currentOutputTranscription.current += msg.serverContent.outputTranscription.text;
-               setLiveCaption({ text: currentOutputTranscription.current, speaker: 'opponent' });
-               clearTimeout(liveCaptionTimer.current);
-             }
+              const source = inputCtx.createMediaStreamSource(micStream);
+              sourceRef.current = source;
+              const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+              processorRef.current = scriptProcessor;
+              scriptProcessor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const resampledInput = resample(inputData, inputCtx.sampleRate, 16000);
+                let sum = 0;
+                for(let i=0; i<resampledInput.length; i++) sum += resampledInput[i] * resampledInput[i];
+                setLiveVolume(Math.sqrt(sum / resampledInput.length) * 100);
 
-             if (msg.serverContent?.turnComplete) {
-                 if (currentInputTranscription.current.trim()) {
-                     setMessages(prev => [...prev, { id: Date.now()+'u', sender: 'user', text: currentInputTranscription.current, timestamp: Date.now() }]);
-                     currentInputTranscription.current = '';
+                const pcmBlob = createBlob(resampledInput);
+                sessionPromise.then(s => s.sendRealtimeInput({ media: pcmBlob }));
+              };
+              source.connect(scriptProcessor);
+              scriptProcessor.connect(inputCtx.destination);
+            },
+            onmessage: async (msg: LiveServerMessage) => {
+               // Handle multi-part model turn (Gemini 3.1 Live can include audio and transcripts across multiple parts)
+               const parts = msg.serverContent?.modelTurn?.parts || [];
+               for (const part of parts) {
+                 const audioData = part.inlineData?.data;
+                 if (audioData) {
+                    if (outputCtx.state === 'suspended') await outputCtx.resume();
+                    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputCtx.currentTime);
+                    const audioBuffer = await decodeAudioData(decode(audioData), outputCtx, 24000, 1);
+                    const source = outputCtx.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(outputNode);
+                    source.addEventListener('ended', () => sourcesRef.current.delete(source));
+                    source.start(nextStartTimeRef.current);
+                    nextStartTimeRef.current += audioBuffer.duration;
+                    sourcesRef.current.add(source);
                  }
-                 if (currentOutputTranscription.current.trim()) {
-                     setMessages(prev => [...prev, { id: Date.now()+'o', sender: 'opponent', text: currentOutputTranscription.current, timestamp: Date.now() }]);
-                     currentOutputTranscription.current = '';
-                 }
-                 liveCaptionTimer.current = setTimeout(() => setLiveCaption(null), 3000);
-             }
+               }
 
-             if (msg.toolCall) {
-                 for (const fc of msg.toolCall.functionCalls) {
-                     if (fc.name === 'sendCoachingTip') {
-                         const args = fc.args as any;
-                         setCoachingTip({
-                            critique: args.critique,
-                            suggestion: args.suggestion,
-                            sampleResponse: args.sampleResponse,
-                            teleprompterScript: args.teleprompterScript,
-                            fallaciesIdentified: args.fallaciesIdentified || [],
-                            rhetoricalEffectiveness: args.rhetoricalEffectiveness || 50,
-                            rhetoricalFeedback: args.rhetoricalFeedback || ""
-                         });
-                         sessionPromise.then(s => s.sendToolResponse({
-                             functionResponses: { id: fc.id, name: fc.name, response: { result: "displayed" } }
-                         }));
-                     }
-                     else if (fc.name === 'raiseObjection') {
-                        const args = fc.args as any;
-                        setObjectionAlert({ grounds: args.grounds, explanation: args.explanation });
-                        sessionPromise.then(s => s.sendToolResponse({
-                            functionResponses: { id: fc.id, name: fc.name, response: { result: "alert_shown" } }
-                        }));
-                     }
-                 }
-             }
-          },
-          onclose: () => stopLiveSession(true),
-          onerror: (e) => {
-              console.error(e);
-              stopLiveSession(true);
+               if (msg.serverContent?.inputTranscription?.text) {
+                 currentInputTranscription.current += msg.serverContent.inputTranscription.text;
+                 setLiveCaption({ text: currentInputTranscription.current, speaker: 'you' });
+                 clearTimeout(liveCaptionTimer.current);
+               }
+               if (msg.serverContent?.outputTranscription?.text) {
+                 currentOutputTranscription.current += msg.serverContent.outputTranscription.text;
+                 setLiveCaption({ text: currentOutputTranscription.current, speaker: 'opponent' });
+                 clearTimeout(liveCaptionTimer.current);
+               }
+
+               if (msg.serverContent?.turnComplete) {
+                   if (currentInputTranscription.current.trim()) {
+                       setMessages(prev => [...prev, { id: Date.now()+'u', sender: 'user', text: currentInputTranscription.current, timestamp: Date.now() }]);
+                       currentInputTranscription.current = '';
+                   }
+                   if (currentOutputTranscription.current.trim()) {
+                       setMessages(prev => [...prev, { id: Date.now()+'o', sender: 'opponent', text: currentOutputTranscription.current, timestamp: Date.now() }]);
+                       currentOutputTranscription.current = '';
+                   }
+                   liveCaptionTimer.current = setTimeout(() => setLiveCaption(null), 3000);
+               }
+
+               if (msg.toolCall) {
+                   for (const fc of msg.toolCall.functionCalls) {
+                       if (fc.name === 'sendCoachingTip') {
+                           const args = fc.args as any;
+                           setCoachingTip({
+                              critique: args.critique,
+                              suggestion: args.suggestion,
+                              sampleResponse: args.sampleResponse,
+                              teleprompterScript: args.teleprompterScript,
+                              fallaciesIdentified: args.fallaciesIdentified || [],
+                              rhetoricalEffectiveness: args.rhetoricalEffectiveness || 50,
+                              rhetoricalFeedback: args.rhetoricalFeedback || ""
+                           });
+                           sessionPromise.then(s => s.sendToolResponse({
+                               functionResponses: { id: fc.id, name: fc.name, response: { result: "displayed" } }
+                           }));
+                       }
+                       else if (fc.name === 'raiseObjection') {
+                          const args = fc.args as any;
+                          setObjectionAlert({ grounds: args.grounds, explanation: args.explanation });
+                          sessionPromise.then(s => s.sendToolResponse({
+                              functionResponses: { id: fc.id, name: fc.name, response: { result: "alert_shown" } }
+                          }));
+                       }
+                   }
+               }
+            },
+            onclose: () => stopLiveSession(true),
+            onerror: (e) => {
+                console.error(`Live session error on ${targetModel}:`, e);
+                if (!fallbackAttempted && targetModel === PRIMARY_LIVE_MODEL && targetModel !== FALLBACK_LIVE_MODEL) {
+                  fallbackAttempted = true;
+                  console.warn(`[TrialSim] Primary model ${PRIMARY_LIVE_MODEL} encountered error. Triggering fallback to ${FALLBACK_LIVE_MODEL}...`);
+                  toast.info(`Voice engine fallback: switching to Gemini 2.5 Live...`);
+                  connectWithModel(FALLBACK_LIVE_MODEL).catch(err => {
+                    console.error('Fallback live model connection failed:', err);
+                    stopLiveSession(true);
+                  });
+                  return;
+                }
+                stopLiveSession(true);
+            }
           }
+        });
+        sessionRef.current = sessionPromise;
+
+        try {
+          await sessionPromise;
+        } catch (connectErr) {
+          if (!fallbackAttempted && targetModel === PRIMARY_LIVE_MODEL && targetModel !== FALLBACK_LIVE_MODEL) {
+            fallbackAttempted = true;
+            console.warn(`[TrialSim] Handshake on ${PRIMARY_LIVE_MODEL} rejected (${connectErr}). Falling back to ${FALLBACK_LIVE_MODEL}...`);
+            await connectWithModel(FALLBACK_LIVE_MODEL);
+            return;
+          }
+          throw connectErr;
         }
-      });
-      sessionRef.current = sessionPromise;
+      };
+
+      await connectWithModel(PRIMARY_LIVE_MODEL);
 
     } catch (e) {
       console.error('Live session error:', e);
@@ -593,6 +635,10 @@ ${transcriptText}`;
                 </div>
              </div>
              <div className="flex items-center gap-3">
+                <div className="px-2.5 py-1 bg-slate-800/80 border border-white/10 rounded-full text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                   <span>{activeModelName.includes('3.1') ? 'Gemini 3.1 Live' : 'Gemini 2.5 Live (Fallback)'}</span>
+                </div>
                 {isLive ? (
                    <div className="flex items-center gap-2 px-4 py-1.5 bg-red-500/10 border border-red-500/30 rounded-full animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.3)]">
                       <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_10px_rgba(239,68,68,1)]"></div>

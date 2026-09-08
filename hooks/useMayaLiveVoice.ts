@@ -70,6 +70,7 @@ export interface UseMayaLiveVoiceResult {
   liveCaption: { speaker: LiveSpeaker; text: string } | null;
   activeTool: ActiveTool | null;
   activeIntakeId: string | null;
+  activeModel: string | null;
 
   connect: (opts?: MayaLiveVoiceOptions) => Promise<void>;
   disconnect: () => void;
@@ -169,6 +170,7 @@ export function useMayaLiveVoice(): UseMayaLiveVoiceResult {
   const [liveCaption, setLiveCaption] = useState<{ speaker: LiveSpeaker; text: string } | null>(null);
   const [activeTool, setActiveTool] = useState<ActiveTool | null>(null);
   const [activeIntakeId, setActiveIntakeId] = useState<string | null>(null);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -384,6 +386,17 @@ export function useMayaLiveVoice(): UseMayaLiveVoiceResult {
             return;
           }
 
+          if (msg.type === 'model_info') {
+            setActiveModel(msg.model);
+            return;
+          }
+
+          if (msg.type === 'model_fallback') {
+            setActiveModel(msg.toModel);
+            console.warn('[useMayaLiveVoice] Fallback engaged:', msg.fromModel, '->', msg.toModel, msg.reason);
+            return;
+          }
+
           if (msg.type === 'state') {
             if (msg.state === 'listening') setState('listening');
             else if (msg.state === 'speaking') setState('speaking');
@@ -510,6 +523,7 @@ export function useMayaLiveVoice(): UseMayaLiveVoiceResult {
     liveCaption,
     activeTool,
     activeIntakeId,
+    activeModel,
     connect,
     disconnect,
     interrupt,

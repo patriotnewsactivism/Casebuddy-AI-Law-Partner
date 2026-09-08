@@ -39,58 +39,13 @@ import {
 } from './_shared/intakeTools';
 import { runPostCallSynthesis } from './_shared/postCallSynthesis';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface GeminiSetupConfig {
-  model: string;
-  generationConfig: {
-    responseModalities: string[];
-    speechConfig?: {
-      voiceConfig?: {
-        prebuiltVoiceConfig?: {
-          voiceName: string;
-        };
-      };
-    };
-  };
-  systemInstruction?: { parts: { text: string }[] };
-  tools?: { functionDeclarations: typeof INTAKE_TOOL_DECLARATIONS }[];
-}
-
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const GEMINI_WS_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const GEMINI_MODEL = 'models/gemini-2.5-flash';
-// Maya's voice — a warm, professional female voice
-const VOICE_NAME = 'Aoede';
-
-// ── Upstream provider connection ─────────────────────────────────────────────
-
-function buildGeminiWsUrl(): string {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
-  return `${GEMINI_WS_BASE}?key=${apiKey}`;
-}
-
-function buildSetupMessage(session: LiveSession): GeminiSetupConfig {
-  return {
-    model: GEMINI_MODEL,
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: VOICE_NAME,
-          },
-        },
-      },
-    },
-    systemInstruction: {
-      parts: [{ text: session.systemInstruction }],
-    },
-    tools: [{ functionDeclarations: INTAKE_TOOL_DECLARATIONS }],
-  };
-}
+import {
+  connectGeminiLiveWithFallback,
+  DEFAULT_VOICE_NAME,
+  PRIMARY_LIVE_MODEL,
+  FALLBACK_LIVE_MODEL,
+  type LiveConnectionHandle,
+} from './_shared/geminiLiveConfig';
 
 // ── WebSocket bridge logic ───────────────────────────────────────────────────
 
@@ -115,54 +70,45 @@ export async function handleClientStream(
   session.clientWs = clientWs;
   console.log(`[client-stream] client connected to session ${sessionId.slice(0, 8)}…`);
 
-  // Open upstream Gemini WebSocket
-  let providerWs: any;
+  // Open upstream Gemini WebSocket with 3.1 Live primary and 2.5 Live fallback
+  let liveHandle: LiveConnectionHandle;
   try {
-    const WebSocketImpl = (await import('ws')).default;
-    const geminiUrl = buildGeminiWsUrl();
-    providerWs = new WebSocketImpl(geminiUrl);
-    session.providerWs = providerWs;
-  } catch (err) {
-    console.error('[client-stream] failed to connect to Gemini:', err);
-    clientWs.send(JSON.stringify({ type: 'error', message: 'Voice service unavailable.' }));
-    clientWs.close(4002, 'Provider unavailable');
-    return;
-  }
+    liveHandle = await connectGeminiLiveWithFallback({
+      systemInstruction: session.systemInstruction,
+      tools: [{ functionDeclarations: INTAKE_TOOL_DECLARATIONS }],
+      voiceName: DEFAULT_VOICE_NAME,
+      onSetupComplete: (activeModel) => {
+        touchSession(sessionId);
+        if (clientWs.readyState === 1) {
+          clientWs.send(JSON.stringify({ type: 'session_ready' }));
+          clientWs.send(JSON.stringify({ type: 'model_info', model: activeModel }));
+          clientWs.send(JSON.stringify({ type: 'state', state: 'listening' }));
+        }
+      },
+      onFallbackEngaged: (fromModel, toModel, reason) => {
+        console.warn(`[client-stream] Fallback triggered: ${fromModel} -> ${toModel} (${reason})`);
+        if (clientWs.readyState === 1) {
+          clientWs.send(JSON.stringify({
+            type: 'model_fallback',
+            fromModel,
+            toModel,
+            reason,
+          }));
+        }
+      },
+      onServerContent: async (content) => {
+        touchSession(sessionId);
 
-  // ── Provider WebSocket handlers ──────────────────────────────────────────
+        // Binary audio chunk directly
+        if (content.rawBinary) {
+          if (clientWs.readyState === 1) {
+            clientWs.send(content.rawBinary);
+          }
+          return;
+        }
 
-  providerWs.on('open', () => {
-    console.log(`[client-stream] upstream connected for ${sessionId.slice(0, 8)}…`);
-    // Send setup message
-    const setup = buildSetupMessage(session);
-    providerWs.send(JSON.stringify({ setup }));
-  });
-
-  providerWs.on('message', async (data: any) => {
-    touchSession(sessionId);
-
-    // Binary data = audio from provider
-    if (data instanceof Buffer || data instanceof ArrayBuffer) {
-      if (clientWs.readyState === 1) { // WebSocket.OPEN
-        clientWs.send(data);
-      }
-      return;
-    }
-
-    // Text data = JSON events
-    try {
-      const msg = JSON.parse(typeof data === 'string' ? data : data.toString());
-
-      // Setup complete
-      if (msg.setupComplete) {
-        clientWs.send(JSON.stringify({ type: 'session_ready' }));
-        clientWs.send(JSON.stringify({ type: 'state', state: 'listening' }));
-        return;
-      }
-
-      // Server content (audio and/or text)
-      if (msg.serverContent) {
-        const parts = msg.serverContent.modelTurn?.parts || [];
+        // Multi-part model turn (Gemini 3.1 may send audio + transcripts simultaneously)
+        const parts = content.modelTurn?.parts || [];
         for (const part of parts) {
           // Audio data inline
           if (part.inlineData?.mimeType?.startsWith('audio/')) {
@@ -186,31 +132,29 @@ export async function handleClientStream(
         }
 
         // Turn complete signals
-        if (msg.serverContent.turnComplete) {
+        if (content.turnComplete) {
           if (clientWs.readyState === 1) {
             clientWs.send(JSON.stringify({ type: 'state', state: 'listening' }));
           }
         }
 
-        // Interrupted (barge-in acknowledged)
-        if (msg.serverContent.interrupted) {
+        // Interrupted (barge-in acknowledged by model)
+        if (content.interrupted) {
           if (clientWs.readyState === 1) {
             clientWs.send(JSON.stringify({ type: 'state', state: 'listening' }));
           }
         }
-        return;
-      }
-
-      // Tool call from the model
-      if (msg.toolCall) {
-        const functionCalls = msg.toolCall.functionCalls || [];
+      },
+      onToolCall: async (toolCall) => {
+        touchSession(sessionId);
+        const functionCalls = toolCall.functionCalls || [];
         const toolResponses: any[] = [];
 
         for (const fc of functionCalls) {
           const toolName = fc.name;
           const args = fc.args || {};
 
-          // Notify client
+          // Notify client tool execution started
           if (clientWs.readyState === 1) {
             clientWs.send(JSON.stringify({
               type: 'tool_status',
@@ -219,7 +163,7 @@ export async function handleClientStream(
             }));
           }
 
-          // Execute server-side
+          // Execute server-side intake tool
           const result = await executeIntakeTool(toolName, args, session.facts);
 
           // Notify client of completion
@@ -239,37 +183,34 @@ export async function handleClientStream(
           });
         }
 
-        // Send tool results back to provider
-        if (providerWs.readyState === 1) {
-          providerWs.send(JSON.stringify({
-            toolResponse: { functionResponses: toolResponses },
-          }));
+        // Return tool results back to Gemini Live
+        liveHandle.sendToolResponse(toolResponses);
+      },
+      onClose: (code, reason) => {
+        console.log(`[client-stream] upstream closed for ${sessionId.slice(0, 8)}… code=${code}`);
+        if (clientWs.readyState === 1) {
+          clientWs.send(JSON.stringify({ type: 'state', state: 'disconnected' }));
+          clientWs.close(1000, 'Session ended');
         }
-        return;
-      }
-    } catch (err) {
-      console.warn('[client-stream] failed to parse provider message:', err);
-    }
-  });
+        runPostCallSynthesis(sessionId).catch(err =>
+          console.error('[client-stream] post-call synthesis failed:', err),
+        );
+      },
+      onError: (err) => {
+        console.error('[client-stream] upstream error:', err?.message || err);
+        if (clientWs.readyState === 1) {
+          clientWs.send(JSON.stringify({ type: 'error', message: 'Voice service error.' }));
+        }
+      },
+    });
 
-  providerWs.on('close', (code: number, reason: string) => {
-    console.log(`[client-stream] upstream closed for ${sessionId.slice(0, 8)}… code=${code}`);
-    if (clientWs.readyState === 1) {
-      clientWs.send(JSON.stringify({ type: 'state', state: 'disconnected' }));
-      clientWs.close(1000, 'Session ended');
-    }
-    // Trigger post-call synthesis
-    runPostCallSynthesis(sessionId).catch(err =>
-      console.error('[client-stream] post-call synthesis failed:', err),
-    );
-  });
-
-  providerWs.on('error', (err: Error) => {
-    console.error('[client-stream] upstream error:', err.message);
-    if (clientWs.readyState === 1) {
-      clientWs.send(JSON.stringify({ type: 'error', message: 'Voice service error.' }));
-    }
-  });
+    session.providerWs = liveHandle.ws;
+  } catch (err) {
+    console.error('[client-stream] failed to connect to Gemini Live engine:', err);
+    clientWs.send(JSON.stringify({ type: 'error', message: 'Voice service unavailable.' }));
+    clientWs.close(4002, 'Provider unavailable');
+    return;
+  }
 
   // ── Client WebSocket handlers ────────────────────────────────────────────
 
@@ -278,18 +219,11 @@ export async function handleClientStream(
 
     // Binary = audio from browser (24kHz 16-bit PCM)
     if (data instanceof Buffer || data instanceof ArrayBuffer) {
-      if (providerWs && providerWs.readyState === 1) {
-        // Gemini expects audio in base64-encoded realtime input
-        const audioBase64 = Buffer.from(data).toString('base64');
-        providerWs.send(JSON.stringify({
-          realtimeInput: {
-            mediaChunks: [{
-              mimeType: 'audio/pcm;rate=24000',
-              data: audioBase64,
-            }],
-          },
-        }));
-      }
+      const audioBase64 = Buffer.from(data).toString('base64');
+      liveHandle.sendRealtimeInput([{
+        mimeType: 'audio/pcm;rate=24000',
+        data: audioBase64,
+      }]);
       return;
     }
 
@@ -299,8 +233,8 @@ export async function handleClientStream(
 
       if (msg.type === 'interrupt') {
         // Barge-in: tell provider to stop generating
-        if (providerWs && providerWs.readyState === 1) {
-          providerWs.send(JSON.stringify({
+        if (liveHandle.ws && liveHandle.ws.readyState === 1) {
+          liveHandle.ws.send(JSON.stringify({
             clientContent: { turnComplete: true },
           }));
         }
@@ -310,8 +244,8 @@ export async function handleClientStream(
       if (msg.type === 'text' && msg.content) {
         // Text input alongside audio (accessibility)
         addTranscriptSegment(sessionId, 'caller', msg.content, true);
-        if (providerWs && providerWs.readyState === 1) {
-          providerWs.send(JSON.stringify({
+        if (liveHandle.ws && liveHandle.ws.readyState === 1) {
+          liveHandle.ws.send(JSON.stringify({
             clientContent: {
               turns: [{ role: 'user', parts: [{ text: msg.content }] }],
               turnComplete: true,
@@ -328,9 +262,7 @@ export async function handleClientStream(
   clientWs.on('close', () => {
     console.log(`[client-stream] client disconnected from session ${sessionId.slice(0, 8)}…`);
     // Close upstream
-    if (providerWs && providerWs.readyState === 1) {
-      providerWs.close(1000, 'Client disconnected');
-    }
+    liveHandle.close(1000, 'Client disconnected');
     // Trigger post-call synthesis if not already triggered
     runPostCallSynthesis(sessionId).catch(err =>
       console.error('[client-stream] post-call synthesis failed:', err),

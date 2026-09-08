@@ -55,11 +55,24 @@ CaseBuddy's Trial Simulator provides industry-leading voice recognition and 2-wa
 
 1. **Capture**: ScriptProcessor captures 4096-sample chunks at 16kHz
 2. **Encode**: Convert Float32Array to 16-bit PCM, then base64
-3. **Stream**: Send to Gemini via WebSocket
+3. **Stream**: Send to Gemini via WebSocket (`BidiGenerateContent`)
 4. **Process**: AI analyzes speech, context, and generates response
 5. **Decode**: Receive base64 PCM audio (24kHz)
 6. **Play**: Convert to AudioBuffer and queue for playback
 7. **Sync**: Maintain timing to prevent audio gaps
+
+### Live Voice Engine Architecture
+
+CaseBuddy utilizes a dual-engine architecture for realtime voice:
+
+- **Primary Engine**: `gemini-3.1-flash-live-preview` (in API setups: `models/gemini-3.1-flash-live-preview`).
+  Google's state-of-the-art, low-latency audio-to-audio Live model with minimal thinking overhead and multi-part turn streaming.
+- **Production Fallback Engine**: `gemini-2.5-flash-native-audio-preview-09-2025` (or configured fallback).
+  Production stability fallback automatically engaged if the preview model experiences preview errors, rate limits, or latency spikes.
+- **Model Configuration**:
+  - `GEMINI_LIVE_MODEL`: Override primary Live model string.
+  - `GEMINI_LIVE_FALLBACK_MODEL`: Override fallback Live model string.
+  - `GEMINI_LIVE_VOICE`: Voice selection (`Aoede` for Maya, `Puck` for courtroom simulator).
 
 ## Trial Phase Behaviors
 

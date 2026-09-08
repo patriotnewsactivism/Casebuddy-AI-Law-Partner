@@ -35,11 +35,11 @@ import {
 } from './_shared/intakeTools';
 import { runPostCallSynthesis } from './_shared/postCallSynthesis';
 
-// ── Gemini connection ────────────────────────────────────────────────────────
-
-const GEMINI_WS_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const GEMINI_MODEL = 'models/gemini-2.5-flash';
-const VOICE_NAME = 'Aoede';
+import {
+  connectGeminiLiveWithFallback,
+  DEFAULT_VOICE_NAME,
+  type LiveConnectionHandle,
+} from './_shared/geminiLiveConfig';
 
 const MAYA_LIVE_SYSTEM_INSTRUCTION = `You are Maya, the legal intake partner at CaseBuddy, speaking on a phone call. Your role is to conduct a warm, professional intake interview.
 
@@ -64,12 +64,6 @@ INTAKE PROCEDURE:
 6. Offer schedule_attorney_consultation at the end.
 7. Confirm and close.`;
 
-function buildGeminiWsUrl(): string {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
-  return `${GEMINI_WS_BASE}?key=${apiKey}`;
-}
-
 // ── Twilio WebSocket handler ─────────────────────────────────────────────────
 
 /**
@@ -80,7 +74,7 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
   let sessionId = '';
   let streamSid = '';
   let callerNumber = '';
-  let providerWs: any = null;
+  let liveHandle: LiveConnectionHandle | null = null;
   let markCounter = 0;
 
   const firmId = (process.env.CASEBUDDY_CANONICAL_FIRM_ID || process.env.VITE_FIRM_ID || '').trim();
@@ -118,110 +112,84 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
       });
       sessionId = session.sessionId;
 
-      // Open upstream Gemini connection
+      // Open upstream Gemini Live connection with automatic fallback
       try {
-        const WebSocketImpl = (await import('ws')).default;
-        providerWs = new WebSocketImpl(buildGeminiWsUrl());
-        session.providerWs = providerWs;
+        liveHandle = await connectGeminiLiveWithFallback({
+          systemInstruction: session.systemInstruction,
+          tools: [{ functionDeclarations: INTAKE_TOOL_DECLARATIONS }],
+          voiceName: DEFAULT_VOICE_NAME,
+          onSetupComplete: (activeModel) => {
+            touchSession(sessionId);
+            console.log(`[twilio-media] Gemini Live active on ${activeModel} for ${sessionId.slice(0, 8)}`);
+          },
+          onFallbackEngaged: (fromModel, toModel, reason) => {
+            console.warn(`[twilio-media] Fallback engaged: ${fromModel} -> ${toModel} (${reason})`);
+          },
+          onServerContent: async (content) => {
+            touchSession(sessionId);
 
-        providerWs.on('open', () => {
-          console.log(`[twilio-media] upstream connected for ${sessionId.slice(0, 8)}…`);
-          // Send setup
-          providerWs.send(JSON.stringify({
-            setup: {
-              model: GEMINI_MODEL,
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: VOICE_NAME },
-                  },
-                },
-              },
-              systemInstruction: {
-                parts: [{ text: session.systemInstruction }],
-              },
-              tools: [{ functionDeclarations: INTAKE_TOOL_DECLARATIONS }],
-            },
-          }));
-        });
-
-        providerWs.on('message', async (providerData: any) => {
-          touchSession(sessionId);
-
-          try {
-            const providerMsg = JSON.parse(
-              typeof providerData === 'string' ? providerData : providerData.toString(),
-            );
-
-            // Audio from the model
-            if (providerMsg.serverContent?.modelTurn?.parts) {
-              for (const part of providerMsg.serverContent.modelTurn.parts) {
-                if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
-                  // Decode provider audio (24kHz PCM) → 8kHz μ-law for Twilio
-                  const pcm24k = new Int16Array(
-                    Buffer.from(part.inlineData.data, 'base64').buffer,
-                  );
-                  const pcm8k = resample24kTo8k(pcm24k);
-                  const payload = encodeTwilioPayload(pcm8k);
-
-                  if (twilioWs.readyState === 1) {
-                    twilioWs.send(JSON.stringify({
-                      event: 'media',
-                      streamSid,
-                      media: { payload },
-                    }));
-                  }
-                }
-                // Text from the model (transcript)
-                if (part.text) {
-                  addTranscriptSegment(sessionId, 'agent', part.text, true);
-                }
-              }
-            }
-
-            // Tool call
-            if (providerMsg.toolCall) {
-              const functionCalls = providerMsg.toolCall.functionCalls || [];
-              const toolResponses: any[] = [];
-              const currentSession = getSession(sessionId);
-
-              for (const fc of functionCalls) {
-                const result = await executeIntakeTool(
-                  fc.name,
-                  fc.args || {},
-                  currentSession?.facts || [],
+            // Handle multi-part model turns (audio and/or transcript)
+            const parts = content.modelTurn?.parts || [];
+            for (const part of parts) {
+              if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
+                // Decode provider audio (24kHz PCM) → 8kHz μ-law for Twilio
+                const pcm24k = new Int16Array(
+                  Buffer.from(part.inlineData.data, 'base64').buffer,
                 );
-                toolResponses.push({
-                  id: fc.id,
-                  name: fc.name,
-                  response: result.content,
-                });
+                const pcm8k = resample24kTo8k(pcm24k);
+                const payload = encodeTwilioPayload(pcm8k);
+
+                if (twilioWs.readyState === 1) {
+                  twilioWs.send(JSON.stringify({
+                    event: 'media',
+                    streamSid,
+                    media: { payload },
+                  }));
+                }
               }
 
-              if (providerWs.readyState === 1) {
-                providerWs.send(JSON.stringify({
-                  toolResponse: { functionResponses: toolResponses },
-                }));
+              if (part.text) {
+                addTranscriptSegment(sessionId, 'agent', part.text, true);
               }
             }
-          } catch (err) {
-            console.warn('[twilio-media] error processing provider message:', err);
-          }
+          },
+          onToolCall: async (toolCall) => {
+            touchSession(sessionId);
+            const functionCalls = toolCall.functionCalls || [];
+            const toolResponses: any[] = [];
+            const currentSession = getSession(sessionId);
+
+            for (const fc of functionCalls) {
+              const result = await executeIntakeTool(
+                fc.name,
+                fc.args || {},
+                currentSession?.facts || [],
+              );
+              toolResponses.push({
+                id: fc.id,
+                name: fc.name,
+                response: result.content,
+              });
+            }
+
+            if (liveHandle) {
+              liveHandle.sendToolResponse(toolResponses);
+            }
+          },
+          onClose: (code, reason) => {
+            console.log(`[twilio-media] upstream closed for ${sessionId.slice(0, 8)}… code=${code}`);
+            runPostCallSynthesis(sessionId).catch(err =>
+              console.error('[twilio-media] post-call synthesis failed:', err),
+            );
+          },
+          onError: (err) => {
+            console.error('[twilio-media] upstream error:', err?.message || err);
+          },
         });
 
-        providerWs.on('close', () => {
-          console.log(`[twilio-media] upstream closed for ${sessionId.slice(0, 8)}…`);
-          runPostCallSynthesis(sessionId).catch(err =>
-            console.error('[twilio-media] post-call synthesis failed:', err),
-          );
-        });
-
-        providerWs.on('error', (err: Error) => {
-          console.error('[twilio-media] upstream error:', err.message);
-        });
+        session.providerWs = liveHandle.ws;
       } catch (err) {
-        console.error('[twilio-media] failed to open upstream:', err);
+        console.error('[twilio-media] failed to open upstream Live connection:', err);
       }
       return;
     }
@@ -230,20 +198,16 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
     if (event === 'media' && msg.media?.payload) {
       touchSession(sessionId);
 
-      if (providerWs && providerWs.readyState === 1) {
+      if (liveHandle && liveHandle.isReady) {
         // Decode Twilio μ-law → 16-bit PCM 8kHz → upsample to 24kHz
         const pcm8k = decodeTwilioPayload(msg.media.payload);
         const pcm24k = resample8kTo24k(pcm8k);
         const audioBase64 = Buffer.from(pcm24k.buffer).toString('base64');
 
-        providerWs.send(JSON.stringify({
-          realtimeInput: {
-            mediaChunks: [{
-              mimeType: 'audio/pcm;rate=24000',
-              data: audioBase64,
-            }],
-          },
-        }));
+        liveHandle.sendRealtimeInput([{
+          mimeType: 'audio/pcm;rate=24000',
+          data: audioBase64,
+        }]);
       }
       return;
     }
@@ -257,8 +221,8 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
     // ── stop ───────────────────────────────────────────────────────────────
     if (event === 'stop') {
       console.log(`[twilio-media] stream stopped: ${streamSid}`);
-      if (providerWs && providerWs.readyState === 1) {
-        providerWs.close(1000, 'Call ended');
+      if (liveHandle) {
+        liveHandle.close(1000, 'Call ended');
       }
       runPostCallSynthesis(sessionId).catch(err =>
         console.error('[twilio-media] post-call synthesis failed:', err),
@@ -269,8 +233,8 @@ export async function handleTwilioMedia(twilioWs: any): Promise<void> {
 
   twilioWs.on('close', () => {
     console.log(`[twilio-media] Twilio WS closed for ${sessionId.slice(0, 8) || 'unknown'}`);
-    if (providerWs && providerWs.readyState === 1) {
-      providerWs.close(1000, 'Twilio disconnected');
+    if (liveHandle) {
+      liveHandle.close(1000, 'Twilio disconnected');
     }
   });
 
