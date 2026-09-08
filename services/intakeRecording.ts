@@ -3,15 +3,12 @@ import { getSupabase } from './supabaseClient';
 /**
  * Intake call recording.
  *
- * Captures both sides of a Maya intake call and stores the audio in the private
- * `intake-recordings` bucket. Recording is consent-gated at the call site: this
- * module records only what it is handed, and the caller is told the call is
- * recorded before capture begins.
- *
- * Object paths are `<firm_id>/<intake_id>/<timestamp>.<ext>` because the
- * bucket's read policy scopes on the first path segment
- * (`storage.foldername(name))[1] = get_user_firm_id()`). Changing the path
- * shape without changing that policy would expose one firm's audio to another.
+ * Captures both sides of a Maya intake call only after the prospect has made an
+ * explicit recording choice in the public intake UI. Audio is stored in the
+ * private `intake-recordings` bucket for the narrow purpose of intake accuracy.
+ * The browser never receives general INSERT authority on that bucket: it asks a
+ * server endpoint for an intake-scoped signed upload token after the intake row
+ * exists.
  */
 
 export const RECORDING_BUCKET = 'intake-recordings';
@@ -32,12 +29,6 @@ function pickMimeType(): string | null {
     } catch { /* older browsers throw instead of returning false */ }
   }
   return null;
-}
-
-function extensionFor(mimeType: string): string {
-  if (mimeType.includes('ogg')) return 'ogg';
-  if (mimeType.includes('mp4')) return 'm4a';
-  return 'webm';
 }
 
 export interface IntakeRecording {
@@ -79,8 +70,6 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
     if (event.data && event.data.size > 0) chunks.push(event.data);
   });
 
-  // A timeslice means a crashed or force-closed tab still leaves whole chunks
-  // behind rather than one unflushed buffer.
   try {
     recorder.start(5_000);
   } catch (err) {
@@ -119,58 +108,97 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
 
 export interface UploadRecordingArgs {
   recording: IntakeRecording;
-  firmId: string;
   intakeId: string;
+  resumeToken: string;
+  publicToken?: string;
+  consent: boolean;
 }
 
 /**
- * Upload a finished recording. Returns the storage path to persist on the
- * intake row, or null if the upload failed — the intake itself is never lost
- * because audio could not be stored.
+ * Upload a finished recording through an intake-scoped signed upload token.
+ * Returns the storage path to persist on the intake row, or null if storage is
+ * unavailable. The intake itself is never lost because audio could not upload.
  */
 export async function uploadIntakeRecording(
   args: UploadRecordingArgs,
 ): Promise<{ path: string; seconds: number } | null> {
   const supabase = getSupabase();
-  if (!supabase) return null;
+  if (!supabase || !args.consent) return null;
 
-  const firmId = args.firmId.trim();
   const intakeId = args.intakeId.trim();
-  if (!firmId || !intakeId) {
-    console.warn('[intakeRecording] refusing to upload without both firm and intake id');
+  const resumeToken = args.resumeToken.trim();
+  if (!intakeId || resumeToken.length < 16) {
+    console.warn('[intakeRecording] refusing upload without a valid intake session');
     return null;
   }
 
-  const ext = extensionFor(args.recording.mimeType);
-  const path = `${firmId}/${intakeId}/${Date.now()}.${ext}`;
+  let grantResponse: Response;
+  try {
+    grantResponse = await fetch('/api/intake/recording-upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(args.publicToken ? { 'X-Intake-Token': args.publicToken } : {}),
+      },
+      body: JSON.stringify({
+        intakeId,
+        resumeToken,
+        publicToken: args.publicToken || undefined,
+        mimeType: args.recording.mimeType,
+        consent: true,
+      }),
+    });
+  } catch (error) {
+    console.warn('[intakeRecording] upload authorization failed:', error);
+    return null;
+  }
+
+  if (!grantResponse.ok) {
+    const message = await grantResponse.json().catch(() => ({})) as any;
+    console.warn('[intakeRecording] upload authorization refused:', message?.error || grantResponse.status);
+    return null;
+  }
+
+  const grant = await grantResponse.json().catch(() => null) as any;
+  if (!grant?.path || !grant?.token || grant?.bucket !== RECORDING_BUCKET) return null;
 
   const { error } = await supabase.storage
     .from(RECORDING_BUCKET)
-    .upload(path, args.recording.blob, {
+    .uploadToSignedUrl(grant.path, grant.token, args.recording.blob, {
       contentType: args.recording.mimeType,
       upsert: false,
     });
 
   if (error) {
-    console.warn('[intakeRecording] upload failed:', error.message);
+    console.warn('[intakeRecording] signed upload failed:', error.message);
     return null;
   }
-  return { path, seconds: args.recording.seconds };
+  return { path: grant.path, seconds: args.recording.seconds };
 }
 
 /**
- * Short-lived signed URL for firm staff to play a recording back. The bucket is
- * private; never swap this for a public URL.
+ * Request a 60-second, staff-authenticated playback URL. The server verifies
+ * that the intake belongs to the caller's firm and records the access event.
  */
-export async function getRecordingPlaybackUrl(
-  path: string,
-  expiresInSeconds = 600,
-): Promise<string | null> {
+export async function getRecordingPlaybackUrl(intakeId: string): Promise<string | null> {
   const supabase = getSupabase();
-  if (!supabase || !path) return null;
-  const { data, error } = await supabase.storage
-    .from(RECORDING_BUCKET)
-    .createSignedUrl(path, expiresInSeconds);
-  if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
+  if (!supabase || !intakeId) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
+
+  try {
+    const response = await fetch('/api/intake/recording-playback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ intakeId }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as any;
+    return typeof data?.signedUrl === 'string' ? data.signedUrl : null;
+  } catch {
+    return null;
+  }
 }
