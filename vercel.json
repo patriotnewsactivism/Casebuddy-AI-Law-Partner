@@ -126,6 +126,10 @@
     {
       "path": "/api/cron/index?action=weekly-client-updates",
       "schedule": "0 15 * * 5"
+    },
+    {
+      "path": "/api/intake/recording-retention",
+      "schedule": "0 6 * * *"
     }
   ]
 }
