@@ -31,11 +31,14 @@ jobs:
       - name: Deterministic install
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
+      # Run the security-critical surface first so a pre-existing legacy
+      # typecheck failure cannot hide regressions in credential/intake boundaries.
+      # The full typecheck remains mandatory immediately afterward.
       - name: Security typecheck
         run: npm run typecheck:security
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Client secret scan
         run: npm run check:client-secrets
