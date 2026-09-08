@@ -936,7 +936,7 @@ serve(async (req) => {
       throw new Error(`Gemini ${purpose} failed for all keys/models: ${keyErrors.join('; ')}`);
     };
 
-    const geminiOcr = async (fileBlob, mimeType, isImage) => {
+    const geminiOcr = async (fileBlob: Blob, mimeType: string, isImage: boolean) => {
       const arrayBuffer = await fileBlob.arrayBuffer();
       const base64 = arrayBufferToBase64(arrayBuffer);
 
@@ -1044,7 +1044,7 @@ serve(async (req) => {
       return text;
     };
 
-    const ocrSpaceExtract = async (blob, isImage, ct) => {
+    const ocrSpaceExtract = async (blob: Blob, isImage: boolean, ct?: string | AbortSignal | any) => {
       if (!ocrSpaceApiKey) throw new Error('OCR.space API key not configured');
       console.log('Using OCR.space fallback...');
       const extension = isImage ? 'jpg' : 'pdf';
@@ -1437,7 +1437,7 @@ ${textChunk}`;
                   responseMimeType: 'application/json',
                 },
               },
-              'analysis'
+              'ANALYSIS'
             );
             chunkContent = extractGeminiText(payload);
             if (chunkContent) chunkProvider = 'gemini';
@@ -1521,7 +1521,7 @@ ${textChunk}`;
           if (!parsed) return { result: null, provider: null };
           return {
             provider: chunkProvider,
-            result: parsed
+            result: parsed as unknown as StructuredChunkAnalysis
           };
         } catch (err) {
           console.error(`Failed to parse chunk ${index + 1} JSON:`, err);
