@@ -37,7 +37,14 @@ const FloatingVoiceButton: React.FC = () => {
               >
                 <span className="text-lg">{a.emoji}</span>
                 <div>
-                  <p className={`text-xs font-bold ${a.colorClass}`}>{a.name}</p>
+                  <p className={`text-xs font-bold ${a.colorClass}`}>
+                    {a.name}
+                    {a.liveVoiceEnabled && (
+                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-bold bg-green-500/20 text-green-400 border border-green-500/30 rounded-full uppercase tracking-wider">
+                        Live
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-slate-500 leading-tight">{a.role}</p>
                 </div>
               </Link>
