@@ -43,13 +43,16 @@ jobs:
       # Preserve diagnostic coverage even if legacy typecheck debt fails above.
       # These steps do not waive that failure; they simply make build/secret-scan
       # evidence available in the same CI run.
-      - name: Client secret scan
-        if: ${{ always() }}
-        run: npm run check:client-secrets
-
       - name: Production build
         if: ${{ always() }}
         run: npm run build
+
+      # This scanner inspects emitted dist assets, so it must run after Vite has
+      # built them. `npm run build` also runs the same sentinel internally; this
+      # explicit pass keeps the CI evidence visible as a separate step.
+      - name: Client secret scan
+        if: ${{ always() }}
+        run: npm run check:client-secrets
 
   edge-functions:
     name: Supabase Edge Function typecheck
