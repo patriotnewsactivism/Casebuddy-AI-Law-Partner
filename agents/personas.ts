@@ -11,6 +11,8 @@ export interface OperationalAgent {
   emoji: string;
   route: string;
   capabilities: string[];
+  /** When true, the UI should offer the realtime bidirectional voice experience. */
+  liveVoiceEnabled?: boolean;
 }
 
 export interface LegalSpecialist {
@@ -42,6 +44,7 @@ export const OPERATIONAL_AGENTS: OperationalAgent[] = [
     emoji: '⚖️',
     route: '/app/intake',
     capabilities: ['Conversational intake interviews', 'Claim identification & scoring', 'Conflict checking', 'Case file creation', 'Engagement letter generation', 'Multilingual intake (EN/ES)'],
+    liveVoiceEnabled: true,
   },
   {
     id: 'lex',

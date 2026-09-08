@@ -34,11 +34,16 @@ import aiOcrHandler from '../api/ai/ocr';
 import aiOrchestrateHandler from '../api/ai/orchestrate';
 import aiVoiceKeysPublicHandler from '../api/ai/voice-keys-public';
 import aiVoiceKeysHandler from '../api/ai/voice-keys';
+import aiLiveTokenHandler from '../api/ai/live-token';
 import aiChatCompletionsHandler from '../api/ai/v1/chat/completions';
 import cronHandler from '../api/cron/index';
 import emailSendHandler from '../api/email/send';
 import stripeCreateCheckoutHandler from '../api/stripe/create-checkout';
 import webhooksUserSignupHandler from '../api/webhooks/user-signup';
+
+// WebSocket handlers for live voice (bidirectional streaming).
+import { handleClientStream } from '../api/voice/client-stream';
+import { handleTwilioMedia } from '../api/voice/twilio-media';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -141,6 +146,7 @@ mountEdge('/api/ai/ocr', aiOcrHandler as any);
 mountEdge('/api/ai/orchestrate', aiOrchestrateHandler as any);
 mountEdge('/api/ai/voice-keys-public', aiVoiceKeysPublicHandler as any);
 mountEdge('/api/ai/voice-keys', aiVoiceKeysHandler as any);
+mountEdge('/api/ai/live-token', aiLiveTokenHandler as any);
 mountEdge('/api/ai/v1/chat/completions', aiChatCompletionsHandler as any);
 mountEdge('/api/cron/index', cronHandler as any);
 mountEdge('/api/cron', cronHandler as any); // vercel.json rewrite alias
@@ -185,6 +191,40 @@ cron.schedule('0 9 * * *', () => runCronAction('intake-processor'));
 cron.schedule('0 15 * * 5', () => runCronAction('weekly-client-updates'));
 
 const PORT = Number(process.env.PORT) || 8080;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`CaseBuddy server listening on :${PORT}`);
+});
+
+// ── WebSocket upgrade for live voice ─────────────────────────────────────────
+// Attach after the HTTP server is created so we can intercept upgrade requests
+// for the bidirectional voice WebSocket endpoints.
+import { WebSocketServer } from 'ws';
+
+const clientStreamWss = new WebSocketServer({ noServer: true });
+const twilioMediaWss = new WebSocketServer({ noServer: true });
+
+clientStreamWss.on('connection', (ws, req) => {
+  const url = new URL(req.url || '', `http://${req.headers.host}`);
+  const sessionId = url.searchParams.get('session') || '';
+  handleClientStream(ws, sessionId);
+});
+
+twilioMediaWss.on('connection', (ws) => {
+  handleTwilioMedia(ws);
+});
+
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
+
+  if (pathname === '/api/voice/client-stream') {
+    clientStreamWss.handleUpgrade(request, socket, head, (ws) => {
+      clientStreamWss.emit('connection', ws, request);
+    });
+  } else if (pathname === '/api/voice/twilio-media') {
+    twilioMediaWss.handleUpgrade(request, socket, head, (ws) => {
+      twilioMediaWss.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
 });

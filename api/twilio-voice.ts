@@ -213,12 +213,54 @@ async function handleRecordingComplete(req: VercelRequest, res: VercelResponse) 
   return res.status(200).json({ ok: true });
 }
 
+// ── Route: action=maya-live ────────────────────────────────────────────────
+// Initiates a bidirectional live voice session with Maya over Twilio Media
+// Streams. Recording consent is prompted before the stream connects, per
+// MAYA_INTAKE_RECORDING_PRIVACY.md.
+async function handleMayaLive(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Content-Type', 'text/xml');
+  const body = req.body || {};
+  const digits = String(body.Digits || '').trim();
+
+  // Consent confirmation step
+  if (digits === '1') {
+    // Caller consented — connect bidirectional stream
+    const host = req.headers.host || 'casebuddy.live';
+    const wsUrl = `wss://${host}/api/voice/twilio-media`;
+    return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response>
+  <Say voice="Polly.Joanna">Thank you. Connecting you to Maya now.</Say>
+  <Connect>
+    <Stream url="${xmlSafe(wsUrl)}">
+      <Parameter name="consent" value="true"/>
+    </Stream>
+  </Connect>
+</Response>`);
+  }
+
+  if (digits === '2') {
+    // Caller declined recording — fallback to standard voicemail intake
+    return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response>
+  <Redirect method="POST">${BASE}?action=intake-record</Redirect>
+</Response>`);
+  }
+
+  // Initial consent prompt
+  return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response>
+  <Gather numDigits="1" action="${BASE}?action=maya-live" method="POST" timeout="10">
+    <Say voice="Polly.Joanna">For intake accuracy, this call may be privately recorded. The recording is used only to verify what was discussed and is subject to the firm's retention policy. Press 1 to consent and speak with Maya. Press 2 to leave a voicemail instead.</Say>
+  </Gather>
+  <Say voice="Polly.Joanna">No response received. Transferring to voicemail.</Say>
+  <Redirect method="POST">${BASE}?action=intake-record</Redirect>
+</Response>`);
+}
+
 // ── Main router ────────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action || req.body?.action || 'voice-inbound');
   switch (action) {
     case 'voice-inbound':      return handleVoiceInbound(req, res);
     case 'intake-record':      return handleIntakeRecord(req, res);
+    case 'maya-live':          return handleMayaLive(req, res);
     case 'dial-in-recorder':   return handleDialInRecorder(req, res);
     case 'outbound-connect':   return handleOutboundConnect(req, res);
     case 'recording-complete': return handleRecordingComplete(req, res);

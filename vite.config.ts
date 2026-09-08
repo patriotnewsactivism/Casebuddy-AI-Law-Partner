@@ -101,6 +101,36 @@ export default defineConfig(({ mode }) => {
               return;
             }
 
+            // Live voice session token (dev mode)
+            if (req.method === 'POST' && req.url === '/api/ai/live-token') {
+              const geminiKey = (env.GEMINI_API_KEY || '').trim();
+              if (!geminiKey) {
+                res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+                res.end(JSON.stringify({ error: 'GEMINI_API_KEY not configured for live voice' }));
+                return;
+              }
+              // Dynamic import to avoid pulling server-only code into the Vite bundle
+              import('../api/ai/_shared/liveSession').then(({ createSession }) => {
+                const session = createSession({
+                  channel: 'browser',
+                  firmId: env.VITE_FIRM_ID || 'dev-firm',
+                  callerId: 'dev-user',
+                  systemInstruction: 'You are Maya, legal intake partner at CaseBuddy. (Dev mode)',
+                });
+                res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+                res.end(JSON.stringify({
+                  sessionId: session.sessionId,
+                  wsUrl: '/api/voice/client-stream',
+                  tools: ['check_conflict', 'verify_court_jurisdiction', 'record_case_fact', 'schedule_attorney_consultation'],
+                  expiresIn: 1800,
+                }));
+              }).catch(() => {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Session manager unavailable' }));
+              });
+              return;
+            }
+
             if (req.method === 'POST' && req.url === '/api/ai/orchestrate') {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ runId: 'dev-run-' + Date.now(), status: 'queued' }));
@@ -108,6 +138,43 @@ export default defineConfig(({ mode }) => {
             }
 
             next();
+          });
+
+          // WebSocket upgrade for live voice in dev mode
+          server.httpServer?.on('upgrade', async (request, socket, head) => {
+            const url = new URL(request.url || '', `http://${request.headers.host}`);
+            const pathname = url.pathname;
+
+            if (pathname === '/api/voice/client-stream') {
+              try {
+                const { WebSocketServer } = await import('ws');
+                const wss = new WebSocketServer({ noServer: true });
+                wss.handleUpgrade(request, socket, head, async (ws) => {
+                  const sessionId = url.searchParams.get('session') || '';
+                  const { handleClientStream } = await import('../api/voice/client-stream');
+                  handleClientStream(ws, sessionId);
+                });
+              } catch (err) {
+                console.error('[vite-dev] WebSocket upgrade failed:', err);
+                socket.destroy();
+              }
+              return;
+            }
+
+            if (pathname === '/api/voice/twilio-media') {
+              try {
+                const { WebSocketServer } = await import('ws');
+                const wss = new WebSocketServer({ noServer: true });
+                wss.handleUpgrade(request, socket, head, async (ws) => {
+                  const { handleTwilioMedia } = await import('../api/voice/twilio-media');
+                  handleTwilioMedia(ws);
+                });
+              } catch (err) {
+                console.error('[vite-dev] Twilio WS upgrade failed:', err);
+                socket.destroy();
+              }
+              return;
+            }
           });
         },
       },
