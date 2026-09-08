@@ -31,17 +31,28 @@ jobs:
       - name: Deterministic install
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
+      # Run the security-critical surface first so a pre-existing legacy
+      # typecheck failure cannot hide regressions in credential/intake boundaries.
+      # The full typecheck remains mandatory immediately afterward.
       - name: Security typecheck
         run: npm run typecheck:security
 
-      - name: Client secret scan
-        run: npm run check:client-secrets
+      - name: Typecheck
+        run: npm run typecheck
 
+      # Preserve diagnostic coverage even if legacy typecheck debt fails above.
+      # These steps do not waive that failure; they simply make build/secret-scan
+      # evidence available in the same CI run.
       - name: Production build
+        if: ${{ always() }}
         run: npm run build
+
+      # This scanner inspects emitted dist assets, so it must run after Vite has
+      # built them. `npm run build` also runs the same sentinel internally; this
+      # explicit pass keeps the CI evidence visible as a separate step.
+      - name: Client secret scan
+        if: ${{ always() }}
+        run: npm run check:client-secrets
 
   edge-functions:
     name: Supabase Edge Function typecheck

@@ -11,9 +11,17 @@
     "hooks/useDeepgramVoiceAgent.ts",
     "services/deepseek.ts",
     "services/runtimeKeys.ts",
+    "services/supabaseClient.ts",
+    "services/intakeRecording.ts",
+    "api/_shared/auth.ts",
     "api/ai/_shared/deepgramToken.ts",
     "api/ai/voice-keys.ts",
     "api/ai/voice-keys-public.ts",
+    "api/intake/_shared.ts",
+    "api/intake/session.ts",
+    "api/intake/recording-upload.ts",
+    "api/intake/recording-playback.ts",
+    "api/intake/recording-retention.ts",
     "netlify/functions/ai-voice-keys.ts",
     "netlify/functions/ai-voice-keys-public.ts"
   ]
