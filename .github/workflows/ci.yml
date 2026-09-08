@@ -40,10 +40,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Preserve diagnostic coverage even if legacy typecheck debt fails above.
+      # These steps do not waive that failure; they simply make build/secret-scan
+      # evidence available in the same CI run.
       - name: Client secret scan
+        if: ${{ always() }}
         run: npm run check:client-secrets
 
       - name: Production build
+        if: ${{ always() }}
         run: npm run build
 
   edge-functions:
