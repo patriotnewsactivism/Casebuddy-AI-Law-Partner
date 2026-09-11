@@ -49,8 +49,9 @@ function currentResumeToken(): string {
  * MediaRecorder has not started and the voice WebSocket is not open yet, so no
  * call audio has been captured when this choice is presented.
  *
- * Declining sends the prospect to the non-recorded secure chat intake instead
- * of silently recording or forcing them to abandon the intake.
+ * Declining leaves the voice consultation running without a MediaRecorder.
+ * Deepgram still returns a written conversation transcript, which is not an
+ * audio recording and is always saved with the intake.
  */
 function obtainRecordingConsent(): boolean {
   if (typeof window === 'undefined') return false;
@@ -59,7 +60,7 @@ function obtainRecordingConsent(): boolean {
     consent = window.confirm(
       'For intake accuracy, may CaseBuddy privately record this Maya voice consultation? ' +
       'The recording is used only to verify what was said, is not public, and is subject to the firm’s retention policy.\n\n' +
-      'Choose OK to consent to recording. Choose Cancel to continue with the secure text intake without audio recording.'
+      'Choose OK to consent to audio recording. Choose Cancel to continue the same voice consultation without an audio recording; a written transcript will still be created.'
     );
   } catch {
     consent = false;
@@ -70,9 +71,6 @@ function obtainRecordingConsent(): boolean {
       sessionStorage.setItem('casebuddy_intake_recording_consent', new Date().toISOString());
     } else {
       sessionStorage.removeItem('casebuddy_intake_recording_consent');
-      const next = new URL(window.location.href);
-      next.searchParams.set('mode', 'chat');
-      setTimeout(() => window.location.replace(next.toString()), 0);
     }
   } catch { /* private mode / navigation edge case */ }
 
@@ -86,19 +84,20 @@ export interface IntakeRecording {
 }
 
 export interface IntakeRecorderHandle {
+  readonly consented: boolean;
   readonly active: boolean;
   stop: () => Promise<IntakeRecording | null>;
 }
 
 export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
   if (!obtainRecordingConsent()) {
-    return { active: false, stop: async () => null };
+    return { consented: false, active: false, stop: async () => null };
   }
 
   const mimeType = pickMimeType();
   if (!mimeType) {
     console.warn('[intakeRecording] MediaRecorder unavailable — continuing without audio');
-    return { active: false, stop: async () => null };
+    return { consented: true, active: false, stop: async () => null };
   }
 
   let recorder: MediaRecorder;
@@ -106,7 +105,7 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
     recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 64_000 });
   } catch (err) {
     console.warn('[intakeRecording] could not start recorder:', err);
-    return { active: false, stop: async () => null };
+    return { consented: true, active: false, stop: async () => null };
   }
 
   const chunks: Blob[] = [];
@@ -119,10 +118,11 @@ export function startIntakeRecorder(stream: MediaStream): IntakeRecorderHandle {
     recorder.start(5_000);
   } catch (err) {
     console.warn('[intakeRecording] recorder refused to start:', err);
-    return { active: false, stop: async () => null };
+    return { consented: true, active: false, stop: async () => null };
   }
 
   return {
+    consented: true,
     active: true,
     stop: () => new Promise<IntakeRecording | null>(resolve => {
       if (recorder.state === 'inactive') {

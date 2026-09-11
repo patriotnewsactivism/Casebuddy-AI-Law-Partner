@@ -35,6 +35,12 @@ import {
   resample24kTo8k,
 } from '../api/voice/_shared/g711';
 import { handleClientStream } from '../api/voice/client-stream';
+import {
+  extractContactFromTranscript,
+  isValidEmail,
+  isValidPhone,
+} from '../services/intakeContact';
+import { saveIntakeProgress } from '../services/intakeStore';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -262,6 +268,8 @@ describe('mid-call intake tools', () => {
   });
 
   it('check_conflict is firm-scoped and returns matched conflicts', async () => {
+    process.env.SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role';
     const calls: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: any) => {
       calls.push(String(url));
@@ -304,7 +312,63 @@ describe('mid-call intake tools', () => {
   });
 });
 
-// ── 5. Post-call synthesis ───────────────────────────────────────────────────
+// ── 5. Contact capture guardrails ───────────────────────────────────────────
+
+describe('voice contact capture guardrails', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('saves through the server route without requiring a browser firm id', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ intakeId: '66666666-6666-6666-6666-666666666666' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('window', { location: { pathname: '/intake/firm-link-token' } });
+
+    const intakeId = await saveIntakeProgress({
+      resumeToken: 'resume-token-with-enough-entropy',
+      completion: 'complete',
+      intake: { fullName: 'Jane Doe', email: 'jane@example.com', phone: '(312) 555-0198' },
+      transcript: [{ speaker: 'you', text: 'My name is Jane Doe.' }],
+    });
+
+    expect(intakeId).toBe('66666666-6666-6666-6666-666666666666');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/intake/session');
+    expect((init as RequestInit).headers).toMatchObject({ 'X-Intake-Token': 'firm-link-token' });
+    expect(JSON.parse(String((init as RequestInit).body))).not.toHaveProperty('firmId');
+  });
+
+  it('normalizes directly transcribed phone and email values', () => {
+    const contact = extractContactFromTranscript([
+      { speaker: 'agent', text: 'What is the best phone number and email?' },
+      { speaker: 'you', text: 'It is 312-555-0198 and Jane.Doe+case@example.com.' },
+    ]);
+    expect(contact).toEqual({
+      phone: '(312) 555-0198',
+      email: 'jane.doe+case@example.com',
+    });
+  });
+
+  it('understands contact details spoken digit-by-digit and with at/dot', () => {
+    const contact = extractContactFromTranscript([
+      { speaker: 'caller', text: 'My number is three one two five five five zero one nine eight.' },
+      { speaker: 'caller', text: 'Email is jane dot doe at example dot com.' },
+    ]);
+    expect(contact.phone).toBe('(312) 555-0198');
+    expect(contact.email).toBe('jane.doe@example.com');
+    expect(isValidPhone(contact.phone)).toBe(true);
+    expect(isValidEmail(contact.email)).toBe(true);
+  });
+
+  it('never takes Maya\'s own read-back as caller-provided contact data', () => {
+    const contact = extractContactFromTranscript([
+      { speaker: 'agent', text: 'I heard 312-555-0198 and wrong@example.com. Is that right?' },
+      { speaker: 'you', text: 'No, that is not right.' },
+    ]);
+    expect(contact).toEqual({ phone: '', email: '' });
+  });
+});
+
+// ── 6. Post-call synthesis ───────────────────────────────────────────────────
 
 describe('post-call intake synthesis', () => {
   afterEach(() => vi.unstubAllGlobals());

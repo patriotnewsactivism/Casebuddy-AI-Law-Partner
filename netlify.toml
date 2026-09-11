@@ -44,6 +44,26 @@
   status = 200
 
 [[redirects]]
+  from = "/api/intake/session"
+  to = "/.netlify/functions/intake-session"
+  status = 200
+
+[[redirects]]
+  from = "/api/intake/recording-upload"
+  to = "/.netlify/functions/intake-recording-upload"
+  status = 200
+
+[[redirects]]
+  from = "/api/intake/recording-playback"
+  to = "/.netlify/functions/intake-recording-playback"
+  status = 200
+
+[[redirects]]
+  from = "/api/intake/recording-retention"
+  to = "/.netlify/functions/intake-recording-retention"
+  status = 200
+
+[[redirects]]
   from = "/api/twilio-actions"
   to = "/.netlify/functions/twilio-actions"
   status = 200

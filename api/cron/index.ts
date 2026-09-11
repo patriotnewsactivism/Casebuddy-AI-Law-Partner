@@ -191,12 +191,12 @@ async function handle_intakeProcessor(_req: Request): Promise<Response> {
 
   try {
     const intakes = await _sb(SB_URL, SB_KEY,
-      'intake_cases?processed=eq.false&order=created_at.asc&limit=10');
+      'intake_cases?select=id,full_name,summary,matter_type,urgency,intake,extracted&completion_state=eq.complete&status=eq.new&extracted->>maya_analysis_at=is.null&order=created_at.asc&limit=10');
     for (const intake of (Array.isArray(intakes) ? intakes : [])) {
       let analysis: any = {
         urgency: 'medium',
         practice_area: 'General',
-        summary: intake.description || '',
+        summary: intake.summary || '',
         recommended_action: 'Schedule consultation',
       };
 
@@ -212,19 +212,25 @@ async function handle_intakeProcessor(_req: Request): Promise<Response> {
       await _sb(SB_URL, SB_KEY, `intake_cases?id=eq.${intake.id}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' } as Record<string, string>,
-        body: JSON.stringify({ processed: true, ai_analysis: analysis, processed_at: new Date().toISOString() }),
+        body: JSON.stringify({
+          extracted: {
+            ...(intake.extracted || {}),
+            maya_analysis: analysis,
+            maya_analysis_at: new Date().toISOString(),
+          },
+        }),
       });
 
       await _email(SG_KEY, OWNER_EMAIL,
-        `[${(analysis.urgency || 'new').toUpperCase()}] Intake: ${intake.name || 'New Prospect'}`,
+        `[${(analysis.urgency || 'new').toUpperCase()}] Intake: ${intake.full_name || 'New Prospect'}`,
         `<h2>New Intake - Maya Analysis</h2>` +
-        `<p><strong>Name:</strong> ${intake.name || 'Unknown'}</p>` +
+        `<p><strong>Name:</strong> ${intake.full_name || 'Unknown'}</p>` +
         `<p><strong>Practice Area:</strong> ${analysis.practice_area}</p>` +
         `<p><strong>Urgency:</strong> ${analysis.urgency}</p>` +
         `<p><strong>Summary:</strong> ${analysis.summary}</p>` +
         `<p><strong>Action:</strong> ${analysis.recommended_action}</p>`);
 
-      log.push(`Maya: processed intake from ${intake.name || 'unknown'} (${analysis.urgency})`);
+      log.push(`Maya: processed intake from ${intake.full_name || 'unknown'} (${analysis.urgency})`);
     }
     return _ok({ ok: true, processed: log.length, log });
   } catch (e: any) {

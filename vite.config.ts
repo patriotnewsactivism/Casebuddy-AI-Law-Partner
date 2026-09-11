@@ -44,7 +44,58 @@ export default defineConfig(({ mode }) => {
       {
         name: 'api-middleware',
         configureServer(server) {
+          // Fetch-style API handlers read process.env just as they do on
+          // Railway/Vercel. loadEnv() does not populate process.env, so copy
+          // only the server runtime values needed by local API middleware.
+          for (const key of [
+            'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
+            'CASEBUDDY_CANONICAL_FIRM_ID', 'CRON_SECRET', 'ALLOWED_ORIGIN',
+          ]) {
+            if (env[key] && !process.env[key]) process.env[key] = env[key];
+          }
+
           server.middlewares.use((req, res, next) => {
+            const pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+            const intakeHandler = {
+              '/api/intake/session': () => import('./api/intake/session'),
+              '/api/intake/recording-upload': () => import('./api/intake/recording-upload'),
+              '/api/intake/recording-playback': () => import('./api/intake/recording-playback'),
+              '/api/intake/recording-retention': () => import('./api/intake/recording-retention'),
+            }[pathname as '/api/intake/session'];
+
+            if (intakeHandler) {
+              const chunks: Buffer[] = [];
+              req.on('data', chunk => chunks.push(Buffer.from(chunk)));
+              req.on('end', async () => {
+                try {
+                  const headers = new Headers();
+                  for (const [key, value] of Object.entries(req.headers)) {
+                    if (value == null) continue;
+                    headers.set(key, Array.isArray(value) ? value.join(',') : String(value));
+                  }
+                  const raw = Buffer.concat(chunks);
+                  const request = new Request(
+                    `http://${req.headers.host || 'localhost'}${req.url || pathname}`,
+                    {
+                      method: req.method,
+                      headers,
+                      body: req.method !== 'GET' && req.method !== 'HEAD' && raw.length ? raw : undefined,
+                    },
+                  );
+                  const { default: handler } = await intakeHandler();
+                  const response = await handler(request);
+                  res.statusCode = response.status;
+                  response.headers.forEach((value, key) => res.setHeader(key, value));
+                  res.end(Buffer.from(await response.arrayBuffer()));
+                } catch (error) {
+                  console.error(`[vite-dev] ${pathname} failed:`, error);
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Local intake API failed.' }));
+                }
+              });
+              return;
+            }
+
             if (req.method === 'POST' && req.url === '/api/ai/gemini') {
               const geminiKey = (env.GEMINI_API_KEY || '').trim();
               if (!geminiKey) {

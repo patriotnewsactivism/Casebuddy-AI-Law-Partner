@@ -20,6 +20,23 @@ export class IntakeFirmUnresolvedError extends Error {
   }
 }
 
+export class IntakePersistenceError extends Error {
+  constructor(message = 'We could not save this intake. Please try again.') {
+    super(message);
+    this.name = 'IntakePersistenceError';
+  }
+}
+
+function currentPublicIntakeToken(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const match = window.location.pathname.match(/^\/intake\/([^/]+)\/?$/i);
+    return match?.[1] ? decodeURIComponent(match[1]).trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 export const resolveIntakeFirmIdOrNull = (tokenFirmId?: string): string | null => {
   const fromToken = (tokenFirmId || '').trim();
   if (fromToken) return fromToken;
@@ -64,15 +81,6 @@ export interface PartialIntakeArgs {
  * token, which also refuses to reopen an already-completed intake.
  */
 export const saveIntakeProgress = async (args: PartialIntakeArgs): Promise<string | null> => {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-
-  const firmId = resolveIntakeFirmIdOrNull(args.firmId);
-  if (!firmId) {
-    console.warn('[intakeStore] progress not saved — no firm could be resolved');
-    return null;
-  }
-
   const intake = args.intake || {};
   const payload: Record<string, unknown> = {
     full_name: intake.fullName || '',
@@ -89,6 +97,8 @@ export const saveIntakeProgress = async (args: PartialIntakeArgs): Promise<strin
     payload.status = dispositionToStatus(args.score.disposition);
     payload.urgency = args.score.urgency;
     payload.score_detail = args.score;
+    payload.recommended_department = args.score.recommendedDepartment;
+    payload.recommended_agent_id = args.score.recommendedAgentId;
   }
   if (args.transcript) payload.transcript = args.transcript;
   if (args.extracted) payload.extracted = args.extracted;
@@ -96,18 +106,33 @@ export const saveIntakeProgress = async (args: PartialIntakeArgs): Promise<strin
   if (args.recordingSeconds) payload.recording_seconds = args.recordingSeconds;
   if (args.clientInviteId) payload.client_invite_id = args.clientInviteId;
 
-  const { data, error } = await supabase.rpc('upsert_public_intake', {
-    p_resume_token: args.resumeToken,
-    p_firm_id: firmId,
-    p_payload: payload,
-    p_completion: args.completion,
-  });
-
-  if (error) {
-    console.warn('[intakeStore] saveIntakeProgress failed:', error.message);
-    return null;
+  const publicToken = currentPublicIntakeToken();
+  let response: Response;
+  try {
+    response = await fetch('/api/intake/session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(publicToken ? { 'X-Intake-Token': publicToken } : {}),
+      },
+      body: JSON.stringify({
+        resumeToken: args.resumeToken,
+        completion: args.completion,
+        publicToken: publicToken || undefined,
+        payload,
+      }),
+    });
+  } catch (error) {
+    console.warn('[intakeStore] intake session endpoint unavailable:', error);
+    throw new IntakePersistenceError('The intake service is temporarily unreachable. Please check your connection and try again.');
   }
-  return typeof data === 'string' ? data : null;
+
+  const result = await response.json().catch(() => ({})) as { intakeId?: string; error?: string };
+  if (!response.ok || !result.intakeId) {
+    console.warn('[intakeStore] saveIntakeProgress failed:', result.error || response.status);
+    throw new IntakePersistenceError(result.error || 'The intake could not be saved. Please try again.');
+  }
+  return result.intakeId;
 };
 
 /** Reload a caller's own partial intake so Maya can continue where she left off. */
@@ -299,6 +324,33 @@ export const submitIntake = async (args: SubmitIntakeArgs): Promise<IntakeCase> 
   const row = buildRow(args);
   const supabase = getSupabase();
 
+  // In configured deployments, every public submission goes through the
+  // same-origin intake endpoint. The server resolves the receiving firm from
+  // the opaque link (or the single-firm deployment configuration), so a
+  // missing VITE_FIRM_ID can never silently strand a valid intake in the
+  // browser's local retry queue.
+  if (supabase) {
+    try {
+      const intakeId = await saveIntakeProgress({
+        resumeToken: newResumeToken(),
+        firmId: args.firmId,
+        completion: 'complete',
+        intake: args.intake,
+        score: args.score,
+        transcript: args.transcript,
+        clientInviteId: args.clientInviteId,
+      });
+      if (!intakeId) throw new IntakePersistenceError();
+      const saved = { ...row, id: intakeId };
+      saveLocal([saved, ...loadLocal().filter(r => r.id !== intakeId)]);
+      return saved;
+    } catch (error) {
+      saveRetryQueue([row, ...loadRetryQueue()]);
+      saveLocal([row, ...loadLocal()]);
+      throw error;
+    }
+  }
+
   // An intake with no resolvable firm must never be invented into a random
   // tenant — `intake_public_submit` would reject it anyway, and a guessed
   // firm_id would bury it where no one can read it. Hold it in the retry queue
@@ -308,16 +360,6 @@ export const submitIntake = async (args: SubmitIntakeArgs): Promise<IntakeCase> 
     saveRetryQueue([row, ...loadRetryQueue()]);
     saveLocal([row, ...loadLocal()]);
     return row;
-  }
-
-  if (supabase) {
-    const { data, error } = await supabase.from(INTAKE_TABLE).insert(row).select().single();
-    if (!error && data) {
-      saveLocal([data as IntakeCase, ...loadLocal().filter(r => r.id !== row.id)]);
-      return data as IntakeCase;
-    }
-    console.warn('[intakeStore] Supabase insert failed, queuing for retry:', error?.message);
-    saveRetryQueue([row, ...loadRetryQueue()]);
   }
 
   saveLocal([row, ...loadLocal()]);

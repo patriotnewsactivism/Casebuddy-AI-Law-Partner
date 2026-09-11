@@ -38,6 +38,10 @@ import aiLiveTokenHandler from '../api/ai/live-token';
 import aiChatCompletionsHandler from '../api/ai/v1/chat/completions';
 import cronHandler from '../api/cron/index';
 import emailSendHandler from '../api/email/send';
+import intakeSessionHandler from '../api/intake/session';
+import intakeRecordingUploadHandler from '../api/intake/recording-upload';
+import intakeRecordingPlaybackHandler from '../api/intake/recording-playback';
+import intakeRecordingRetentionHandler from '../api/intake/recording-retention';
 import stripeCreateCheckoutHandler from '../api/stripe/create-checkout';
 import webhooksUserSignupHandler from '../api/webhooks/user-signup';
 
@@ -151,6 +155,10 @@ mountEdge('/api/ai/v1/chat/completions', aiChatCompletionsHandler as any);
 mountEdge('/api/cron/index', cronHandler as any);
 mountEdge('/api/cron', cronHandler as any); // vercel.json rewrite alias
 mountEdge('/api/email/send', emailSendHandler as any);
+mountEdge('/api/intake/session', intakeSessionHandler as any);
+mountEdge('/api/intake/recording-upload', intakeRecordingUploadHandler as any);
+mountEdge('/api/intake/recording-playback', intakeRecordingPlaybackHandler as any);
+mountEdge('/api/intake/recording-retention', intakeRecordingRetentionHandler as any);
 mountEdge('/api/stripe/create-checkout', stripeCreateCheckoutHandler as any);
 mountEdge('/api/webhooks/user-signup', webhooksUserSignupHandler as any);
 

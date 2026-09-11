@@ -441,7 +441,14 @@ Return ONLY valid JSON:
     try {
       const transcriptForSave = convo ? convo.map(m => ({ speaker: m.role, text: m.content })) : [];
       await submitIntake({ intake: intakeData, score: intakeScore, transcript: transcriptForSave });
-    } catch (e: any) { console.error('[IntakePage] submitIntake error:', e?.message); }
+    } catch (e: any) {
+      console.error('[IntakePage] submitIntake error:', e?.message);
+      setError(e?.message || 'We could not save your intake. Please try again.');
+      setLoading(false);
+      if (convo) setIntakeComplete(false);
+      setMode(convo ? 'chat' : 'form');
+      return;
+    }
 
     setLoading(false);
     setMode('result');

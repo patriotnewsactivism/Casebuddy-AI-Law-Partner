@@ -13,6 +13,8 @@
     "services/deepseek.ts",
     "services/runtimeKeys.ts",
     "services/supabaseClient.ts",
+    "services/intakeStore.ts",
+    "services/intakeContact.ts",
     "services/intakeRecording.ts",
     "api/_shared/auth.ts",
     "api/ai/_shared/deepgramToken.ts",
@@ -26,6 +28,11 @@
     "api/intake/recording-playback.ts",
     "api/intake/recording-retention.ts",
     "netlify/functions/ai-voice-keys.ts",
-    "netlify/functions/ai-voice-keys-public.ts"
+    "netlify/functions/ai-voice-keys-public.ts",
+    "netlify/functions/_fetch-handler-adapter.ts",
+    "netlify/functions/intake-session.ts",
+    "netlify/functions/intake-recording-upload.ts",
+    "netlify/functions/intake-recording-playback.ts",
+    "netlify/functions/intake-recording-retention.ts"
   ]
 }

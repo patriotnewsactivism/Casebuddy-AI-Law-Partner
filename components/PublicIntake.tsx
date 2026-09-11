@@ -11,6 +11,7 @@ import {
   submitIntake, saveIntakeProgress, resumeIntake, newResumeToken,
 } from '../services/intakeStore';
 import { startIntakeRecorder, uploadIntakeRecording, type IntakeRecorderHandle } from '../services/intakeRecording';
+import { extractContactFromTranscript, isValidEmail, isValidPhone, normalizePhone } from '../services/intakeContact';
 import { resolveClientToken, markInviteCompleted, ResolvedClientInvite } from '../services/clientInviteStore';
 import { emailIntakeHandoff, emailClientIntakeConfirmation } from '../services/firmComms';
 import { IntakeData, IntakeScore } from '../types';
@@ -35,8 +36,8 @@ const MAYA_VOICE = 'aura-2-thalia-en';
 // disclosure is said out loud rather than buried in page text — and the
 // caller's acknowledgement is stored with the audio.
 const RECORDING_DISCLOSURE =
-  'Before we start, I want you to know this call is recorded and transcribed so ' +
-  'our attorneys have an accurate record of what you tell me. ';
+  'Before we start, I want you to know I’ll create a written transcript for our attorneys. ' +
+  'Audio is recorded only when you choose to allow it. ';
 
 // How often in-progress intake state is checkpointed to the server. A caller
 // who drops off mid-sentence still leaves everything up to the last checkpoint.
@@ -54,7 +55,7 @@ REASON BEFORE EVERY REPLY (silent — never say this out loud to the caller):
 
 YOUR GOAL — come away with ALL of this, in this PRIORITY ORDER (it goes straight into the attorney's file):
 1. Their NAME — ask this FIRST, before anything else, right after your greeting: "Before we get into it — who am I speaking with?" Then use their first name for the rest of the call.
-2. Their CONTACT INFO — ask this SECOND, immediately after their name, still before hearing the story. You need BOTH a phone number AND an email address (we send a written confirmation to their email, so it's required, not optional): "And what's the best phone number and email to reach you at?" If they only give one, ask for the other before moving on. Read both back to confirm.
+2. Their CONTACT INFO — ask this SECOND, immediately after their name, still before hearing the story. You need BOTH a phone number AND an email address (we send a written confirmation to their email, so it's required, not optional): "And what's the best phone number and email to reach you at?" Ask them to say the phone number digit by digit and spell the email address. If they only give one, ask for the other before moving on. Read both back slowly and ask for an explicit yes/no confirmation.
 3. Only once you have both name and BOTH pieces of contact info (phone AND email), invite the story: "Okay [name] — so what's going on?"
 4. What HAPPENED — let them tell the full story. Don't interrupt, don't rush. If they pause, wait — silence is fine.
 5. WHEN it happened (rough timeframe is fine)
@@ -215,7 +216,7 @@ const TypingIndicator: React.FC = () => (
   </div>
 );
 
-type Phase = 'welcome' | 'talking' | 'processing' | 'result' | 'incomplete';
+type Phase = 'welcome' | 'talking' | 'processing' | 'review' | 'result' | 'incomplete';
 
 const PublicIntake: React.FC = () => {
   const { token } = useParams<{ token?: string }>();
@@ -236,6 +237,7 @@ const PublicIntake: React.FC = () => {
   }
 
   const recorderRef = React.useRef<IntakeRecorderHandle | null>(null);
+  const recordingConsentRef = React.useRef(false);
   const savedIntakeIdRef = React.useRef<string | null>(null);
   const finalizedRef = React.useRef(false);
   const [resumedFrom, setResumedFrom] = React.useState<Partial<IntakeData> | null>(null);
@@ -285,6 +287,9 @@ const PublicIntake: React.FC = () => {
   const [intakeComplete, setIntakeComplete] = useState(false);
   const [formStep, setFormStep] = useState(1);
   const [formData, setFormData] = useState<IntakeFormData>(emptyForm());
+  const [pendingVoiceIntake, setPendingVoiceIntake] = useState<{ intake: IntakeData; transcript: Transcript } | null>(null);
+  const [contactReview, setContactReview] = useState({ fullName: '', phone: '', email: '' });
+  const [contactReviewError, setContactReviewError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // When a client token resolves, inject client context so Maya greets by name
@@ -319,7 +324,9 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
     // before any audio reaches the recorder, and the acknowledgement is stored
     // with the recording path on the intake row.
     onRecordingStream: (stream) => {
-      recorderRef.current = startIntakeRecorder(stream);
+      const recorder = startIntakeRecorder(stream);
+      recorderRef.current = recorder;
+      recordingConsentRef.current = recorder.consented;
     },
     // Use Deepgram's native Aura-2 voice (Thalia — warm, natural American
     // female). The ElevenLabs BYO path opens a second WebSocket to
@@ -343,12 +350,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   // all a follow-up actually needs, and the full extraction runs once at the
   // end. Only the caller's own turns are scanned so Maya reading an address
   // back cannot be mistaken for the caller supplying one.
-  const sniffContact = useCallback((turns: { speaker: string; text: string }[]) => {
-    const said = turns.filter(t => t.speaker === 'you').map(t => t.text).join(' ');
-    const email = said.match(/[\w.+-]+@[\w-]+\.[\w.]{2,}/)?.[0] || '';
-    const phone = said.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)?.[0] || '';
-    return { email: email.trim(), phone: phone.trim() };
-  }, []);
+  const sniffContact = useCallback(extractContactFromTranscript, []);
 
   // Resume a caller who dropped off earlier and came back via their link.
   useEffect(() => {
@@ -384,9 +386,10 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
           phone: clientInvite?.client_phone || phone,
         },
         transcript,
-        recordingConsent: Boolean(recorderRef.current?.active),
+        recordingConsent: recordingConsentRef.current,
         clientInviteId: clientInvite?.invite_id || undefined,
-      }).then(id => { if (id) savedIntakeIdRef.current = id; });
+      }).then(id => { if (id) savedIntakeIdRef.current = id; })
+        .catch(error => console.warn('[PublicIntake] checkpoint save failed:', error));
     }, PROGRESS_SAVE_MS);
     return () => clearInterval(timer);
   }, [phase, transcript, firmId, clientInvite, sniffContact]);
@@ -409,8 +412,8 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
           phone: clientInvite?.client_phone || phone,
         },
         transcript,
-        recordingConsent: Boolean(recorderRef.current?.active),
-      });
+        recordingConsent: recordingConsentRef.current,
+      }).catch(error => console.warn('[PublicIntake] final checkpoint failed:', error));
     };
     window.addEventListener('pagehide', onHide);
     return () => window.removeEventListener('pagehide', onHide);
@@ -438,7 +441,6 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         // Finalize that same row — calling submitIntake here would insert a
         // second, duplicate intake for one conversation and leave the partial
         // behind to be chased as if the caller had never finished.
-        const { recordingPath, recordingSeconds } = await finalizeRecording(savedIntakeIdRef.current);
         const id = await saveIntakeProgress({
           resumeToken:    resumeTokenRef.current,
           firmId:         firmId ?? undefined,
@@ -446,9 +448,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
           intake,
           score:          finalScore,
           transcript:     transcriptForSave,
-          recordingPath,
-          recordingSeconds,
-          recordingConsent: Boolean(recordingPath),
+          recordingConsent: recordingConsentRef.current,
           clientInviteId: clientInvite?.invite_id || undefined,
         });
         intakeId = id || savedIntakeIdRef.current || undefined;
@@ -467,8 +467,13 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         void markInviteCompleted(clientInvite.invite_id, intakeId);
       }
       try { sessionStorage.removeItem('casebuddy_intake_resume'); } catch { /* ignore */ }
+      if (!intakeId) throw new Error('The intake service did not return a saved record.');
     } catch (saveErr: any) {
       console.error('[PublicIntake] intake save failed:', saveErr?.message);
+      finalizedRef.current = false;
+      setSubmitError(saveErr?.message || 'We could not save your intake. Please try again.');
+      setPhase('result');
+      return;
     }
     // Hand the case off to the routed specialist by email
     void emailIntakeHandoff(intake, finalScore);
@@ -524,12 +529,14 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
   const finalizeRecording = async (intakeId: string | null) => {
     const handle = recorderRef.current;
     recorderRef.current = null;
-    if (!handle?.active) return { recordingPath: undefined, recordingSeconds: 0 };
+    if (!handle?.active) {
+      return { recordingPath: undefined, recordingSeconds: 0, recordingConsent: handle?.consented ?? recordingConsentRef.current };
+    }
 
     try {
       const recording = await handle.stop();
       if (!recording || !intakeId || !firmIdForUpload()) {
-        return { recordingPath: undefined, recordingSeconds: recording?.seconds || 0 };
+        return { recordingPath: undefined, recordingSeconds: recording?.seconds || 0, recordingConsent: handle.consented };
       }
       const stored = await uploadIntakeRecording({
         recording,
@@ -539,10 +546,11 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       return {
         recordingPath: stored?.path,
         recordingSeconds: stored?.seconds ?? recording.seconds,
+        recordingConsent: handle.consented,
       };
     } catch (err) {
       console.warn('[PublicIntake] recording finalize failed:', err);
-      return { recordingPath: undefined, recordingSeconds: 0 };
+      return { recordingPath: undefined, recordingSeconds: 0, recordingConsent: handle.consented };
     }
   };
 
@@ -588,7 +596,7 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
         completion: 'abandoned',
         intake,
         transcript,
-        recordingConsent: Boolean(recorderRef.current?.active),
+        recordingConsent: recordingConsentRef.current,
         clientInviteId: clientInvite?.invite_id || undefined,
       });
       savedIntakeIdRef.current = id || savedIntakeIdRef.current;
@@ -608,7 +616,69 @@ Open with: "Hi ${firstName}, thanks for calling in — " and use their name natu
       return;
     }
 
-    await finishIntake(intake, null, transcript);
+    try {
+      // Create the server-side row before stopping/uploading the recorder. A
+      // short call may end before the first periodic checkpoint; without this
+      // write there is no intake-scoped path to authorize the audio upload.
+      const id = await saveIntakeProgress({
+        resumeToken: resumeTokenRef.current,
+        firmId: firmId ?? undefined,
+        completion: 'partial',
+        intake,
+        transcript,
+        recordingConsent: recordingConsentRef.current,
+        clientInviteId: clientInvite?.invite_id || undefined,
+      });
+      savedIntakeIdRef.current = id || savedIntakeIdRef.current;
+      if (!savedIntakeIdRef.current) throw new Error('The intake service did not return a saved record.');
+
+      const recording = await finalizeRecording(savedIntakeIdRef.current);
+      if (recording.recordingPath || recording.recordingConsent) {
+        await saveIntakeProgress({
+          resumeToken: resumeTokenRef.current,
+          firmId: firmId ?? undefined,
+          completion: 'partial',
+          recordingPath: recording.recordingPath,
+          recordingSeconds: recording.recordingSeconds,
+          recordingConsent: recording.recordingConsent,
+        });
+      }
+
+      const sniffed = sniffContact(transcript);
+      setPendingVoiceIntake({ intake, transcript });
+      setContactReview({
+        fullName: clientInvite?.client_name || intake.fullName || '',
+        phone: clientInvite?.client_phone || normalizePhone(intake.phone || sniffed.phone || ''),
+        email: (clientInvite?.client_email || intake.email || sniffed.email || '').toLowerCase(),
+      });
+      setContactReviewError(null);
+      setPhase('review');
+    } catch (saveErr: any) {
+      finalizedRef.current = false;
+      setSubmitError(saveErr?.message || 'We could not save your intake. Please try again.');
+      setPhase('result');
+    }
+  };
+
+  const confirmVoiceContact = async () => {
+    if (!pendingVoiceIntake) return;
+    setSubmitError(null);
+    const fullName = contactReview.fullName.trim();
+    const email = contactReview.email.trim().toLowerCase();
+    const phone = normalizePhone(contactReview.phone);
+    if (!fullName || !isValidEmail(email) || !isValidPhone(phone)) {
+      setContactReviewError('Please confirm your full name, a valid email address, and a phone number with at least 10 digits.');
+      return;
+    }
+    setContactReviewError(null);
+    setPhase('processing');
+    await finishIntake({
+      ...pendingVoiceIntake.intake,
+      fullName,
+      email,
+      phone,
+      contact: phone || email,
+    }, null, pendingVoiceIntake.transcript);
   };
 
   const sendMessage = useCallback(async (text: string) => {
@@ -1089,6 +1159,61 @@ Return ONLY valid JSON:
             );
           })()}
 
+          {phase === 'review' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8">
+              <CheckCircle2 size={38} className="text-gold-400 mx-auto mb-4" />
+              <h2 className="text-2xl font-serif font-bold text-white text-center">Confirm how we can reach you</h2>
+              <p className="text-slate-400 text-sm mt-2 text-center leading-relaxed">
+                Your conversation and transcript are already saved. Please correct anything Maya heard incorrectly before we start the case-review automation.
+              </p>
+              <div className="mt-6 space-y-4">
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-300">Full name</span>
+                  <input
+                    value={contactReview.fullName}
+                    onChange={event => setContactReview(value => ({ ...value, fullName: event.target.value }))}
+                    autoComplete="name"
+                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-gold-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-300">Phone number</span>
+                  <input
+                    value={contactReview.phone}
+                    onChange={event => setContactReview(value => ({ ...value, phone: event.target.value }))}
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="(555) 555-5555"
+                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-gold-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-300">Email address</span>
+                  <input
+                    value={contactReview.email}
+                    onChange={event => setContactReview(value => ({ ...value, email: event.target.value }))}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="client@example.com"
+                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-gold-500"
+                  />
+                </label>
+              </div>
+              {contactReviewError && (
+                <p className="mt-4 text-sm text-red-400" role="alert">{contactReviewError}</p>
+              )}
+              <button
+                type="button"
+                onClick={confirmVoiceContact}
+                className="mt-6 w-full flex items-center justify-center gap-2 rounded-xl bg-gold-500 px-6 py-3 font-bold text-slate-950 transition-colors hover:bg-gold-400"
+              >
+                Confirm and start review <ArrowRight size={16} />
+              </button>
+            </div>
+          )}
+
           {phase === 'processing' && (
             <div className="text-center py-24">
               <Loader2 size={40} className="animate-spin text-gold-400 mx-auto mb-4" />
@@ -1129,6 +1254,15 @@ Return ONLY valid JSON:
                   <AlertCircle size={36} className="text-red-400 mx-auto mb-4" />
                   <p className="text-white font-semibold">Something went wrong</p>
                   <p className="text-slate-400 text-sm mt-2">{submitError}</p>
+                  {pendingVoiceIntake && (
+                    <button
+                      type="button"
+                      onClick={() => { setSubmitError(null); setPhase('review'); }}
+                      className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gold-500 px-5 py-2.5 font-bold text-slate-950 transition-colors hover:bg-gold-400"
+                    >
+                      Review contact details and retry <ArrowRight size={16} />
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">

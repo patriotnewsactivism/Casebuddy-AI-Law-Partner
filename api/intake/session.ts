@@ -42,6 +42,8 @@ function buildInsertPayload(
     disposition: asString(payload.disposition, 32) || 'review',
     status: asString(payload.status, 32) || 'new',
     urgency: asString(payload.urgency, 32) || 'medium',
+    recommended_department: asString(payload.recommended_department, 200),
+    recommended_agent_id: asString(payload.recommended_agent_id, 200),
     intake,
     score_detail: asObject(payload.score_detail),
     transcript: asArray(payload.transcript),
@@ -68,6 +70,7 @@ function buildUpdatePayload(
   const stringFields: Array<[string, number]> = [
     ['full_name', 200], ['contact', 500], ['matter_type', 200], ['jurisdiction', 300],
     ['summary', 20_000], ['disposition', 32], ['status', 32], ['urgency', 32],
+    ['recommended_department', 200], ['recommended_agent_id', 200],
   ];
   for (const [field, max] of stringFields) {
     if (field in payload) {
@@ -99,6 +102,54 @@ function buildUpdatePayload(
   }
 
   return update;
+}
+
+const AUTOMATION_TASKS = [
+  ['maya', 'intake_deadlines'],
+  ['research', 'intake_precedent'],
+  ['paralegal', 'intake_case_prep'],
+  ['maya', 'intake_conflict_check'],
+] as const;
+
+/**
+ * Completion starts the existing intake automation queue immediately. This is
+ * intentionally server-side: the prospective client may close the tab and no
+ * attorney dashboard may be open when the intake arrives.
+ */
+async function ensureAutomationQueued(
+  supabase: ReturnType<typeof intakeServiceClient>,
+  intakeId: string,
+  firmId: string,
+): Promise<boolean> {
+  const { data: existing, error: existingError } = await supabase
+    .from('agent_tasks')
+    .select('task_type')
+    .eq('intake_id', intakeId);
+  if (existingError) {
+    console.warn('[intake/session] could not inspect automation queue:', existingError.message);
+    return false;
+  }
+
+  const present = new Set((existing || []).map(row => String(row.task_type || '')));
+  const rows = AUTOMATION_TASKS
+    .filter(([, taskType]) => !present.has(taskType))
+    .map(([agentId, taskType]) => ({
+      case_id: '',
+      intake_id: intakeId,
+      agent_id: agentId,
+      task_type: taskType,
+      status: 'queued',
+      input: { intake_id: intakeId, source: 'maya_public_intake' },
+      firm_id: firmId,
+    }));
+
+  if (rows.length === 0) return true;
+  const { error } = await supabase.from('agent_tasks').insert(rows);
+  if (error) {
+    console.warn('[intake/session] could not queue intake automation:', error.message);
+    return false;
+  }
+  return true;
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -147,7 +198,10 @@ export default async function handler(req: Request): Promise<Response> {
     if (String(existing.firm_id) !== route.firmId) {
       return json(req, { error: 'This intake session belongs to a different receiving firm.' }, 403);
     }
-    if (existing.completion_state === 'complete') return json(req, { intakeId: existing.id, immutable: true });
+    if (existing.completion_state === 'complete') {
+      const automationQueued = await ensureAutomationQueued(supabase, String(existing.id), route.firmId);
+      return json(req, { intakeId: existing.id, immutable: true, automationQueued });
+    }
 
     let update;
     try {
@@ -157,7 +211,10 @@ export default async function handler(req: Request): Promise<Response> {
     }
     const { error } = await supabase.from('intake_cases').update(update).eq('id', existing.id).eq('firm_id', route.firmId);
     if (error) return json(req, { error: 'Could not save intake progress.' }, 503);
-    return json(req, { intakeId: existing.id });
+    const automationQueued = completion === 'complete'
+      ? await ensureAutomationQueued(supabase, String(existing.id), route.firmId)
+      : false;
+    return json(req, { intakeId: existing.id, automationQueued });
   }
 
   if (asString(payload.recording_path, 1000)) {
@@ -167,5 +224,8 @@ export default async function handler(req: Request): Promise<Response> {
   const insert = buildInsertPayload(payload, route.firmId, resumeToken, completion, route.inviteId);
   const { data, error } = await supabase.from('intake_cases').insert(insert).select('id').single();
   if (error || !data?.id) return json(req, { error: 'Could not create the intake session.' }, 503);
-  return json(req, { intakeId: data.id }, 201);
+  const automationQueued = completion === 'complete'
+    ? await ensureAutomationQueued(supabase, String(data.id), route.firmId)
+    : false;
+  return json(req, { intakeId: data.id, automationQueued }, 201);
 }
