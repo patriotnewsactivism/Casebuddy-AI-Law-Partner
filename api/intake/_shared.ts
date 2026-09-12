@@ -13,10 +13,27 @@ function serviceRoleKey(): string {
 export function intakeServiceClient(): SupabaseClient {
   const url = supabaseUrl();
   const key = serviceRoleKey();
-  if (!url || !key) throw new Error('Supabase server configuration is unavailable.');
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
+  if (!url || !key) {
+    console.error('[intake] Supabase server configuration unavailable', {
+      hasUrl: Boolean(url),
+      hasServiceRoleKey: Boolean(key),
+      serviceRoleKeyLength: key.length,
+    });
+    throw new Error('Supabase server configuration is unavailable.');
+  }
+
+  try {
+    return createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+  } catch (error) {
+    console.error('[intake] Supabase client initialization failed', {
+      url,
+      serviceRoleKeyLength: key.length,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 export interface ResolvedIntakeRoute {
