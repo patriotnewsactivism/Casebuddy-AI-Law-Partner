@@ -42,7 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
   const supabase = intakeServiceClient();
   const { data: intake, error: intakeError } = await supabase
     .from('intake_cases')
-    .select('id, firm_id, resume_token, completion_state')
+    .select('id, firm_id, resume_token, completion_state, recording_consent')
     .eq('id', intakeId)
     .eq('resume_token', resumeToken)
     .maybeSingle();
@@ -50,6 +50,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (intakeError) return json(req, { error: 'Could not verify the intake session.' }, 503);
   if (!intake || String(intake.firm_id) !== route.firmId) {
     return json(req, { error: 'Recording upload is not authorized for this intake.' }, 403);
+  }
+  if (intake.recording_consent !== true) {
+    return json(req, { error: 'Recording consent has not been recorded for this intake.' }, 403);
   }
 
   const path = `${route.firmId}/${intakeId}/${crypto.randomUUID()}.${ext}`;
